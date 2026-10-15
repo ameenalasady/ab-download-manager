@@ -16,6 +16,7 @@ fun ABDownloaderTheme(
     myColors: MyColors,
     fontFamily: FontFamily? = null,
     uiScale: Float = DEFAULT_UI_SCALE,
+    fontScale: Float = DEFAULT_FONT_SCALE,
     content: @Composable () -> Unit,
 ) {
     val systemDensity = LocalDensity.current
@@ -23,6 +24,7 @@ fun ABDownloaderTheme(
     CompositionLocalProvider(
         LocalMyColors provides animatedColors(myColors),
         LocalUiScale provides uiScale,
+        LocalFontScale provides fontScale,
         LocalSystemDensity provides systemDensity,
         LocalMyShapes provides myPlatformShapes(),
         LocalSpacing provides myPlatformSpacing(),

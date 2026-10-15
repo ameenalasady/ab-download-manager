@@ -6,7 +6,7 @@ import com.abdownloadmanager.shared.util.ui.myColors
 import com.abdownloadmanager.shared.ui.widget.Text
 import com.abdownloadmanager.shared.util.ui.WithContentColor
 import com.abdownloadmanager.shared.util.div
-import com.abdownloadmanager.desktop.window.moveSafe
+import com.abdownloadmanager.desktop.window.moveNearMouse
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.window.WindowDraggableArea
@@ -16,7 +16,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.v2.WindowBoundsProvider
@@ -28,7 +27,6 @@ import com.abdownloadmanager.shared.util.ui.MultiplatformVerticalScrollbar
 import com.abdownloadmanager.shared.util.ui.theme.LocalUiScale
 import com.abdownloadmanager.shared.util.ui.theme.myShapes
 import ir.amirab.util.desktop.screen.applyUiScale
-import java.awt.MouseInfo
 
 @Composable
 fun ExtraConfig(
@@ -50,17 +48,10 @@ fun ExtraConfig(
     BaseOptionDialog(
         onCloseRequest = onDismiss,
         state = state,
-        minSize = DpSize(w.dp, h.dp),
+        minSize = DpSize(w.dp, h.dp).applyUiScale(LocalUiScale.current),
     ) {
-        LaunchedEffect(window){
-            window.moveSafe(
-                MouseInfo.getPointerInfo().location.run {
-                    DpOffset(
-                        x = x.dp,
-                        y = y.dp
-                    )
-                }
-            )
+        LaunchedEffect(window) {
+            window.moveNearMouse()
         }
 
 

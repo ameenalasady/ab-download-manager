@@ -42,15 +42,19 @@ private object LinuxDesktopEntryCreator {
             appendLine("Name=$name")
             appendLine("Comment=$comment")
             appendLine("GenericName=Downloader")
-            appendLine("Categories=Utility;Network;")
+            appendLine("Categories=Utility;Network;FileTransfer;")
+            appendLine("Keywords=download;downloader;manager;")
             appendLine("Exec=\"$execFile\"")
             appendLine("Icon=${iconFilePath}")
             appendLine("Terminal=false")
             appendLine("Type=Application")
+            // Do not request startup feedback without a startup-notification completion hook.
+            appendLine("StartupNotify=false")
             appendLine("StartupWMClass=${startupWMClass}")
         }
         val homePath = System.getProperty("user.home")
         val desktopEntryFile = File(homePath, ".local/share/applications/${desktopEntryFilename}.desktop")
+        desktopEntryFile.parentFile?.mkdirs()
         desktopEntryFile.writeText(desktopEntryContent)
     }
 

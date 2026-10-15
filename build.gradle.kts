@@ -30,7 +30,9 @@ gitVersion {
         }
     }
 }
-version = (gitVersion.getVersion() ?: fallBackVersion).toVersion()
+// Local builds can retain the upstream version while identifying their patch set.
+version = (providers.gradleProperty("localAppVersion").orNull
+    ?: gitVersion.getVersion() ?: fallBackVersion).toVersion()
 logger.lifecycle("version: $version")
 
 tasks.dependencyUpdates {

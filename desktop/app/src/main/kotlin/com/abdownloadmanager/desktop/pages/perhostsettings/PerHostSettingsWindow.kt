@@ -8,6 +8,7 @@ import androidx.compose.ui.window.v2.WindowPositionProvider
 import androidx.compose.ui.window.v2.WindowSizeProvider
 import androidx.compose.ui.window.v2.rememberWindowState
 import com.abdownloadmanager.desktop.AppComponent
+import com.abdownloadmanager.desktop.window.bringToFront
 import com.abdownloadmanager.desktop.window.custom.CustomWindow
 import com.abdownloadmanager.desktop.window.custom.rememberWindowController
 import com.abdownloadmanager.shared.pages.perhostsettings.BasePerHostSettingsComponent
@@ -49,7 +50,7 @@ fun PerHostSettingsWindow(
                         when (it as DesktopPerHostSettingsComponent.Effects) {
                             DesktopPerHostSettingsComponent.Effects.BringToFront -> {
                                 windowState.requestMinimized(false)
-                                window.toFront()
+                                window.bringToFront()
                             }
                         }
                     }

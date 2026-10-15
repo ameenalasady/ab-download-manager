@@ -21,13 +21,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.v2.WindowBoundsProvider
 import androidx.compose.ui.window.v2.WindowSizeProvider
 import androidx.compose.ui.window.v2.rememberDialogState
 import com.abdownloadmanager.desktop.window.custom.BaseOptionDialog
-import com.abdownloadmanager.desktop.window.moveSafe
+import com.abdownloadmanager.desktop.window.moveNearMouse
 import com.abdownloadmanager.resources.Res
 import com.abdownloadmanager.shared.ui.widget.LabeledCheckbox
 import com.abdownloadmanager.shared.util.div
@@ -39,7 +38,6 @@ import com.abdownloadmanager.desktop.ui.util.rememberMyDirectoryPickerLauncher
 import com.abdownloadmanager.shared.pages.adddownload.shared.LastUsedLocationsProp
 import com.abdownloadmanager.shared.pages.adddownload.shared.RememberFolderProp
 import com.abdownloadmanager.shared.pages.adddownload.shared.rememberDescriptionString
-import java.awt.MouseInfo
 import java.io.File
 
 @Composable
@@ -124,14 +122,7 @@ private fun LocationOptionsDialog(
         resizeable = false,
     ) {
         LaunchedEffect(window) {
-            window.moveSafe(
-                MouseInfo.getPointerInfo().location.run {
-                    DpOffset(
-                        x = x.dp,
-                        y = y.dp
-                    )
-                }
-            )
+            window.moveNearMouse()
         }
         val shape = myShapes.defaultRounded
         Column(

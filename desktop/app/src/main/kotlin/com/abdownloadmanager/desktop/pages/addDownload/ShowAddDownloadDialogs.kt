@@ -89,8 +89,8 @@ private fun AddDownloadWindow(
         }
 
         is DesktopAddMultiDownloadComponent -> {
-            val h = 450
-            val w = 800
+            val h = 450.applyUiScale(uiScale)
+            val w = 800.applyUiScale(uiScale)
             val state = rememberWindowState(
                 initialBoundsProvider = WindowBoundsProvider(
                     sizeProvider = WindowSizeProvider.Fixed(

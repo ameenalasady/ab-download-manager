@@ -77,6 +77,7 @@ import kotlinx.serialization.Serializable
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import kotlin.system.exitProcess
+import kotlin.time.Duration.Companion.seconds
 
 sealed interface AppEffects {
     data class SimpleNotificationNotification(
@@ -1024,7 +1025,22 @@ class AppComponent(
 
     suspend fun exitApp() {
         downloadSystem.stopAnything()
+        flushSettingsToDisk()
         exitProcess(0)
+    }
+
+    /**
+     * settings are written with a debounce, and [exitProcess] does not give those writes a chance
+     * to run, so anything the user changed right before quitting (the window size and the maximized
+     * state in particular) would be lost.
+     */
+    private suspend fun flushSettingsToDisk() {
+        withTimeoutOrNull(3.seconds) {
+            showHomeSlot.value.child?.instance?.persistWindowState()
+            showSettingSlot.value.child?.instance?.persistWindowState()
+            appSettings.flush()
+            pageStatesStorage.flush()
+        }
     }
 
     fun closeConfirmExit() {

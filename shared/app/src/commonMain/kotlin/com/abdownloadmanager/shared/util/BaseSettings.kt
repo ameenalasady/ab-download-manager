@@ -6,6 +6,10 @@ import ir.amirab.util.flow.mapTwoWayStateFlow
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import ir.amirab.util.logger.appLogger
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import kotlin.time.Duration.Companion.milliseconds
@@ -16,6 +20,7 @@ abstract class BaseStorage<T> : KoinComponent {
     protected abstract val inMemoryState: MutableStateFlow<T>
     protected abstract suspend fun saveData(data: T)
 
+    private val saveMutex = Mutex()
     val data get() = inMemoryState
 
     fun <K> from(lens: Lens<T, K>): MutableStateFlow<K> {
@@ -30,9 +35,29 @@ abstract class BaseStorage<T> : KoinComponent {
             //first
             .drop(1)
             .debounce(500.milliseconds)
-            .onEach { s ->
-                saveData(s)
+            .onEach {
+                saveCurrentState()
             }.launchIn(scope)
+    }
+
+    /**
+     * [startPersistData] debounces the writes, and the app kills its own process when it exits,
+     * so everything that changed in the last moments would never reach the disk.
+     * this writes the current state immediately instead of waiting for the debounce.
+     */
+    suspend fun flush() {
+        try {
+            saveCurrentState()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            appLogger.e { "Could not flush settings: ${error.message}" }
+        }
+    }
+
+    private suspend fun saveCurrentState() {
+        // A queued debounce must not overwrite a newer shutdown flush with an old snapshot.
+        saveMutex.withLock { saveData(inMemoryState.value) }
     }
 }
 

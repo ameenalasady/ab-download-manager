@@ -47,6 +47,12 @@ class UnixXDGStartupDesktop(
                 }
                 appendLine("Terminal=false")
                 appendLine("NoDisplay=true")
+                // starting in the background must not make the desktop show a busy cursor
+                appendLine("StartupNotify=false")
+                // gnome ignores autostart entries that do not say this
+                appendLine("X-GNOME-Autostart-enabled=true")
+                // wait for the panel so that the tray icon has somewhere to go
+                appendLine("X-KDE-autostart-phase=2")
             }
         )
     }

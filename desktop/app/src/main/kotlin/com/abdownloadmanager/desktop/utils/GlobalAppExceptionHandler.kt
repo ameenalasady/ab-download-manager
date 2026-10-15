@@ -11,6 +11,8 @@ import androidx.compose.ui.window.application
 import com.abdownloadmanager.desktop.ui.error.ErrorWindow
 import com.abdownloadmanager.shared.ui.theme.ABDownloaderTheme
 import com.abdownloadmanager.shared.ui.theme.ThemeManager
+import ir.amirab.util.desktop.screen.SystemFontScale
+import ir.amirab.util.desktop.screen.SystemUiScale
 import ir.amirab.util.logger.appLogger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
@@ -72,6 +74,8 @@ private class GlobalExceptionHandlerImpl : GlobalAppExceptionHandler {
                 }
                 ABDownloaderTheme(
                     ThemeManager.DefaultTheme,
+                    uiScale = SystemUiScale.correctionFactor,
+                    fontScale = SystemFontScale.scale,
                 ) {
                     ErrorWindow(throwable, close)
                 }

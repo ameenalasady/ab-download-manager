@@ -12,6 +12,7 @@ import com.abdownloadmanager.desktop.utils.*
 import ir.amirab.util.compose.action.MenuItem
 import ir.amirab.util.compose.action.buildMenu
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import com.abdownloadmanager.UpdateManager
@@ -33,6 +34,7 @@ import com.abdownloadmanager.shared.util.category.CategoryManager
 import com.abdownloadmanager.shared.util.category.DefaultCategories
 import com.abdownloadmanager.shared.util.extractors.linkextractor.DefaultDownloadCredentialsExtractor
 import com.arkivanov.decompose.ComponentContext
+import com.arkivanov.essenty.lifecycle.doOnDestroy
 import ir.amirab.downloader.monitor.*
 import ir.amirab.downloader.queue.QueueManager
 import ir.amirab.util.flow.combineStateFlows
@@ -114,6 +116,15 @@ class HomeComponent(
             .onEach { newValue ->
                 pageStorage.homePageStorage.update { newValue }
             }.launchIn(scope)
+        lifecycle.doOnDestroy {
+            // closing the window destroys this component and cancels the debounce above with it,
+            // so the geometry the user just left the window in has to be handed over right now
+            persistWindowState()
+        }
+    }
+
+    fun persistWindowState() {
+        pageStorage.homePageStorage.update { homePageStateToPersist.value }
     }
 
     private val _windowSize = homePageStateToPersist.mapTwoWayStateFlow(
@@ -131,6 +142,23 @@ class HomeComponent(
     val windowSize = _windowSize.asStateFlow()
     fun setWindowSize(dpSize: DpSize) {
         _windowSize.value = dpSize
+    }
+
+    private val _windowPosition = homePageStateToPersist.mapTwoWayStateFlow(
+        map = {
+            it.windowPosition?.let { (x, y) ->
+                DpOffset(x.dp, y.dp)
+            }
+        },
+        unMap = {
+            copy(
+                windowPosition = it?.let { offset -> offset.x.value to offset.y.value }
+            )
+        }
+    )
+    val windowPosition = _windowPosition.asStateFlow()
+    fun setWindowPosition(position: DpOffset) {
+        _windowPosition.value = position
     }
 
     private val _isMaximized = homePageStateToPersist.mapTwoWayStateFlow(

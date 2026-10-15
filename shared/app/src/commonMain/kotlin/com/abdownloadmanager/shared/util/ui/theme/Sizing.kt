@@ -14,6 +14,14 @@ const val DEFAULT_UI_SCALE = 1f
 
 val LocalUiScale = staticCompositionLocalOf<Float> { DEFAULT_UI_SCALE }
 
+const val DEFAULT_FONT_SCALE = 1f
+
+/**
+ * How much text should deviate from the size the app defines for it, so that the app can follow
+ * a system that asks for larger or smaller text without also inflating icons and paddings.
+ */
+val LocalFontScale = staticCompositionLocalOf<Float> { DEFAULT_FONT_SCALE }
+
 val LocalTextSizes = compositionLocalOf<TextSizes> {
     error("LocalTextSizes not provided")
 }
@@ -60,13 +68,19 @@ data class MySpacings(
 fun UiScaledContent(
     defaultDensity: Density = LocalDensity.current,
     uiScale: Float = LocalUiScale.current,
+    fontScale: Float = LocalFontScale.current,
     content: @Composable () -> Unit,
 ) {
-    val density = remember(defaultDensity, uiScale) {
-        if (uiScale == DEFAULT_UI_SCALE) {
+    val density = remember(defaultDensity, uiScale, fontScale) {
+        if (uiScale == DEFAULT_UI_SCALE && fontScale == DEFAULT_FONT_SCALE) {
             defaultDensity
         } else {
-            Density(uiScale * defaultDensity.density)
+            Density(
+                density = uiScale * defaultDensity.density,
+                // sp is multiplied by both, so the app's own text sizes keep following the ui
+                // scale and only the extra deviation the system asks for is added on top
+                fontScale = fontScale * defaultDensity.fontScale,
+            )
         }
     }
     CompositionLocalProvider(

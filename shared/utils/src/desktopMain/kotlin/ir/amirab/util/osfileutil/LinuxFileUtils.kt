@@ -1,5 +1,6 @@
 package ir.amirab.util.osfileutil
 
+import ir.amirab.util.execAndForget
 import ir.amirab.util.execAndWait
 import org.freedesktop.dbus.DBusPath
 import org.freedesktop.dbus.FileDescriptor
@@ -12,7 +13,9 @@ import java.net.URLEncoder
 
 internal class LinuxFileUtils : DesktopFileUtils() {
     override fun openFileInternal(file: File): Boolean {
-        return execAndWait(arrayOf("xdg-open", file.path))
+        // the program xdg-open picks may take a while to come up, waiting for it to exit would
+        // report a failure for something that is about to work
+        return execAndForget(arrayOf("xdg-open", file.path))
     }
 
     override fun openWithFileInternal(file: File): Boolean {
@@ -58,14 +61,13 @@ internal class LinuxFileUtils : DesktopFileUtils() {
         if (dbusSendResult) {
             return true
         }
-        val xdgOpenResult = execAndWait(
-            arrayOf("xdg-open", file.parent)
-        )
-        return xdgOpenResult
+        // no file manager that can select a file for us, settle for showing the folder
+        val parent = file.parentFile ?: return false
+        return openFolderInternal(parent)
     }
 
     override fun openFolderInternal(folder: File): Boolean {
-        return execAndWait(arrayOf("xdg-open", folder.parent))
+        return execAndForget(arrayOf("xdg-open", folder.path))
     }
 
     private fun encodePath(path: String): String {

@@ -26,7 +26,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.v2.WindowBoundsProvider
@@ -36,7 +35,7 @@ import com.abdownloadmanager.shared.ui.widget.MyTextFieldWithIcons
 import com.abdownloadmanager.shared.ui.widget.MyTextFieldIcon
 import com.abdownloadmanager.shared.util.ClipboardUtil
 import com.abdownloadmanager.desktop.window.custom.BaseOptionDialog
-import com.abdownloadmanager.desktop.window.moveSafe
+import com.abdownloadmanager.desktop.window.moveNearMouse
 import com.abdownloadmanager.resources.Res
 import com.abdownloadmanager.shared.downloaderinui.TADownloaderInUI
 import com.abdownloadmanager.shared.pages.enterurl.DownloaderSelection
@@ -49,7 +48,6 @@ import com.abdownloadmanager.shared.util.ui.myColors
 import com.abdownloadmanager.shared.util.ui.theme.myShapes
 import com.abdownloadmanager.shared.util.ui.widget.MyIcon
 import ir.amirab.util.compose.resources.myStringResource
-import java.awt.MouseInfo
 
 @Composable
 fun EnterNewURLPage(component: DesktopEnterNewURLComponent) {
@@ -138,14 +136,7 @@ private fun DownloaderSelectionSection(
             resizeable = false,
         ) {
             LaunchedEffect(window) {
-                window.moveSafe(
-                    MouseInfo.getPointerInfo().location.run {
-                        DpOffset(
-                            x = x.dp,
-                            y = y.dp
-                        )
-                    }
-                )
+                window.moveNearMouse()
             }
 
 

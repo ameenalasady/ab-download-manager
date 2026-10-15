@@ -6,4 +6,5 @@ dependencies {
     api(project(":desktop:shared"))
     api(project(":shared:app"))
     implementation(libs.jbrApi)
+    testImplementation(kotlin("test-junit"))
 }

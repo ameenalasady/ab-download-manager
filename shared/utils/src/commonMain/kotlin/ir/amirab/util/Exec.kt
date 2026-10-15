@@ -26,6 +26,33 @@ fun execAndWait(
     }.getOrElse { false }
 }
 
+/**
+ * Starts a program that is meant to keep running - a settings panel, a file manager, a browser -
+ * without waiting for the user to close it again.
+ * @param settleFor how long to give the program to fail, so that a wrong argument can still be
+ * noticed and another candidate tried
+ * @return `false` when the program is not installed or gave up right away
+ */
+fun execAndForget(
+    command: Array<String>,
+    settleFor: Long = 300,
+): Boolean {
+    return runCatching {
+        val process = ProcessBuilder(*command)
+            .withoutJPackageEnvVariable()
+            // a program we never read from will block once it fills up the pipe
+            .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+            .redirectError(ProcessBuilder.Redirect.DISCARD)
+            .start()
+        if (process.waitFor(settleFor, TimeUnit.MILLISECONDS)) {
+            process.exitValue() == 0
+        } else {
+            // still up, so it is showing the user something
+            true
+        }
+    }.getOrElse { false }
+}
+
 // in linux if I don't remove it the program won't restart
 fun ProcessBuilder.withoutJPackageEnvVariable() = apply {
     environment().remove("_JPACKAGE_LAUNCHER")

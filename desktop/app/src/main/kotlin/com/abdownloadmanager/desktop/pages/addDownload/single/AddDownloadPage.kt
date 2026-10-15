@@ -16,7 +16,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.v2.WindowBoundsProvider
 import androidx.compose.ui.window.v2.WindowSizeProvider
@@ -24,7 +23,7 @@ import androidx.compose.ui.window.v2.rememberDialogState
 import arrow.core.Some
 import com.abdownloadmanager.desktop.pages.addDownload.shared.*
 import com.abdownloadmanager.desktop.window.custom.BaseOptionDialog
-import com.abdownloadmanager.desktop.window.moveSafe
+import com.abdownloadmanager.desktop.window.moveNearMouse
 import com.abdownloadmanager.resources.Res
 import com.abdownloadmanager.shared.downloaderinui.add.CanAddResult
 import com.abdownloadmanager.shared.pages.adddownload.shared.LastUsedLocationsProp
@@ -47,7 +46,6 @@ import ir.amirab.downloader.connection.IResponseInfo
 import ir.amirab.downloader.utils.OnDuplicateStrategy
 import ir.amirab.util.compose.asStringSource
 import ir.amirab.util.compose.resources.myStringResource
-import java.awt.MouseInfo
 
 @Composable
 fun AddDownloadPage(
@@ -223,14 +221,7 @@ private fun ShowSolutionsOnDuplicateDownload(component: BaseAddSingleDownloadCom
         resizeable = false,
     ) {
         LaunchedEffect(window) {
-            window.moveSafe(
-                MouseInfo.getPointerInfo().location.run {
-                    DpOffset(
-                        x = x.dp,
-                        y = y.dp
-                    )
-                }
-            )
+            window.moveNearMouse()
         }
 
 

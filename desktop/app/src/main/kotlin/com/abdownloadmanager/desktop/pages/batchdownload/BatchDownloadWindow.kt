@@ -8,6 +8,7 @@ import androidx.compose.ui.window.v2.WindowPositionProvider
 import androidx.compose.ui.window.v2.WindowSizeProvider
 import androidx.compose.ui.window.v2.rememberWindowState
 import com.abdownloadmanager.desktop.AppComponent
+import com.abdownloadmanager.desktop.window.bringToFront
 import com.abdownloadmanager.desktop.window.custom.CustomWindow
 import com.abdownloadmanager.desktop.window.custom.rememberWindowController
 import com.abdownloadmanager.shared.pages.batchdownload.BaseBatchDownloadComponent
@@ -27,8 +28,7 @@ fun BatchDownloadWindow(appComponent: AppComponent) {
 
 @Composable
 private fun BatchDownloadWindow(desktopBatchDownloadComponent: DesktopBatchDownloadComponent) {
-    CustomWindow(
-        state = rememberWindowState(
+    val windowState = rememberWindowState(
             initialBoundsProvider = WindowBoundsProvider(
                 sizeProvider = WindowSizeProvider.Fixed(
                     size = DpSize(500.dp, 420.dp)
@@ -36,7 +36,9 @@ private fun BatchDownloadWindow(desktopBatchDownloadComponent: DesktopBatchDownl
                 ),
                 positionProvider = WindowPositionProvider.CenteredOnScreen
             )
-        ),
+        )
+    CustomWindow(
+        state = windowState,
         onCloseRequest = desktopBatchDownloadComponent.onClose,
         windowController = rememberWindowController(
             title = myStringResource(Res.string.batch_download),
@@ -44,7 +46,10 @@ private fun BatchDownloadWindow(desktopBatchDownloadComponent: DesktopBatchDownl
     ) {
         HandleEffects(desktopBatchDownloadComponent) {
             when (it) {
-                DesktopBatchDownloadComponent.Effects.BringToFront -> window.toFront()
+                DesktopBatchDownloadComponent.Effects.BringToFront -> {
+                    windowState.requestMinimized(false)
+                    window.bringToFront()
+                }
                 is BaseBatchDownloadComponent.Effects.PlatformEffects -> {
                     //
                 }
