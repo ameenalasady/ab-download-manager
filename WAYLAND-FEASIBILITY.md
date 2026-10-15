@@ -1,7 +1,16 @@
 # Native Wayland feasibility probe
 
-Date: 2026-10-15. Checkout: `/home/alasady/Code/ab-download-manager-plasma`,
+Date: 2026-10-15. Original probe checkout: `/home/alasady/Code/ab-download-manager-plasma`,
 branch `local/plasma-wayland-1.11.0`.
+
+**Native implementation handoff:** work now continues on branch `native-wayland` in the
+[ameenalasady fork](https://github.com/ameenalasady/ab-download-manager). Read
+[`HANDOFF-native-wayland.md`](HANDOFF-native-wayland.md) first. The original experiment
+below is historical; its no-commit/index state descriptions precede the user-authorized
+fork publication. Reproducible probe sources now live in
+[`scripts/wayland-probe/`](scripts/wayland-probe/README.md), so a fresh clone need not rely
+on this workstation's ignored scratch files. The known-good fallback is preserved at
+`10a8d58d` on `local/plasma-wayland-1.11.0`.
 
 ## Conclusion
 
