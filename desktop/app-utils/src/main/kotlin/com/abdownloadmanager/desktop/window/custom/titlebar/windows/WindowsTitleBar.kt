@@ -66,7 +66,8 @@ object WindowsTitleBar : TitleBar {
         end: @Composable (() -> Unit)?,
         onRequestClose: () -> Unit,
         onRequestMinimize: (() -> Unit)?,
-        onRequestToggleMaximize: (() -> Unit)?
+        onRequestToggleMaximize: (() -> Unit)?,
+        contentDragModifier: Modifier,
     ) {
         CommonRenderTitleBar(
             modifier = modifier,
@@ -79,6 +80,7 @@ object WindowsTitleBar : TitleBar {
             onRequestClose = onRequestClose,
             onRequestMinimize = onRequestMinimize,
             onRequestToggleMaximize = onRequestToggleMaximize,
+            contentDragModifier = contentDragModifier,
         )
     }
 

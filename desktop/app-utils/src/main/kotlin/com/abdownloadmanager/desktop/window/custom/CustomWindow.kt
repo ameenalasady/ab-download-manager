@@ -11,7 +11,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.window.WindowDraggableArea
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.awt.ComposeWindow
 import androidx.compose.ui.composed
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.awt.toAwtColor
@@ -33,6 +35,14 @@ import androidx.compose.ui.window.v2.Window
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.v2.WindowState
 import com.abdownloadmanager.desktop.window.custom.titlebar.TitleBar
+import com.abdownloadmanager.desktop.window.linux.LocalWindowIsFullscreen
+import com.abdownloadmanager.desktop.window.linux.awaitUnfullscreenAndNativeMove
+import com.abdownloadmanager.desktop.window.linux.canEwmhMove
+import com.abdownloadmanager.desktop.window.linux.exitFullscreen
+import com.abdownloadmanager.desktop.window.linux.isFullscreenNow
+import com.abdownloadmanager.desktop.window.linux.nativeMoveNow
+import com.abdownloadmanager.desktop.window.linux.prepareForWindowDisposal
+import com.abdownloadmanager.desktop.window.linux.rememberLinuxWindowStateTracker
 import com.abdownloadmanager.shared.util.PopUpContainer
 import com.abdownloadmanager.shared.util.ResponsiveBox
 import com.abdownloadmanager.shared.util.ui.WithTitleBarDirection
@@ -44,6 +54,8 @@ import com.jetbrains.JBR
 import com.jetbrains.WindowDecorations
 import com.jetbrains.WindowMove
 import ir.amirab.util.desktop.LocalFrameWindowScope
+import ir.amirab.util.platform.Platform
+import ir.amirab.util.platform.isLinux
 import com.abdownloadmanager.shared.ui.util.LocalWindow
 import ir.amirab.util.desktop.screen.applyUiScale
 import ir.amirab.util.ifThen
@@ -51,8 +63,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
-import java.awt.event.ComponentAdapter
-import java.awt.event.ComponentEvent
+import java.awt.Frame
 import java.awt.event.MouseEvent
 
 
@@ -78,7 +89,7 @@ private fun FrameWindowScope.CustomWindowFrame(
             Modifier
                 .fillMaxSize()
                 .ifThen(!JBR.isWindowDecorationsSupported()) {
-                    ifThen(isWindowFloating()) {
+                    ifThen(isWindowFloating() && !isWindowFullscreen()) {
                         val borderColor = if (isLight) Color.LightGray else Color.DarkGray
                         border(1.dp, borderColor, RectangleShape)
                             .padding(1.dp)
@@ -131,12 +142,20 @@ val WindowState.isMinimizedOrNull: Boolean?
 
 @Composable
 fun isWindowMaximized(): Boolean {
-    return LocalWindowState.current.placementOrNull == WindowPlacement.Maximized
+    // a window manager fullscreen looks maximized to the user (and the button must offer to
+    // leave it), even though compose still reports the floating placement underneath
+    return LocalWindowState.current.placementOrNull == WindowPlacement.Maximized ||
+        LocalWindowIsFullscreen.current
 }
 
 @Composable
 fun isWindowFloating(): Boolean {
     return LocalWindowState.current.placementOrNull == WindowPlacement.Floating
+}
+
+@Composable
+fun isWindowFullscreen(): Boolean {
+    return LocalWindowIsFullscreen.current
 }
 
 @Composable
@@ -206,10 +225,11 @@ fun FrameWindowScope.SnapDraggableToolbar(
     } else {
         SystemDraggableSection(
             onRequestToggleMaximize = onRequestToggleMaximize,
-        ) { modifier ->
+        ) { tapModifier, contentDragModifier ->
             FrameContent(
                 titleBar = titleBar,
-                modifier = modifier,
+                modifier = tapModifier,
+                contentDragModifier = contentDragModifier,
                 title = title,
                 windowIcon = windowIcon,
                 titlePosition = titlePosition,
@@ -226,35 +246,125 @@ fun FrameWindowScope.SnapDraggableToolbar(
 @Composable
 internal fun FrameWindowScope.SystemDraggableSection(
     onRequestToggleMaximize: (() -> Unit)?,
-    content: @Composable (Modifier) -> Unit
+    content: @Composable (tapModifier: Modifier, contentDragModifier: Modifier) -> Unit
 ) {
     val windowMove: WindowMove? = JBR.getWindowMove()
-    val viewConfig = LocalViewConfiguration.current
-    var lastPress by remember { mutableStateOf(0L) }
-    if (windowMove != null) {
-        content(
-            Modifier
-                .onPointerEvent(PointerEventType.Press, PointerEventPass.Main) {
-                    if (
-                        this.currentEvent.button == PointerButton.Primary &&
-                        this.currentEvent.changes.any { changed -> !changed.isConsumed }
-                    ) {
-                        windowMove.startMovingTogetherWithMouse(window, MouseEvent.BUTTON1)
-                        if (
-                            System.currentTimeMillis() - lastPress in
-                            viewConfig.doubleTapMinTimeMillis..viewConfig.doubleTapTimeoutMillis
-                        ) {
-                            onRequestToggleMaximize?.invoke()
+    val placement = LocalWindowState.current.placementOrNull
+    val isFullscreen = LocalWindowIsFullscreen.current
+    val isMaximized = placement == WindowPlacement.Maximized
+    val composeFullscreen = placement == WindowPlacement.Fullscreen
+    // session level only: the native handle is checked again when the drag actually runs,
+    // it is not known yet on the very first composition
+    val ewmhMove = remember { windowMove == null && canEwmhMove() }
+    DoubleTapToToggleMaximize(onRequestToggleMaximize) { doubleTapModifier ->
+        when {
+            // native moves un-maximize (or un-tile) into the gesture, exactly like a native
+            // title bar. the drag area is the title content only: presses on the system
+            // buttons must never start moves, or clicking one would un-maximize (or
+            // un-fullscreen, visibly and slowly) the window underneath the click.
+            windowMove != null && !isFullscreen && !composeFullscreen -> {
+                NativeMoveArea(
+                    onSlop = { windowMove.startMovingTogetherWithMouse(window, MouseEvent.BUTTON1) },
+                ) { moveModifier ->
+                    content(doubleTapModifier, moveModifier)
+                }
+            }
+
+            ewmhMove && (isMaximized || isFullscreen) && !composeFullscreen -> {
+                // leaving a fullscreen is slow and visible, so it waits for a deliberate
+                // drag rather than the first slop-sized jitter of a click
+                val slopMultiplier = if (isFullscreen) 3 else 1
+                NativeMoveArea(
+                    slopMultiplier = slopMultiplier,
+                    // the cached state can lag a same-sized transition by one event, so the
+                    // action re-checks synchronously; a native move is valid on a floating
+                    // window too, so even a stale branch degrades into a working drag
+                    onSlop = {
+                        if (isFullscreenNow(window)) {
+                            awaitUnfullscreenAndNativeMove(window)
+                        } else {
+                            nativeMoveNow(window)
                         }
-                        lastPress = System.currentTimeMillis()
-                    }
-                },
-        )
-    } else {
-        WindowDraggableArea {
-            content(Modifier)
+                    },
+                ) { moveModifier ->
+                    content(doubleTapModifier, moveModifier)
+                }
+            }
+
+            windowMove == null && !Platform.isLinux() -> {
+                // untouched legacy behavior off linux
+                WindowDraggableArea { content(doubleTapModifier, Modifier) }
+            }
+
+            windowMove == null && placement == WindowPlacement.Floating && !isFullscreen && !composeFullscreen -> {
+                WindowDraggableArea { content(doubleTapModifier, Modifier) }
+            }
+
+            else -> content(doubleTapModifier, Modifier)
         }
     }
+}
+
+/**
+ * Starts [onSlop] once the primary button drags past the touch slop ([slopMultiplier] times
+ * over for gestures that visibly change the window, which must not fire on click jitter).
+ * Bare clicks never start moves.
+ */
+@Composable
+private fun NativeMoveArea(
+    onSlop: suspend AwaitPointerEventScope.() -> Unit,
+    slopMultiplier: Int = 1,
+    content: @Composable (Modifier) -> Unit,
+) {
+    val touchSlop = LocalViewConfiguration.current.touchSlop * slopMultiplier
+    val currentOnSlop by rememberUpdatedState(onSlop)
+    content(Modifier.pointerInput(touchSlop) {
+        awaitEachGesture {
+            var start: Offset? = null
+            while (start == null) {
+                val event = awaitPointerEvent(PointerEventPass.Main)
+                if (event.type == PointerEventType.Press && event.buttons.isPrimaryPressed) {
+                    start = event.changes.first().position
+                } else if (event.type == PointerEventType.Release) {
+                    return@awaitEachGesture
+                }
+            }
+            val origin = start
+            while (true) {
+                val event = awaitPointerEvent(PointerEventPass.Main)
+                if (!event.buttons.isPrimaryPressed) return@awaitEachGesture
+                val position = event.changes.first().position
+                if ((position - origin).getDistance() >= touchSlop) break
+            }
+            currentOnSlop()
+        }
+    })
+}
+
+@Composable
+private fun DoubleTapToToggleMaximize(
+    onRequestToggleMaximize: (() -> Unit)?,
+    content: @Composable (Modifier) -> Unit
+) {
+    val viewConfig = LocalViewConfiguration.current
+    var lastPress by remember { mutableStateOf(0L) }
+    content(
+        Modifier.onPointerEvent(PointerEventType.Press, PointerEventPass.Main) {
+            if (onRequestToggleMaximize == null) return@onPointerEvent
+            if (
+                this.currentEvent.button == PointerButton.Primary &&
+                this.currentEvent.changes.any { changed -> !changed.isConsumed }
+            ) {
+                val now = System.currentTimeMillis()
+                if (now - lastPress in
+                    viewConfig.doubleTapMinTimeMillis..viewConfig.doubleTapTimeoutMillis
+                ) {
+                    onRequestToggleMaximize.invoke()
+                }
+                lastPress = now
+            }
+        }
+    )
 }
 
 internal fun Modifier.customTitleBarMouseEventHandler(
@@ -284,30 +394,10 @@ internal fun Modifier.customTitleBarMouseEventHandler(
     }
 
 @Composable
-private fun FrameWindowScope.getCurrentWindowSize(): DpSize {
-    var windowSize by remember {
-        mutableStateOf(DpSize(window.width.dp, window.height.dp))
-    }
-    //observe window size
-    DisposableEffect(window) {
-        val listener = object : ComponentAdapter() {
-            override fun componentResized(p0: ComponentEvent?) {
-                windowSize = DpSize(window.width.dp, window.height.dp)
-            }
-        }
-        window.addComponentListener(listener)
-        onDispose {
-            window.removeComponentListener(listener)
-        }
-    }
-    return windowSize
-}
-
-
-@Composable
 private fun FrameContent(
     titleBar: TitleBar,
     modifier: Modifier,
+    contentDragModifier: Modifier = Modifier,
     title: String,
     windowIcon: Painter? = null,
     titlePosition: TitlePosition,
@@ -321,6 +411,7 @@ private fun FrameContent(
         titleBar = titleBar,
         modifier = modifier
             .fillMaxWidth(),
+        contentDragModifier = contentDragModifier,
         title = title,
         windowIcon = windowIcon,
         titlePosition = titlePosition,
@@ -384,6 +475,9 @@ fun CustomWindow(
         //we decorate window and add our custom layout
         WindowDecoration.Undecorated()
     }
+    // Publish the native window for the outer pre-AWT disposal hook below. Close requests
+    // go directly to the caller; a vetoed/deferred request must not disable window controls.
+    val disposalHandle = remember { WindowDisposalHandle() }
     Window(
         state = state,
         transparent = false,
@@ -397,6 +491,33 @@ fun CustomWindow(
         minSize = minSize,
         maxSize = maxSize,
     ) {
+        SideEffect { disposalHandle.window = window }
+        val tracker = rememberLinuxWindowStateTracker()
+        val isFullscreen by tracker.isFullscreen.collectAsState()
+        val nativeExtendedState by tracker.extendedState.collectAsState()
+        // leaving a window manager fullscreen is a WM round trip, not a placement change, so
+        // the toggle asks the truth at the moment it runs; compose syncs whatever the window
+        // manager restores on its own through the usual resize events
+        val toggleMaximizeOrExitFullscreen = onRequestToggleMaximize?.let { toggle ->
+            { ->
+                if (isFullscreenNow(window)) {
+                    exitFullscreen(window)
+                } else {
+                    toggle()
+                }
+            }
+        }
+        // a maximized or fullscreen window cannot be resized by the client, the edge handles
+        // compose draws for undecorated windows only lie about it (and steal the cursor), so
+        // they are put away. half-maximized (tiled) windows keep theirs, their free edge is
+        // genuinely resizable.
+        val suppressResizers = isFullscreen ||
+            (nativeExtendedState and Frame.MAXIMIZED_BOTH) == Frame.MAXIMIZED_BOTH
+        val defaultResizerThickness = remember(window) { window.undecoratedResizerThickness }
+        LaunchedEffect(suppressResizers) {
+            window.undecoratedResizerThickness =
+                if (suppressResizers) 0.dp else defaultResizerThickness
+        }
         val isLight = myColors.isLight
         val background = myColors.background
         LaunchedEffect(background) {
@@ -413,6 +534,7 @@ fun CustomWindow(
                 LocalWindowController provides windowController,
                 LocalWindowState provides state,
                 LocalWindow provides window,
+                LocalWindowIsFullscreen provides isFullscreen,
                 LocalFrameWindowScope provides this
             ) {
                 if (preventMinimize) {
@@ -422,7 +544,7 @@ fun CustomWindow(
                 CustomWindowFrame(
                     onRequestMinimize = onRequestMinimize,
                     onRequestClose = onCloseRequest,
-                    onRequestToggleMaximize = onRequestToggleMaximize,
+                    onRequestToggleMaximize = toggleMaximizeOrExitFullscreen,
                     title = title,
                     titlePosition = titlePosition,
                     windowIcon = icon,
@@ -443,6 +565,20 @@ fun CustomWindow(
             }
         }
     }
+    // Effects are disposed in reverse registration order. This belongs AFTER Window in the
+    // outer composition: its content's onDispose runs too late (ComposeWindow.dispose calls
+    // JFrame.dispose before disposing the content). Do not unmap on a close request: a
+    // caller may veto the request. Here the window is genuinely leaving the composition.
+    DisposableEffect(disposalHandle) {
+        onDispose {
+            disposalHandle.window?.let(::prepareForWindowDisposal)
+            disposalHandle.window = null
+        }
+    }
+}
+
+private class WindowDisposalHandle {
+    var window: ComposeWindow? = null
 }
 
 @Composable

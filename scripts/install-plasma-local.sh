@@ -2,7 +2,7 @@
 # Rebuild and install without modifying pacman-owned files.
 set -euo pipefail
 repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
-version=${ABDM_LOCAL_VERSION:-1.11.0+plasma.1}
+version=${ABDM_LOCAL_VERSION:-1.11.0+plasma.2}
 if [[ ${1:-} != --skip-build ]]; then
     cd "$repo"
     JAVA_HOME=${JAVA_HOME:-/usr/lib/jvm/java-25-openjdk} ./gradlew \
@@ -68,6 +68,14 @@ printf '%s\n' \
     'X-GNOME-Autostart-enabled=true' 'X-KDE-autostart-phase=2' \
     > "$HOME/.config/autostart/com.abdownloadmanager.desktop"
 "$HOME/.local/bin/ABDownloadManagerCli" native-messaging install
+# Preserve the explicit opt-in to the companion KWin fractional-size workaround. Refresh
+# from the current stock effect rather than carrying an old compositor script indefinitely.
+kwin_effect="${XDG_DATA_HOME:-$HOME/.local/share}/kwin-wayland/effects/maximize"
+if [[ -f "$kwin_effect/.abdm-maximize-workaround.json" ]]; then
+    if ! python3 "$repo/scripts/plasma-maximize-workaround.py" install; then
+        echo "Warning: refresh the KWin companion manually, or run scripts/plasma-maximize-workaround.py remove." >&2
+    fi
+fi
 if command -v desktop-file-validate >/dev/null; then
     desktop-file-validate "$HOME/.local/share/applications/com.abdownloadmanager.desktop" "$HOME/.config/autostart/com.abdownloadmanager.desktop"
 fi

@@ -15,6 +15,7 @@ import com.abdownloadmanager.desktop.utils.AppInfo
 import com.abdownloadmanager.desktop.window.ScreenGeometry
 import com.abdownloadmanager.desktop.window.bringToFront
 import com.abdownloadmanager.desktop.window.custom.CustomWindow
+import com.abdownloadmanager.desktop.window.linux.isFullscreenNow
 import com.abdownloadmanager.desktop.window.custom.rememberWindowController
 import com.abdownloadmanager.shared.util.LocalShortCutManager
 import com.abdownloadmanager.shared.util.mvi.HandleEffects
@@ -26,6 +27,7 @@ import ir.amirab.util.desktop.screen.unApplyUiScale
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import java.awt.Frame
 
 private val MINIMUM_SIZE = DpSize(400.dp, 400.dp)
 
@@ -88,6 +90,12 @@ private fun HomeWindow(homeComponent: HomeComponent, onCLoseRequest: () -> Unit)
                 }.filterNotNull().onEach { geometry ->
                     homeComponent.setIsMaximized(geometry.placement == WindowPlacement.Maximized)
                     if (geometry.isMinimized || geometry.placement != WindowPlacement.Floating) return@onEach
+                    // a window manager fullscreen still reports the floating placement
+                    // underneath, saving it would persist the fullscreen size as the floating one
+                    if (isFullscreenNow(window)) return@onEach
+                    // the placement sync runs a round trip behind the native window, the raw
+                    // maximized bits do not
+                    if ((window.extendedState and Frame.MAXIMIZED_BOTH) != 0) return@onEach
                     if (geometry.size.width < minimumSize.width || geometry.size.height < minimumSize.height) return@onEach
                     homeComponent.setWindowSize(geometry.size.unApplyUiScale(uiScale))
                     homeComponent.setWindowPosition(geometry.position)

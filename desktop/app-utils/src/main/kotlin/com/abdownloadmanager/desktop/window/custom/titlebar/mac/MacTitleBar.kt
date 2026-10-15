@@ -80,7 +80,8 @@ object MacTitleBar : TitleBar {
         end: @Composable (() -> Unit)?,
         onRequestClose: () -> Unit,
         onRequestMinimize: (() -> Unit)?,
-        onRequestToggleMaximize: (() -> Unit)?
+        onRequestToggleMaximize: (() -> Unit)?,
+        contentDragModifier: Modifier,
     ) {
         CommonRenderTitleBar(
             modifier = modifier,
@@ -93,6 +94,7 @@ object MacTitleBar : TitleBar {
             onRequestClose = onRequestClose,
             onRequestMinimize = onRequestMinimize,
             onRequestToggleMaximize = onRequestToggleMaximize,
+            contentDragModifier = contentDragModifier,
         )
     }
 }

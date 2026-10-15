@@ -44,6 +44,8 @@ interface TitleBar {
         onRequestClose: () -> Unit,
         onRequestMinimize: (() -> Unit)?,
         onRequestToggleMaximize: (() -> Unit)?,
+        // goes on the title content only, so presses on the system buttons never start drags
+        contentDragModifier: Modifier = Modifier,
     )
 
     companion object {

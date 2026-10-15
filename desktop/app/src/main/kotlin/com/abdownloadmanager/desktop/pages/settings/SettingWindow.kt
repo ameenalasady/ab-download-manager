@@ -9,6 +9,7 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import com.abdownloadmanager.desktop.window.ScreenGeometry
 import com.abdownloadmanager.desktop.window.bringToFront
+import com.abdownloadmanager.desktop.window.linux.isFullscreenNow
 import com.abdownloadmanager.shared.util.ui.theme.LocalUiScale
 import ir.amirab.util.desktop.screen.applyUiScale
 import ir.amirab.util.desktop.screen.unApplyUiScale
@@ -26,6 +27,7 @@ import com.abdownloadmanager.shared.settings.BaseSettingsComponent
 import com.abdownloadmanager.shared.util.rememberChild
 import com.abdownloadmanager.resources.Res
 import ir.amirab.util.compose.resources.myStringResource
+import java.awt.Frame
 
 @Composable
 fun SettingWindow(
@@ -54,15 +56,6 @@ private fun SettingWindow(
             positionProvider = WindowPositionProvider.CenteredOnScreen
         )
     )
-    LaunchedEffect(windowState.sizeOrNull, uiScale) {
-        if (windowState.isMinimizedOrNull == false && windowState.placementOrNull == WindowPlacement.Floating) {
-            windowState.sizeOrNull?.let {
-                if (it.width >= minimumSize.width && it.height >= minimumSize.height) {
-                    settingsComponent.setWindowSize(it.unApplyUiScale(uiScale))
-                }
-            }
-        }
-    }
     CustomWindow(
         state = windowState,
         minSize = minimumSize,
@@ -73,6 +66,22 @@ private fun SettingWindow(
             title = myStringResource(Res.string.settings),
         ),
     ) {
+        LaunchedEffect(windowState.sizeOrNull, uiScale) {
+            if (windowState.isMinimizedOrNull != false || windowState.placementOrNull != WindowPlacement.Floating) {
+                return@LaunchedEffect
+            }
+            // a window manager fullscreen still reports the floating placement underneath,
+            // saving it would persist the fullscreen size as the floating one
+            if (isFullscreenNow(window)) return@LaunchedEffect
+            // the placement sync runs a round trip behind the native window, the raw
+            // maximized bits do not
+            if ((window.extendedState and Frame.MAXIMIZED_BOTH) != 0) return@LaunchedEffect
+            windowState.sizeOrNull?.let {
+                if (it.width >= minimumSize.width && it.height >= minimumSize.height) {
+                    settingsComponent.setWindowSize(it.unApplyUiScale(uiScale))
+                }
+            }
+        }
         HandleEffects(settingsComponent) {
             when (it) {
                 is BaseSettingsComponent.Effects.Platform -> {
