@@ -13,6 +13,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.awt.ComposeWindow
 import androidx.compose.ui.composed
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
@@ -54,6 +55,7 @@ import com.jetbrains.JBR
 import com.jetbrains.WindowDecorations
 import com.jetbrains.WindowMove
 import ir.amirab.util.desktop.LocalFrameWindowScope
+import ir.amirab.util.desktop.window.ExperimentalDesktopProfile
 import ir.amirab.util.platform.Platform
 import ir.amirab.util.platform.isLinux
 import com.abdownloadmanager.shared.ui.util.LocalWindow
@@ -88,6 +90,12 @@ private fun FrameWindowScope.CustomWindowFrame(
         Column(
             Modifier
                 .fillMaxSize()
+                .ifThen(ExperimentalDesktopProfile.active) {
+                    drawWithContent {
+                        drawContent()
+                        ExperimentalDesktopProfile.draws.incrementAndGet()
+                    }
+                }
                 .ifThen(!JBR.isWindowDecorationsSupported()) {
                     ifThen(isWindowFloating() && !isWindowFullscreen()) {
                         val borderColor = if (isLight) Color.LightGray else Color.DarkGray
@@ -461,7 +469,7 @@ fun CustomWindow(
 ) {
     val start = windowController.start
     val end = windowController.end
-    val title = windowController.title.orEmpty()
+    val title = ExperimentalDesktopProfile.windowTitle(windowController.title.orEmpty())
     val titlePosition = windowController.titlePosition
     val icon = windowController.icon ?: defaultAppIcon.rememberPainter()
 

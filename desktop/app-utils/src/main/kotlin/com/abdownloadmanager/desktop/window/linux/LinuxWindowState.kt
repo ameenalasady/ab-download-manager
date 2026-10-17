@@ -10,8 +10,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.isPrimaryPressed
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.window.FrameWindowScope
-import ir.amirab.util.platform.Platform
-import ir.amirab.util.platform.isLinux
+import ir.amirab.util.desktop.window.AwtWindowBackend
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -31,7 +30,7 @@ import java.awt.event.WindowStateListener
  * of trusting a cached value. Anything that renders reads [LocalWindowIsFullscreen].
  */
 fun isFullscreenNow(window: Window): Boolean {
-    if (!Platform.isLinux()) return false
+    if (AwtWindowBackend.current != AwtWindowBackend.X11) return false
     val xid = window.xidOrNull() ?: return false
     return X11Ewmh.isFullscreen(xid)
 }
@@ -42,7 +41,7 @@ fun isFullscreenNow(window: Window): Boolean {
  * events, which compose picks up on its own.
  */
 fun exitFullscreen(window: Window) {
-    if (!Platform.isLinux()) return
+    if (AwtWindowBackend.current != AwtWindowBackend.X11) return
     val xid = window.xidOrNull() ?: return
     X11Ewmh.setFullscreen(xid, false)
 }
@@ -57,7 +56,7 @@ fun exitFullscreen(window: Window) {
  * other platforms are untouched.
  */
 fun prepareForWindowDisposal(window: Window) {
-    if (!Platform.isLinux() || !window.isDisplayable || !window.isVisible) return
+    if (AwtWindowBackend.current != AwtWindowBackend.X11 || !window.isDisplayable || !window.isVisible) return
     if (!window.isMaximizedNow() && !isFullscreenNow(window)) return
     val xid = window.xidOrNull() ?: return
     if (X11Ewmh.unmap(xid)) {
@@ -71,7 +70,7 @@ fun prepareForWindowDisposal(window: Window) {
  * checked again when the drag actually runs.
  */
 fun canEwmhMove(): Boolean {
-    if (!Platform.isLinux()) return false
+    if (AwtWindowBackend.current != AwtWindowBackend.X11) return false
     return X11Ewmh.supportsMoveResize()
 }
 
@@ -81,7 +80,7 @@ fun canEwmhMove(): Boolean {
  * Call only while the drag button is held, with the pointer over the window.
  */
 fun nativeMoveNow(window: Window) {
-    if (!Platform.isLinux()) return
+    if (AwtWindowBackend.current != AwtWindowBackend.X11) return
     val xid = window.xidOrNull() ?: return
     val pointer = currentPointerPosition()
     X11Ewmh.sendMoveResize(xid, pointer.x, pointer.y)
@@ -120,6 +119,8 @@ private fun currentPointerPosition(): IntOffset {
  * X11 is exactly the window that carries `_NET_WM_STATE`.
  */
 private fun Window.xidOrNull(): Long? {
+    // Check before even reading the handle: other renderers may expose nonzero Wayland handles.
+    if (AwtWindowBackend.current != AwtWindowBackend.X11) return null
     val window = this as? ComposeWindow ?: return null
     return runCatching { window.windowHandle }.getOrNull()?.takeIf { it != 0L }
 }
@@ -139,7 +140,7 @@ fun Window.isMaximizedNow(): Boolean {
  *
  * Fullscreen always resizes the window, and maximize always fires a window state event, so
  * re-reading on those AWT events keeps this fresh without polling or a second X event loop.
- * Off linux the fullscreen part just stays `false`, the maximized bits are plain AWT and track
+ * Off XToolkit the fullscreen part stays `false`, the maximized bits are plain AWT and track
  * everywhere.
  */
 class LinuxWindowStateTracker(private val window: Window) {
@@ -154,7 +155,7 @@ class LinuxWindowStateTracker(private val window: Window) {
         if (_extendedState.value != extendedState) {
             _extendedState.value = extendedState
         }
-        if (!Platform.isLinux()) return
+        if (AwtWindowBackend.current != AwtWindowBackend.X11) return
         val fullscreen = isFullscreenNow(window)
         if (_isFullscreen.value != fullscreen) {
             _isFullscreen.value = fullscreen
@@ -184,6 +185,6 @@ fun FrameWindowScope.rememberLinuxWindowStateTracker(): LinuxWindowStateTracker 
 
 /**
  * Whether the window manager shows the current window fullscreen. `false` everywhere but
- * linux, and `false` when the state cannot be known.
+ * XToolkit, and `false` when the state cannot be known.
  */
 val LocalWindowIsFullscreen = compositionLocalOf { false }

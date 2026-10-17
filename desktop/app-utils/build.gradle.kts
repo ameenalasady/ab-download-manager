@@ -10,3 +10,8 @@ dependencies {
     implementation(libs.jna.platform)
     testImplementation(kotlin("test-junit"))
 }
+
+tasks.test {
+    // These are headless lifecycle/routing tests, never GUI tests against the user's session.
+    systemProperty("java.awt.headless", "true")
+}

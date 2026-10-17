@@ -68,6 +68,7 @@ import ir.amirab.util.compose.IIconResolver
 import ir.amirab.util.compose.StringSource
 import ir.amirab.util.compose.asStringSource
 import ir.amirab.util.coroutines.launchWithDeferred
+import ir.amirab.util.desktop.window.ExperimentalDesktopProfile
 import ir.amirab.util.desktop.poweraction.PowerActionConfig
 import ir.amirab.util.flow.mapStateFlow
 import ir.amirab.util.osfileutil.FileUtils
@@ -119,7 +120,7 @@ class AppComponent(
     val iconFromUriResolver: IIconResolver by inject()
     val updaterManager: UpdateManager by inject()
     val extraDownloadSettingStorage: ExtraDownloadSettingsStorage<DesktopExtraDownloadItemSettings> by inject()
-    val useSystemTray = appSettings.useSystemTray
+    val useSystemTray = if (ExperimentalDesktopProfile.blocksDesktopFeatures) MutableStateFlow(false) else appSettings.useSystemTray
     fun openHome() {
         scope.launch {
             showHomeSlot.value.child?.instance.let {
@@ -1023,10 +1024,18 @@ class AppComponent(
         scope.launch { exitApp() }
     }
 
+    internal var onExperimentalExit: (() -> Unit)? = null
+
     suspend fun exitApp() {
         downloadSystem.stopAnything()
         flushSettingsToDisk()
-        exitProcess(0)
+        if (ExperimentalDesktopProfile.active) {
+            // JBR WLToolkit's JVM shutdown hook removes peers off the EDT. Let Compose
+            // dispose its windows on the EDT first, then its application scope exits.
+            withContext(Dispatchers.Main) { checkNotNull(onExperimentalExit).invoke() }
+        } else {
+            exitProcess(0)
+        }
     }
 
     /**
@@ -1233,6 +1242,7 @@ class AppComponent(
         powerActionConfig: PowerActionConfig,
         reason: PowerActionComponent.PowerActionReason,
     ) {
+        if (ExperimentalDesktopProfile.blocksDesktopFeatures) return
         scope.launch {
             powerActionNavigation.activate(
                 PowerActionComponent.Config(

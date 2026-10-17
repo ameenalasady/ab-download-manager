@@ -1,0 +1,24 @@
+--- a/ComposeWindowPanel.desktop.kt
++++ b/ComposeWindowPanel.desktop.kt
+@@ -70,9 +70,18 @@
+             // opening separate windows from [ComposePanel] with such layer type.
+             if (it == LayerType.OnComponent) LayerType.OnSameCanvas else it
+         },
+-        // Swing graphics is not supposed to be used here.
+-        // TODO: Add isVsyncEnabled flag to ComposeWindowPanel constructor
+-        renderSettings = RenderSettings.SkiaSurface(),
++        // ABDM EXPERIMENT ONLY (Compose 1.12.1): Swing graphics is not supported upstream
++        // for standalone windows. Require explicit opt-in AND the actual native toolkit.
++        // XToolkit keeps the original SkiaSurface path even with the property enabled.
++        // Known limitations: extra frame copy, no Skiko fullscreen or native handle.
++        renderSettings = if (
++            java.lang.Boolean.getBoolean("abdm.experimental.nativeWayland") &&
++            window.toolkit.javaClass.name == "sun.awt.wl.WLToolkit"
++        ) {
++            RenderSettings.SwingGraphics()
++        } else {
++            RenderSettings.SkiaSurface()
++        },
+         coroutineContext = coroutineContext
+     )
+     private val composeContainer

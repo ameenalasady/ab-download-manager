@@ -4,6 +4,7 @@ import com.abdownloadmanager.desktop.AppArguments
 import com.abdownloadmanager.desktop.storage.DesktopDefinedPaths
 import com.abdownloadmanager.shared.util.AppVersion
 import com.abdownloadmanager.shared.util.SharedConstants
+import ir.amirab.util.desktop.window.ExperimentalDesktopProfile
 import ir.amirab.util.platform.Platform
 import okio.Path.Companion.toOkioPath
 import java.io.File
@@ -16,8 +17,8 @@ object FileNameConstants {
 
 object AppInfo {
     val name = SharedConstants.appName
-    val displayName = SharedConstants.appDisplayName
-    val packageName = SharedConstants.packageName
+    val displayName = ExperimentalDesktopProfile.windowTitle(SharedConstants.appDisplayName)
+    val packageName = if (ExperimentalDesktopProfile.blocksDesktopFeatures) "com.abdownloadmanager.experimental" else SharedConstants.packageName
     val website = SharedConstants.projectWebsite
     val sourceCode = SharedConstants.projectSourceCode
     val translationsUrl = SharedConstants.projectTranslations
@@ -27,7 +28,7 @@ object AppInfo {
     val platform = Platform.getCurrentPlatform()
 
     val currentExecutable: String? = run {
-        System.getProperty("jpackage.app-path")
+        ExperimentalDesktopProfile.desktopIntegration?.mainExecutable?.path ?: System.getProperty("jpackage.app-path")
     }
 
     fun calcExecutable(nameWithoutExtension: String): String? {
@@ -46,13 +47,13 @@ object AppInfo {
     }
 
     val mainExeFile: String? = run {
-        calcExecutable(FileNameConstants.mainApp)
+        ExperimentalDesktopProfile.desktopIntegration?.mainExecutable?.path ?: calcExecutable(FileNameConstants.mainApp)
     }
     val cliExeFile: String? = run {
-        calcExecutable(FileNameConstants.cliApp)
+        ExperimentalDesktopProfile.desktopIntegration?.cliExecutable?.path ?: calcExecutable(FileNameConstants.cliApp)
     }
     val nativeMessagingExeFile: String? = run {
-        calcExecutable(FileNameConstants.nativeMessagingHost)
+        ExperimentalDesktopProfile.desktopIntegration?.hostExecutable?.path ?: calcExecutable(FileNameConstants.nativeMessagingHost)
     }
 
     private fun File.findAppFolder() = generateSequence(this) { it.parentFile }
@@ -77,7 +78,7 @@ object AppInfo {
     }
 
     val dataDir by lazy {
-        PortableUtil.getPortableDataDir(installationFolder) ?: getUserDataDir()
+        ExperimentalDesktopProfile.dataDir ?: PortableUtil.getPortableDataDir(installationFolder) ?: getUserDataDir()
     }
     val definedPaths = DesktopDefinedPaths(dataDir.toOkioPath())
 }

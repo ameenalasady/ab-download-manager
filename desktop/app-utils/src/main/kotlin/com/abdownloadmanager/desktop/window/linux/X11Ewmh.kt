@@ -5,6 +5,7 @@ import com.sun.jna.platform.unix.X11
 import com.sun.jna.ptr.IntByReference
 import com.sun.jna.ptr.NativeLongByReference
 import com.sun.jna.ptr.PointerByReference
+import ir.amirab.util.desktop.window.AwtWindowBackend
 
 /**
  * Minimal EWMH client for X11, used for the things AWT cannot do: see whether the window
@@ -43,6 +44,9 @@ internal object X11Ewmh {
     private var moveResizeSupport: Boolean? = null
 
     private fun display(): X11.Display? = synchronized(lock) {
+        // Defense in depth, including calls with nonzero handles. Never initialize Xlib for
+        // a native Wayland/unknown toolkit, even when DISPLAY points at a working X server.
+        if (AwtWindowBackend.current != AwtWindowBackend.X11) return null
         if (!displayTried) {
             displayTried = true
             // a second connection next to AWT's own, used from the EDT only
@@ -117,6 +121,7 @@ internal object X11Ewmh {
      * does anything. Read once, a session does not change its window manager.
      */
     fun supportsMoveResize(): Boolean {
+        if (AwtWindowBackend.current != AwtWindowBackend.X11) return false
         synchronized(lock) {
             moveResizeSupport?.let { return it }
         }

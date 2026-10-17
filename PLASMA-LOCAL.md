@@ -1,5 +1,19 @@
 # Local KDE Plasma / Wayland build
 
+**Current desktop selection (2026-10-15):** the user approved installing the native Wayland
+experiment and switching `com.abdownloadmanager.desktop` to it for real-life testing. See
+[`NATIVE-WAYLAND.md`](NATIVE-WAYLAND.md) and
+[`scripts/native-wayland/README.md`](scripts/native-wayland/README.md). It uses a separate
+persistent profile and native wrapper. The XWayland release/current, regular wrappers,
+normal data, browser/autostart integration and KWin companion described below are preserved;
+its existing process was initially left running. The user then explicitly requested full
+native use: normal command/browser/HTTP/tray/autostart routing now selects native, and the
+old idle process was gracefully stopped. See `NATIVE-WAYLAND.md` for full integration rollback;
+the fallback binaries/data/KWin companion remain. On 2026-10-16 the user approved native.3's
+external-app environment fix and an idle-only graceful restart; it is installed, preserving
+VLC/default associations and the fallback. Latest rollback details are in `NATIVE-WAYLAND.md`.
+This document otherwise records that fallback.
+
 ## Origin and installation
 
 - Original modified checkout: `~/Code/ab-download-manager`, based on `v1.10.2`. Left unchanged.

@@ -14,7 +14,7 @@ fun execAndWait(
 ): Boolean {
     return runCatching {
         val pb = ProcessBuilder(*command)
-        val p = pb
+        val p = ExternalAppEnvironment.applyTo(pb)
             .withoutJPackageEnvVariable()
             .start()
         val exited = p.waitFor(waitFor, TimeUnit.MILLISECONDS)
@@ -38,7 +38,7 @@ fun execAndForget(
     settleFor: Long = 300,
 ): Boolean {
     return runCatching {
-        val process = ProcessBuilder(*command)
+        val process = ExternalAppEnvironment.applyTo(ProcessBuilder(*command))
             .withoutJPackageEnvVariable()
             // a program we never read from will block once it fills up the pipe
             .redirectOutput(ProcessBuilder.Redirect.DISCARD)

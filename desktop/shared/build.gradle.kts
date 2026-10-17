@@ -10,4 +10,5 @@ dependencies {
 
     implementation(project(":shared:app"))
     implementation(project(":shared:utils"))
+    testImplementation(kotlin("test-junit"))
 }

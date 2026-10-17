@@ -2,9 +2,13 @@
 
 **Experimental only. Do not use this as an installer or modify the normal launcher.**
 
-These are the retained sources from the feasibility test in `WAYLAND-FEASIBILITY.md`.
-They use the exact packaged ABDM libraries and its real `CustomWindow` wrapper, but never
-start ABDM's entrypoint, download engine, data stores, tray, or integration server.
+These started as the retained feasibility tests in `WAYLAND-FEASIBILITY.md` and now also
+exercise backend-safe routing and an explicit, pinned experimental rendering artifact.
+See [`../../NATIVE-WAYLAND.md`](../../NATIVE-WAYLAND.md) for implementation status.
+They use the packaged ABDM libraries and its real `CustomWindow` wrapper, but never start
+ABDM's entrypoint, download engine, data stores, tray, or integration server.
+For the separate **complete app bundle** (with an audited isolated profile and bundled JBR),
+use [`../native-wayland/README.md`](../native-wayland/README.md), not this window-only main.
 
 All runtime downloads, generated overlay source/classes, logs, and test home/config/data
 stay in ignored `build/wayland-probe/`. Nothing under that directory belongs in Git.
@@ -15,7 +19,7 @@ in **this directory** going forward, since they survive a fresh clone.
 
 - Linux with an accessible Wayland/KWin session; an XWayland `DISPLAY` for the control case.
 - Java 25 at `/usr/lib/jvm/java-25-openjdk` (adjust `compile.py` if using another location).
-- Python 3, curl, tar; Kotlin/Compose compiler 2.4.20 cached by the normal Gradle build.
+- Python 3, curl, tar, GNU patch; Kotlin/Compose compiler 2.4.20 cached by the normal Gradle build.
 - Packaged app artifacts with Compose 1.12.1 and Skiko 0.150.1. These probes deliberately
   pin the measured baseline; don't interpret them as a general framework compatibility test.
 
@@ -25,7 +29,7 @@ if they are not already present:
 ```sh
 JAVA_HOME=/usr/lib/jvm/java-25-openjdk ./gradlew \
   -PlocalAppVersion=1.11.0+plasma.2 \
-  :desktop:app-utils:test :desktop:app:createReleaseDistributable
+  :desktop:shared:test :desktop:app-utils:test :desktop:app:createReleaseDistributable
 ```
 
 ## Prepare the pinned scratch runtime and source archive
@@ -59,25 +63,71 @@ failure. These instructions do not change system Java, wrappers, desktop entries
 ## Compile and run
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 python3 scripts/wayland-probe/compile.py --overlay
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/wayland-probe/compile.py --overlay  # historical control only
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/wayland-probe/compile.py --native-ui
 PYTHONDONTWRITEBYTECODE=1 python3 scripts/wayland-probe/compile.py
 PYTHONDONTWRITEBYTECODE=1 python3 scripts/wayland-probe/run.py
-# Or just the native app-window-wrapper proof:
-PYTHONDONTWRITEBYTECODE=1 python3 scripts/wayland-probe/run.py native-custom-overlay
+# Or just the new native wrapper, mixed-environment guard, and dialog tests:
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/wayland-probe/run.py \
+  native-custom-experimental native-custom-experimental-with-display native-dialog-experimental
+# Dependency artifact and runner-evidence regression tests (no GUI/runtime download needed):
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_wayland_probe.py' -v
 ```
 
-The compiler extracts the original licensed Compose source into the ignored build tree
-and changes only `renderSettings = RenderSettings.SkiaSurface()` to
-`renderSettings = RenderSettings.SwingGraphics()`. The upstream source explicitly says
-this rendering mode is not intended for standalone windows. This is an unsupported
-**proof of concept**, not a supported runtime flag. The original app jars are not changed;
-only named overlay cases prepend the compiled class to the smoke process's classpath.
+### Explicit experimental artifact
 
-The runner removes `DISPLAY` in native cases, selects `WLToolkit`, sets scratch HOME/XDG
-locations, records Wayland protocol logs and library maps, and bounds each process's
-lifetime. It does not globally inject mouse/keyboard input or configure the compositor.
+`--native-ui` verifies both the source archive above and the original UI jar (SHA-256
+`eaee42812c81cf1f1a925088bd7e847a343decbc3ccb1682f00f203123a51a17`). It applies the tracked,
+reviewable `compose-1.12.1-native-wayland.patch` with zero fuzz, compiles the patched source,
+and builds `build/wayland-probe/ui-desktop-1.12.1-abdm-native-experimental.jar`. Only the
+`ComposeWindowPanel` class family is replaced in this **new** artifact. Upstream license,
+other classes/resources, and Kotlin module metadata are retained; obsolete generated inner
+classes are removed. Original packaged jars are never rewritten. Source, binary, patch,
+and output digests are recorded in `native-ui-manifest.json` and checked before a run.
 
-Expected baseline:
+Named `experimental` cases **substitute** this dependency in an explicit test classpath;
+they do not prepend override classes. The redundant launcher `pathing-classpath.jar` is
+excluded: its manifest otherwise resolves the original UI jar first. Code-source checks
+in the runner reject that mistake. No Gradle dependency or production launcher selects
+the experimental artifact.
+
+The patch selects `RenderSettings.SwingGraphics()` only when BOTH conditions hold:
+
+- `-Dabdm.experimental.nativeWayland=true` (set only by the named opt-in cases), and
+- the actual window toolkit class is `sun.awt.wl.WLToolkit`.
+
+Otherwise it retains the original `RenderSettings.SkiaSurface()`. The negative native
+case deliberately fails without opt-in; the flagged XToolkit control must still expose a
+nonzero native handle. This flag belongs to our experimental patch, **not upstream Compose**.
+Standalone Swing rendering remains unsupported upstream, with an extra frame copy and
+no Skiko fullscreen/native handle. See the unsupported-feature list in `NATIVE-WAYLAND.md`.
+
+`--overlay` still reproduces the original **unconditional** scratch-only substitution for
+historical comparison. Only cases explicitly named `overlay` prepend its classes. It is
+not the new implementation artifact and must never be used as a production launch hook.
+
+### Isolation and evidence
+
+The runner selects `WLToolkit` and unsets `DISPLAY` in native cases **except** the explicitly
+named `with-display` guard test. That case requires both session variables, still verifies
+the actual native toolkit/library/protocol traffic, and verifies that no XOpenDisplay was
+attempted even after all low-level X11 helpers are called with a nonzero fake handle.
+All native cases check automatic scale compensation is 1.0. Explicit scale overrides have
+separate headless tests.
+
+Each case has separate `build/wayland-probe/cases/<name>/{home,config,data,cache}` directories
+and `user.home`. Inherited JVM option variables are removed. Only this standalone main runs;
+no fixed ABDM port, single-instance negotiation, autostart, tray, manifest installation or
+integration broadcast is started. Titles and Wayland app identity identify the probe rather
+than the installed app. Logs, sampled library maps, and merged last-case results stay under
+`build/wayland-probe/`. Process lifetime is bounded to 25 seconds. No global input injection,
+compositor configuration, or installer is used.
+
+Exit status alone is insufficient: the runner checks the requested runtime/toolkit, UI
+code source, completion/disposal markers, known error text for negative controls, and
+native AWT library plus buffer attach/commit evidence for successful native cases.
+
+Expected matrix (14 cases: 11 successes, 3 deliberate failures):
 
 | Case | Expected exit |
 | --- | --- |
@@ -87,11 +137,22 @@ Expected baseline:
 | `x11-window-control` | 0 |
 | `native-window-overlay` | 0 |
 | `native-custom-overlay` | 0 |
+| `native-window-experimental` | 0 |
+| `native-custom-experimental` | 0 |
+| `native-custom-experimental-with-display` | 0, no XOpenDisplay attempt |
+| `native-dialog-experimental` | 0, modeless dialog veto/resize/dispose |
+| `native-window-experimental-without-opt-in` | 2: DrawingSurface failure proves opt-in gating |
+| `x11-window-experimental-control` | 0, original rendering despite native opt-in |
+| `x11-custom-control` | 0, JBR XToolkit with stock Compose |
+| `openjdk25-x11-custom-control` | 0, system OpenJDK25 fallback, EWMH move available on KWin |
 
 The runner exits nonzero on unexpected outcomes, including if a formerly failing case
-starts succeeding; inspect the logs before updating expectations. A successful result
-means basic drawing/lifecycle checks, **not** full native input, animation, scaling,
-accessibility, or integration validation. Draw callback counts are not performance data.
+starts succeeding; inspect the logs before updating expectations. CustomWindow cases now
+check resize, vetoed WM-close, maximize/restore, accepted close **from maximized**, and AWT
+and content disposal. Close events and placement requests are still programmatic. Dialog
+coverage is modeless; popup state changes are timed, not real input.
 
-Read `HANDOFF-native-wayland.md` before expanding this experiment. In particular, never
-reinterpret a Wayland native handle as an XID, and keep the working XWayland path intact.
+A successful result means basic drawing/lifecycle checks, **not** real native input,
+animations, fullscreen, mixed-DPI correctness, accessibility, integration, or performance.
+Draw callback counts are not FPS. Read `HANDOFF-native-wayland.md` before expanding the
+experiment. Never reinterpret a Wayland handle as an XID; keep the working fallback intact.

@@ -1,11 +1,13 @@
 package com.abdownloadmanager.desktop.utils
 
+import ir.amirab.util.desktop.window.ExperimentalDesktopProfile
 import ir.amirab.util.platform.Platform
 import ir.amirab.util.platform.isLinux
 import java.io.File
 
 object DesktopEntryCreator {
     fun createLinuxDesktopEntry() {
+        if (ExperimentalDesktopProfile.active) return
         if (!Platform.isLinux()) {
             return
         }

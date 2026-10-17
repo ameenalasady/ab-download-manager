@@ -5,6 +5,7 @@ import androidx.compose.ui.window.application
 import com.abdownloadmanager.desktop.AppArguments
 import com.abdownloadmanager.desktop.AppComponent
 import com.abdownloadmanager.desktop.AppEffects
+import com.abdownloadmanager.desktop.experimental.ExperimentalAppLifecycle
 import com.abdownloadmanager.desktop.actions.gotoSettingsAction
 import com.abdownloadmanager.desktop.actions.newDownloadFromClipboardAction
 import com.abdownloadmanager.desktop.actions.requestExitAction
@@ -52,6 +53,7 @@ import com.abdownloadmanager.shared.util.ui.ProvideDebugInfo
 import com.abdownloadmanager.shared.util.ui.icon.MyIcons
 import ir.amirab.util.compose.action.buildMenu
 import ir.amirab.util.compose.localizationmanager.LanguageManager
+import ir.amirab.util.desktop.window.ExperimentalDesktopProfile
 import ir.amirab.util.desktop.PlatformDockToggler
 import ir.amirab.util.desktop.mac.event.MacEventHandler
 import ir.amirab.util.desktop.screen.SystemFontScale
@@ -100,6 +102,12 @@ object Ui : KoinComponent {
         globalAppExceptionHandler: GlobalAppExceptionHandler,
     ) {
         application {
+            if (ExperimentalDesktopProfile.active) {
+                DisposableEffect(Unit) {
+                    appComponent.onExperimentalExit = { exitApplication() }
+                    onDispose { appComponent.onExperimentalExit = null }
+                }
+            }
             ProvideLocalProviders(
                 languageManager = languageManager,
                 appComponent = appComponent,
@@ -131,6 +139,7 @@ object Ui : KoinComponent {
                 PowerActionAlert(appComponent)
                 PerHostSettingsWindow(appComponent)
                 DownloadErrorDialog(appComponent)
+                ExperimentalAppLifecycle(appComponent)
             }
         }
     }

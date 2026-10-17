@@ -11,7 +11,9 @@ actual object URLOpener {
         // this is called straight from click handlers, and both the awt call and the browser it
         // starts take long enough on linux to freeze the ui while it happens
         thread(isDaemon = true, name = "open-url") {
-            if (openWithDesktop(url)) return@thread
+            // Native libgio/AWT launches cannot receive a per-child environment. Use our
+            // explicit handoff when ABDM's HOME is isolated from the user's desktop.
+            if (!(Platform.isLinux() && ExternalAppEnvironment.configured) && openWithDesktop(url)) return@thread
             openWithXdgOpen(url)
         }
     }

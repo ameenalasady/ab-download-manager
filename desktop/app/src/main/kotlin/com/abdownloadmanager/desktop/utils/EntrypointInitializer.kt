@@ -5,6 +5,7 @@ import com.abdownloadmanager.desktop.NativeExtractor
 import com.abdownloadmanager.shared.util.schemakt.initializeForABDM
 import io.github.amir1376.schemakt.Schema
 import io.github.vinceglb.filekit.FileKit
+import ir.amirab.util.desktop.window.ExperimentalDesktopProfile
 import ir.amirab.util.guardedEntry
 import ir.amirab.util.logger.AppLogger
 
@@ -21,6 +22,14 @@ object EntrypointInitializer {
         entryType: EntryType
     ) {
         booted.action {
+            if (entryType == EntryType.GUI) {
+                ExperimentalDesktopProfile.validateBackend()
+            } else {
+                // CLI/native-host boot must not initialize AWT merely to inspect/send IPC.
+                // Still validate an explicitly selected profile before touching any stores.
+                ExperimentalDesktopProfile.root
+            }
+            ExperimentalDesktopProfile.configureExternalApps()
             AppArguments.update {
                 it.copy(
                     debug = debug,

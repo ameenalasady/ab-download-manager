@@ -11,6 +11,7 @@ import com.abdownloadmanager.integration.Integration
 import com.abdownloadmanager.shared.util.DownloadSystem
 import com.abdownloadmanager.shared.util.appinfo.PreviousVersion
 import com.abdownloadmanager.shared.util.keepawake.KeepAwakeManager
+import ir.amirab.util.desktop.window.ExperimentalDesktopProfile
 import kotlinx.coroutines.runBlocking
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
@@ -42,10 +43,10 @@ class MainApplication : AutoCloseable,
                 // boot configs from the storage so download manager can use them on boot!
                 customRenderApi.boot()
                 appRepository.boot()
-                integration.boot()
+                if (!ExperimentalDesktopProfile.blocksDesktopFeatures) integration.boot()
                 downloadSystem.boot()
                 previousVersion.boot()
-                keepAwakeManager.boot()
+                if (!ExperimentalDesktopProfile.blocksDesktopFeatures) keepAwakeManager.boot()
                 //waiting for compose kmp to add multi launcher to nativeDistributions,the PR is already exists but not merger
                 //or maybe I should use a custom solution
                 browserNativeMessaging.boot()

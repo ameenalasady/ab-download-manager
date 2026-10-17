@@ -10,7 +10,16 @@ below is historical; its no-commit/index state descriptions precede the user-aut
 fork publication. Reproducible probe sources now live in
 [`scripts/wayland-probe/`](scripts/wayland-probe/README.md), so a fresh clone need not rely
 on this workstation's ignored scratch files. The known-good fallback is preserved at
-`10a8d58d` on `local/plasma-wayland-1.11.0`.
+`10a8d58d` on `local/plasma-wayland-1.11.0`. Subsequent backend routing and explicit
+experimental rendering-artifact implementation is documented in
+[`NATIVE-WAYLAND.md`](NATIVE-WAYLAND.md). Milestone 2 now builds/tests the **full app**
+with isolated stores/IPC and a complete pinned runtime; see
+[`scripts/native-wayland/README.md`](scripts/native-wayland/README.md). The subsequent
+user-approved native desktop activation is documented there and in `NATIVE-WAYLAND.md`;
+the original XWayland binaries/data and KWin companion are preserved. The later explicit
+full-native request moved browser/CLI/HTTP/tray/autostart routing to native, backing up the
+old integration selection; see the current implementation/handoff, not this historical probe. The results
+below describe only the original probe.
 
 ## Conclusion
 

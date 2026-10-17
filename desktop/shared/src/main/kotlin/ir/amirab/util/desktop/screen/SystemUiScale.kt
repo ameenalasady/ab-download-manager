@@ -1,5 +1,6 @@
 package ir.amirab.util.desktop.screen
 
+import ir.amirab.util.desktop.window.AwtWindowBackend
 import ir.amirab.util.logger.appLogger
 import ir.amirab.util.platform.Platform
 import ir.amirab.util.platform.isLinux
@@ -7,8 +8,9 @@ import java.awt.GraphicsEnvironment
 import kotlin.math.abs
 
 /**
- * Java has no Wayland toolkit, so we always go through XWayland,
- * and `sun.awt.X11GraphicsDevice` only ever reports **integer** scale factors there.
+ * On the XWayland fallback, `sun.awt.X11GraphicsDevice` only reports **integer** scale
+ * factors. Native Wayland AWT manages its own per-monitor transforms; automatic global
+ * compensation is disabled there so an XWayland correction cannot be stacked on top.
  * On a KDE Plasma (or GNOME) session that uses fractional scaling - 125%, 150%, 175% -
  * AWT tells us the scale is `1` while every other window on the desktop is scaled up,
  * which makes our windows and everything inside them far too small.
@@ -69,11 +71,16 @@ object SystemUiScale {
         }.getOrNull()?.takeIf { it > 0f && it.isFinite() }
     }
 
-    private fun detectDesktopScale(): Float? {
+    private fun detectDesktopScale(): Float? = detectDesktopScaleForBackend(AwtWindowBackend.current)
+
+    internal fun detectDesktopScaleForBackend(backend: AwtWindowBackend): Float? {
         val override = readOverride()
         if (override != null) {
             return override.takeIf { it > 0f }?.sanitizeScale()
         }
+        // Explicit user overrides above retain their meaning; automatic compensation must
+        // not read XSETTINGS/Xresources or apply a global KDE scale on native Wayland.
+        if (backend == AwtWindowBackend.Wayland) return null
         // windows and macOS report the desktop scale to AWT correctly
         if (!Platform.isLinux()) return null
         // hidpi was turned off on purpose, we have nothing to correct
