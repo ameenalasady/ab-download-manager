@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import com.abdownloadmanager.desktop.pages.singleDownloadPage.SingleDownloadPageSections.*
+import com.abdownloadmanager.desktop.ui.template.dialogSurface
 import com.abdownloadmanager.resources.Res
 import com.abdownloadmanager.shared.singledownloadpage.SingleDownloadPagePropertyItem
 import com.abdownloadmanager.shared.ui.configurable.ConfigurableUiProps
@@ -754,18 +755,9 @@ private fun ToggleButton(
             ) {
                 Column(
                     Modifier
-                        .clip(shape)
-                        .border(2.dp, myColors.onBackground / 10, shape)
-                        .background(
-                            Brush.linearGradient(
-                                listOf(
-                                    myColors.surface,
-                                    myColors.background,
-                                )
-                            )
-                        )
+                        .dialogSurface(shape)
                         .padding(16.dp)
-                        .widthIn(max = 140.dp)
+                        .widthIn(min = 240.dp, max = 320.dp)
                 ) {
                     Text(buildAnnotatedString {
                         withStyle(SpanStyle(color = myColors.warning)) {

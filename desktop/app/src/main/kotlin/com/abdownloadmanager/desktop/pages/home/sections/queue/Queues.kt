@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -92,10 +93,8 @@ internal fun QueuesSection(
     val (isExpanded, setExpanded) = remember { mutableStateOf(true) }
     Column(
         modifier
-            .padding(start = 16.dp)
-            .clip(clipShape)
-            .border(1.dp, myColors.surface, clipShape)
-            .padding(1.dp),
+            .padding(horizontal = 12.dp)
+            .clip(clipShape),
     ) {
         ExpandableItem(
             isExpanded = isExpanded,
@@ -116,9 +115,8 @@ internal fun QueuesSection(
                         )
                 ) {
                     Row(
-                        Modifier.padding(vertical = 4.dp)
-                            .padding(start = 16.dp)
-                            .padding(end = 2.dp),
+                        Modifier.heightIn(min = 36.dp)
+                            .padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         WithContentAlpha(0.75f) {
@@ -127,12 +125,12 @@ internal fun QueuesSection(
                                 null,
                                 Modifier.size(mySpacings.iconSize)
                             )
-                            Spacer(Modifier.width(4.dp))
+                            Spacer(Modifier.width(8.dp))
                             Text(
                                 myStringResource(Res.string.queues),
                                 Modifier.weight(1f),
-                                fontWeight = FontWeight.Normal,
-                                fontSize = myTextSizes.lg,
+                                fontWeight = FontWeight.Medium,
+                                fontSize = myTextSizes.base,
                                 overflow = TextOverflow.Ellipsis,
                                 maxLines = 1,
                             )
@@ -210,9 +208,10 @@ private fun QueueFilterItem(
                 onDragDone = { isDraggingOnMe = false },
                 onItemsDropped = onItemsDroppedInQueue,
             )
+            .clip(myShapes.defaultRounded)
             .background(
                 if (isSelected) {
-                    myColors.onBackground / 0.05f
+                    myColors.primary / 0.14f
                 } else Color.Transparent
             )
             .ifThen(isDraggingOnMe) {
@@ -252,8 +251,8 @@ private fun QueueFilterItem(
         }
         Row(
             Modifier
-                .padding(start = 24.dp)
-                .padding(horizontal = 4.dp, vertical = 6.dp),
+                .heightIn(min = 36.dp)
+                .padding(start = 32.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             WithContentAlpha(if (isSelected) 1f else 0.75f) {
@@ -262,12 +261,12 @@ private fun QueueFilterItem(
                     null,
                     Modifier.size(mySpacings.iconSize)
                 )
-                Spacer(Modifier.width(4.dp))
+                Spacer(Modifier.width(8.dp))
                 Text(
                     queueModel.name,
                     Modifier.weight(1f),
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                    fontSize = myTextSizes.lg,
+                    fontSize = myTextSizes.base,
                     overflow = TextOverflow.Ellipsis,
                     maxLines = 1,
                 )

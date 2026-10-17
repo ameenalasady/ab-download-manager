@@ -6,6 +6,9 @@ import com.abdownloadmanager.shared.util.div
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.border
+import androidx.compose.runtime.getValue
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
@@ -15,7 +18,6 @@ import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
@@ -28,19 +30,15 @@ fun Switch(
     modifier: Modifier = Modifier.width(42.dp).height(24.dp),
     interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
 ) {
+    val isFocused by interactionSource.collectIsFocusedAsState()
     Box(
         modifier
             .clip(CircleShape)
             .ifThen(!enabled) {
                 alpha(0.5f)
             }
-            .background(
-                if (checked) {
-                    myColors.primaryGradient
-                }else {
-                    Brush.linearGradient(listOf(Color.Gray,Color.Gray))
-                }
-            )
+            .background(if (checked) myColors.primary else myColors.onBackground / 0.2f)
+            .border(1.dp, if (isFocused) myColors.focusedBorderColor else Color.Transparent, CircleShape)
             .toggleable(
                 value = checked,
                 onValueChange = onCheckedChange,
@@ -65,7 +63,7 @@ fun Switch(
                     )
                 )
                 .clip(CircleShape)
-                .background(myColors.onPrimaryGradient / animateFloatAsState(if (checked) 1f else 0.5f).value)
+                .background(if (checked) myColors.onPrimary else myColors.onBackground / 0.7f)
         )
     }
 }

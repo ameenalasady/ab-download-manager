@@ -26,6 +26,8 @@ import com.abdownloadmanager.desktop.window.custom.BaseOptionDialog
 import com.abdownloadmanager.shared.util.ui.icon.MyIcons
 import com.abdownloadmanager.shared.util.ui.theme.LocalUiScale
 import com.abdownloadmanager.shared.util.ui.myColors
+import com.abdownloadmanager.desktop.ui.template.dialogSurface
+import androidx.compose.foundation.selection.selectable
 import ir.amirab.util.ifThen
 import com.abdownloadmanager.shared.ui.widget.Text
 import com.abdownloadmanager.shared.util.div
@@ -100,16 +102,7 @@ fun <T> DropDownContent(
 
             Box(
                 Modifier
-                    .clip(shape)
-                    .border(2.dp, myColors.onBackground / 10, shape)
-                    .background(
-                        Brush.linearGradient(
-                            listOf(
-                                myColors.surface,
-                                myColors.background,
-                            )
-                        )
-                    )
+                    .dialogSurface(shape)
             ) {
                 val listState = rememberLazyListState()
                 LazyColumn(
@@ -126,10 +119,12 @@ fun <T> DropDownContent(
                             Row(
                                 Modifier
                                     .clip(shape)
-                                    .clickable {
+                                    .background(if (isSelected) myColors.primary / 0.12f else Color.Transparent)
+                                    .heightIn(min = 36.dp)
+                                    .selectable(selected = isSelected, onClick = {
                                         onItemSelected(it)
                                         closeDialog()
-                                    }
+                                    })
                                     .padding(
                                         vertical = 8.dp,
                                         horizontal = 8.dp
@@ -196,6 +191,7 @@ private fun <T> DropDownHeader(
     val shape = myShapes.defaultRounded
     Row(
         Modifier
+            .heightIn(min = 36.dp)
             .height(IntrinsicSize.Max)
             .clip(shape)
             .ifThen(!enabled) {

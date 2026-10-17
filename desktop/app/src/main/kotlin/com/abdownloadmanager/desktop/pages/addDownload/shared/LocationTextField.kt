@@ -4,6 +4,7 @@ import com.abdownloadmanager.shared.ui.widget.MyTextFieldWithIcons
 import com.abdownloadmanager.shared.ui.widget.MyTextFieldIcon
 import com.abdownloadmanager.shared.util.ui.icon.MyIcons
 import com.abdownloadmanager.shared.util.ui.myColors
+import com.abdownloadmanager.desktop.ui.template.dialogSurface
 import com.abdownloadmanager.shared.util.ui.theme.myTextSizes
 import com.abdownloadmanager.shared.ui.widget.Text
 import androidx.compose.foundation.background
@@ -129,16 +130,7 @@ private fun LocationOptionsDialog(
             Modifier
                 .width(IntrinsicSize.Max)
                 .widthIn(min = 320.dp, max = 460.dp)
-                .clip(shape)
-                .border(2.dp, myColors.onBackground / 10, shape)
-                .background(
-                    Brush.linearGradient(
-                        listOf(
-                            myColors.surface,
-                            myColors.background,
-                        )
-                    )
-                )
+                .dialogSurface(shape)
         ) {
             WithContentColor(myColors.onBackground) {
                 Column {
@@ -207,13 +199,14 @@ private fun LocationOptionsDialog(
                                             .clickable {
                                                 onSuggestionSelected(l)
                                             }
-                                            .padding(vertical = 6.dp, horizontal = 4.dp),
+                                            .heightIn(min = 36.dp)
+                                            .padding(vertical = 8.dp, horizontal = 8.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
                                         Text(
                                             text = l,
                                             modifier = Modifier.weight(1f),
-                                            fontSize = myTextSizes.sm,
+                                            fontSize = myTextSizes.base,
                                             maxLines = 2,
                                             overflow = TextOverflow.Ellipsis,
                                         )

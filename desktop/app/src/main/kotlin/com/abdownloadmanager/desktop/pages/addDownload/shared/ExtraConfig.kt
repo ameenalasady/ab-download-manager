@@ -3,6 +3,7 @@ package com.abdownloadmanager.desktop.pages.addDownload.shared
 import com.abdownloadmanager.shared.ui.configurable.RenderConfigurable
 import com.abdownloadmanager.desktop.window.custom.BaseOptionDialog
 import com.abdownloadmanager.shared.util.ui.myColors
+import com.abdownloadmanager.desktop.ui.template.dialogSurface
 import com.abdownloadmanager.shared.ui.widget.Text
 import com.abdownloadmanager.shared.util.ui.WithContentColor
 import com.abdownloadmanager.shared.util.div
@@ -59,16 +60,7 @@ fun ExtraConfig(
         Column(
             Modifier
                 .fillMaxSize()
-                .clip(shape)
-                .border(2.dp, myColors.onBackground / 10, shape)
-                .background(
-                    Brush.linearGradient(
-                        listOf(
-                            myColors.surface,
-                            myColors.background,
-                        )
-                    )
-                )
+                .dialogSurface(shape)
         ) {
             WithContentColor(myColors.onBackground) {
                 Column {

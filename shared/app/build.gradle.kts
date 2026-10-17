@@ -59,6 +59,9 @@ kotlin {
             api(libs.markdownRenderer.core)
             api(libs.compose.reorderable)
         }
+        commonTest.dependencies {
+            implementation(kotlin("test"))
+        }
         androidMain {
             dependencies {
                 api(libs.androidx.core.ktx)

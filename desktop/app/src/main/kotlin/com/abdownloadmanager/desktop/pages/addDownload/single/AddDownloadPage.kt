@@ -38,6 +38,7 @@ import com.abdownloadmanager.shared.util.ui.WithContentAlpha
 import com.abdownloadmanager.shared.util.ui.WithContentColor
 import com.abdownloadmanager.shared.util.ui.icon.MyIcons
 import com.abdownloadmanager.shared.util.ui.myColors
+import com.abdownloadmanager.desktop.ui.template.dialogSurface
 import com.abdownloadmanager.shared.util.ui.theme.myShapes
 import com.abdownloadmanager.shared.util.ui.theme.mySpacings
 import com.abdownloadmanager.shared.util.ui.theme.myTextSizes
@@ -227,17 +228,7 @@ private fun ShowSolutionsOnDuplicateDownload(component: BaseAddSingleDownloadCom
 
         val shape = myShapes.defaultRounded
         Column(
-            Modifier
-                .clip(shape)
-                .border(2.dp, myColors.onBackground / 10, shape)
-                .background(
-                    Brush.linearGradient(
-                        listOf(
-                            myColors.surface,
-                            myColors.background,
-                        )
-                    )
-                )
+            Modifier.dialogSurface(shape)
         ) {
             WithContentColor(myColors.onBackground) {
                 Column(

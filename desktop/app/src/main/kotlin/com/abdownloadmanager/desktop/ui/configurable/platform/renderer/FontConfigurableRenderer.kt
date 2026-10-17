@@ -55,7 +55,7 @@ object FontConfigurableRenderer : ConfigurableRenderer<FontConfigurable> {
                             Text(
                                 cfg.describe(it).rememberString(),
                                 fontFamily = it.fontFamily,
-                                fontSize = myTextSizes.lg,
+                                fontSize = myTextSizes.base,
                             )
                         }
                     })

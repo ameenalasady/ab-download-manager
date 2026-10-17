@@ -44,7 +44,7 @@ private fun SettingWindow(
     onRequestCloseWindow: () -> Unit,
 ) {
     val uiScale = LocalUiScale.current
-    val minimumSize = DpSize(500.dp, 350.dp).applyUiScale(uiScale)
+    val minimumSize = DpSize(720.dp, 420.dp).applyUiScale(uiScale)
     val initialSize = remember(settingsComponent, uiScale) {
         ScreenGeometry.fitSize(settingsComponent.windowSize.value.applyUiScale(uiScale), minimumSize)
     }

@@ -63,7 +63,7 @@ fun RadioButton(
                 .border(
                     1.dp,
                     if (value) {
-                        myColors.primaryGradient
+                        SolidColor(myColors.primary)
                     } else {
                         SolidColor(LocalContentColor.current / uncheckedAlpha)
                     },
@@ -82,7 +82,7 @@ fun RadioButton(
                 .alpha(animateFloatAsState(if (value) 1f else 0f).value)
                 .padding(4.dp)
                 .clip(shape)
-                .background(myColors.primaryGradient)
+                .background(myColors.primary)
             Spacer(m)
         }
     }

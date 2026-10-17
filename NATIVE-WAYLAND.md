@@ -5,6 +5,22 @@ Read `HANDOFF-native-wayland.md` for preservation requirements and the stable fa
 This document describes implementation after the bootstrap handoff. Native is now installed
 for explicitly approved real-life testing; the original XWayland installation is preserved.
 
+## 2026-10-17 UI consistency pass reinstall
+
+The user reviewed and approved the desktop UI consistency pass (see `UI-PASS.md`) and asked
+to install it in place of the custom native build while leaving the pacman/AUR package
+untouched. `scripts/native-wayland/install.py --activate-desktop` copied the built bundle to
+`~/.local/opt/ab-download-manager-native-wayland/releases/ABDownloadManagerNativeWayland-20261017-041008`
+and atomically switched the native `current` link, wrapper, icon, and user desktop entry.
+This release keeps the full native integration from below (browser host manifests, CLI and
+generic aliases, autostart) because they resolve through `current`; none of those files,
+the separate data profile, or `/usr/bin/ABDownloadManager` were rewritten. The old idle
+native.3 instance was closed gracefully first (no active transfers). Desktop-only rollback:
+`~/.local/state/abdm-backups/native-desktop-20261017-042057-7ef7a3/restore-desktop.sh`
+(restores the prior desktop entry only; native history/downloads are retained). Installed
+and running release reports WLToolkit/Wayland, tray, HTTP `15151` and the patched UI
+`37a02e916fdce9a7698776ec17d708e5052129618dcf26efde6f41ad5d165d1d`.
+
 ## Current installed: native.3 external media/file opener correction (2026-10-16)
 
 Real-use feedback found that opening a video selected `/usr/bin/vlc`, not the user's

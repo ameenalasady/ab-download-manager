@@ -92,13 +92,13 @@ fun CheckBox(
             val m = Modifier
                 .fillMaxSize()
                 .alpha(animateFloatAsState(if (value) 1f else 0f).value)
-                .background(myColors.primaryGradient)
+                .background(myColors.primary)
             if (it) {
                 MyIcon(
                     MyIcons.check,
                     contentDescription = null,
                     modifier = m,
-                    tint = myColors.onPrimaryGradient,
+                    tint = myColors.onPrimary,
                 )
             } else {
                 Spacer(m)

@@ -5,7 +5,6 @@ import com.abdownloadmanager.shared.util.ui.theme.myTextSizes
 import ir.amirab.util.compose.action.MenuItem
 import com.abdownloadmanager.shared.util.div
 import androidx.compose.foundation.background
-import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.layout.*
 import com.abdownloadmanager.shared.ui.widget.Text
 import androidx.compose.runtime.Composable
@@ -13,6 +12,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
 @Composable
@@ -32,26 +32,23 @@ internal fun RenderOptions(
     SubMenu(menu,onDismissRequest) {
         Column(
             Modifier
-                .width(200.dp)
+                .widthIn(min = 200.dp, max = 400.dp)
         ) {
             val itemPadding = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
             val title by menu.title.collectAsState()
             Text(
                 title.rememberString(),
-                Modifier
-                    .then(itemPadding)
-                    .basicMarquee(
-                        iterations = Int.MAX_VALUE,
-                        initialDelayMillis = 0
-                    ),
-                fontSize = myTextSizes.base,
+                Modifier.then(itemPadding),
+                color = myColors.onMenuColor / 0.65f,
+                fontWeight = FontWeight.Medium,
+                fontSize = myTextSizes.sm,
                 maxLines = 1,
-                overflow = TextOverflow.Clip,
+                overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier
                 .fillMaxWidth()
                 .height(1.dp)
-                .background(myColors.onSurface/5))
+                .background(myColors.menuBorderColor))
         }
     }
 }

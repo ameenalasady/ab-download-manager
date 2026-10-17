@@ -1,14 +1,16 @@
 package com.abdownloadmanager.shared.ui.widget.menu.custom
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,7 +18,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -30,7 +31,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.*
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.TextStyle
@@ -48,6 +53,7 @@ import com.abdownloadmanager.shared.util.ui.widget.MyIcon
 import ir.amirab.util.compose.action.MenuItem
 import ir.amirab.util.compose.modifiers.autoMirror
 import ir.amirab.util.ifThen
+import kotlinx.coroutines.delay
 
 enum class MenuDisabledItemBehavior {
     Filter,
@@ -58,7 +64,7 @@ val LocalMenuDisabledItemBehavior = compositionLocalOf {
     MenuDisabledItemBehavior.LowerOpacity
 }
 val LocalMenuBoxClip = compositionLocalOf<Shape> {
-    RoundedCornerShape(6.dp)
+    RoundedCornerShape(8.dp)
 }
 
 /**
@@ -68,18 +74,21 @@ val LocalMenuBoxClip = compositionLocalOf<Shape> {
 fun SubMenu(
     subMenu: MenuItem.SubMenu,
     onRequestClose: () -> Unit,
+    onNavigateBack: (() -> Unit)? = null,
     header: (@Composable () -> Unit)? = null,
 ) {
     SubMenu(
         subMenu = subMenu.items.collectAsState().value,
         header = header,
         onRequestClose = onRequestClose,
+        onNavigateBack = onNavigateBack,
     )
 }
 @Composable
 fun SubMenu(
     subMenu: List<MenuItem>,
     onRequestClose: () -> Unit,
+    onNavigateBack: (() -> Unit)? = null,
     header: (@Composable () -> Unit)? = null,
 ) {
     var openedItem: MenuItem.SubMenu? by remember {
@@ -89,27 +98,63 @@ fun SubMenu(
         mutableStateOf(null as MenuItem?)
     }
 
+    var keyboardItem: MenuItem? by remember { mutableStateOf(null) }
+    val focusRequester = remember { FocusRequester() }
+    val enabledItems = subMenu.filter { item ->
+        item != MenuItem.Separator && ((item as? MenuItem.HasEnable)?.isEnabled?.collectAsState()?.value != false)
+    }
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
     WithContentColor(myColors.onMenuColor) {
-        val shape = LocalMenuBoxClip.current
-        Column(
+        MenuColumn(
             Modifier
-                .shadow(24.dp)
-//                .verticalScroll(rememberScrollState())
-                .clip(shape)
-                .width(IntrinsicSize.Max)
-                .widthIn(120.dp)
-                .border(1.dp, myColors.surface, shape)
-                .background(myColors.menuGradientBackground)
-                .padding(horizontal = 0.dp, vertical = 0.dp)
+                .onPreviewKeyEvent { event ->
+                    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    when (event.key) {
+                        Key.DirectionDown, Key.DirectionUp, Key.MoveHome, Key.MoveEnd -> {
+                            if (enabledItems.isNotEmpty()) {
+                                val current = enabledItems.indexOf(keyboardItem ?: lastHoveredItem)
+                                val index = when (event.key) {
+                                    Key.MoveHome -> 0
+                                    Key.MoveEnd -> enabledItems.lastIndex
+                                    Key.DirectionUp -> if (current <= 0) enabledItems.lastIndex else current - 1
+                                    else -> (current + 1) % enabledItems.size
+                                }
+                                keyboardItem = enabledItems[index]
+                                openedItem = null
+                            }
+                            true
+                        }
+                        Key.Enter, Key.NumPadEnter, Key.DirectionRight -> {
+                            val item = keyboardItem ?: lastHoveredItem ?: enabledItems.firstOrNull()
+                            when (item) {
+                                is MenuItem.SubMenu -> if (item in enabledItems) openedItem = item
+                                is MenuItem.SingleItem -> if (event.key != Key.DirectionRight && item in enabledItems) {
+                                    if (item.shouldDismissOnClick) onRequestClose()
+                                    item.onClick()
+                                }
+                                else -> Unit
+                            }
+                            true
+                        }
+                        Key.DirectionLeft -> { (onNavigateBack ?: onRequestClose)(); true }
+                        Key.Escape -> { onRequestClose(); true }
+                        else -> false
+                    }
+                }
+                .focusRequester(focusRequester)
+                .focusable(),
         ) {
             header?.invoke()
             for (menuItem in subMenu) {
                 val interactionSource = remember { MutableInteractionSource() }
+                val bringIntoView = remember { BringIntoViewRequester() }
                 val isHovered by interactionSource.collectIsHoveredAsState()
+                LaunchedEffect(keyboardItem) {
+                    if (keyboardItem == menuItem) bringIntoView.bringIntoView()
+                }
                 LaunchedEffect(isHovered) {
                     if (isHovered) {
-//                        println("last overed item is ${menuItem.hashCode()}")
-//                        println("last overed item is ${(menuItem as? MenuItem.SubMenu)?.title?.value}")
+                        keyboardItem = null
                         lastHoveredItem = menuItem
                     }
                 }
@@ -117,12 +162,12 @@ fun SubMenu(
                     menuItem = menuItem,
                     openedItem = openedItem,
                     onRequestCLose = onRequestClose,
-                    isSelected = openedItem == menuItem,
+                    isSelected = openedItem == menuItem || keyboardItem == menuItem,
                     onRequestOpenItem = {
                         openedItem = it
                     },
                     isHovered = lastHoveredItem == menuItem,
-                    modifier = Modifier.hoverable(interactionSource)
+                    modifier = Modifier.hoverable(interactionSource).bringIntoViewRequester(bringIntoView)
                 )
             }
         }
@@ -141,7 +186,7 @@ private fun ReactableItem(
     val iconModifier = Modifier.size(16.dp)
     val title by item.title.collectAsState()
     val icon by item.icon.collectAsState()
-    val itemPadding = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
+    val itemPadding = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
     val isHovered by interactionSource.collectIsHoveredAsState()
     val isEnabled = (item as? MenuItem.HasEnable)
         ?.isEnabled
@@ -149,12 +194,14 @@ private fun ReactableItem(
         ?.value ?: true
     Row(
         modifier
-            .ifThen(!isEnabled) { alpha(0.5f) }
+            .heightIn(min = 36.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .ifThen(!isEnabled) { alpha(0.45f) }
             .hoverable(interactionSource)
             .background(
                 when {
                     (isHovered && isEnabled) || isSelected -> {
-                        myColors.surface
+                        myColors.onMenuColor / 0.08f
                     }
 
                     else -> {
@@ -162,28 +209,25 @@ private fun ReactableItem(
                     }
                 }
             )
-            .clickable(enabled = isEnabled) {
+            .clickable(enabled = isEnabled, role = Role.Button) {
                 onClick()
             }
             .then(itemPadding)
             .fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        icon.let { icon ->
-            if (icon != null) {
-                Spacer(Modifier.width(4.dp))
-                MyIcon(icon, null, iconModifier)
-                Spacer(Modifier.width(8.dp))
-            } else {
-                Spacer(iconModifier)
-            }
+        // Keep the label gutter identical for items with and without an icon.
+        Box(iconModifier, contentAlignment = Alignment.Center) {
+            icon?.let { MyIcon(it, null, iconModifier) }
         }
+        Spacer(Modifier.width(12.dp))
         Text(
             title.rememberString(),
             Modifier.weight(1f),
             fontSize = myTextSizes.base,
             softWrap = false,
             maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
         Spacer(Modifier.width(16.dp))
         extraContent()
@@ -201,13 +245,12 @@ private fun RenderMenuItem(
     onRequestOpenItem: (MenuItem.SubMenu?) -> Unit,
 ) {
 //    val isEnabled by menuItem.isEnabled.collectAsState()
-    LaunchedEffect(isHovered, menuItem) {
+    val isEnabled = (menuItem as? MenuItem.HasEnable)?.isEnabled?.collectAsState()?.value ?: true
+    LaunchedEffect(isHovered, menuItem, isEnabled) {
         if (isHovered) {
-            if (menuItem is MenuItem.SubMenu) {
-                onRequestOpenItem(menuItem)
-            } else {
-                onRequestOpenItem(null)
-            }
+            // A short delay makes it possible to cross other rows on the way to a submenu.
+            delay(150)
+            onRequestOpenItem((menuItem as? MenuItem.SubMenu)?.takeIf { isEnabled })
         }
     }
     Row(
@@ -218,9 +261,10 @@ private fun RenderMenuItem(
             MenuItem.Separator -> {
                 Spacer(
                     Modifier
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
                         .fillMaxWidth()
                         .height(1.dp)
-                        .background(myColors.onSurface / 5)
+                        .background(myColors.menuBorderColor)
                 )
             }
 
@@ -274,7 +318,7 @@ private fun RenderSubMenuItem(
                 onRequestOpenItem(null)
             }
         ) {
-            SubMenu(menuItem, onRequestCLose)
+            SubMenu(menuItem, onRequestCLose, onNavigateBack = { onRequestOpenItem(null) })
         }
     }
 }
@@ -323,22 +367,15 @@ private fun RenderShortcutStroke(shortcutStroke: PlatformKeyStroke) {
     }
     ProvideTextStyle(
         TextStyle(
-            fontSize = myTextSizes.xs,
+            fontSize = myTextSizes.sm,
         )
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(1.dp)
         ) {
-            val shape = RoundedCornerShape(10)
-            WithContentColor(myColors.onBackground) {
-                Text(
-                    modifiers.joinToString("+"),
-                    Modifier
-                        .clip(shape)
-                        .background(myColors.onBackground / 5)
-                        .padding(2.dp)
-                )
+            WithContentColor(myColors.onMenuColor / 0.65f) {
+                Text(modifiers.joinToString("+"), maxLines = 1)
             }
         }
     }

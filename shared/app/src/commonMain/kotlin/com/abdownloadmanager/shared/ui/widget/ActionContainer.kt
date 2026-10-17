@@ -13,7 +13,7 @@ fun ActionContainer(
     modifier: Modifier,
     contentPadding: PaddingValues = PaddingValues(
         horizontal = 16.dp,
-        vertical = 8.dp,
+        vertical = 12.dp,
     ),
     content: @Composable () -> Unit,
 ) {
@@ -22,7 +22,7 @@ fun ActionContainer(
             Modifier
                 .fillMaxWidth()
                 .height(1.dp)
-                .background(myColors.onBackground / 0.15f)
+                .background(myColors.onBackground / 0.08f)
         )
         Box(
             Modifier

@@ -25,6 +25,12 @@ import androidx.compose.ui.draganddrop.DragAndDropTransferable
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import com.abdownloadmanager.shared.ui.widget.AddUrlButton
+import com.abdownloadmanager.shared.util.ui.icon.MyIcons
+import com.abdownloadmanager.shared.util.ui.widget.MyIcon
+import com.abdownloadmanager.shared.util.ui.theme.myTextSizes
 import androidx.compose.ui.input.pointer.*
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
@@ -86,6 +92,8 @@ fun DownloadList(
     categoryManager: CategoryManager,
     lazyListState: LazyListState,
     failedDownloadReasons: Map<Long, DownloadErrorReason>,
+    hasActiveFilter: Boolean = false,
+    onNewDownload: () -> Unit,
 ) {
     ShowDownloadOptions(
         downloadOptions, onRequestCloseOption
@@ -155,8 +163,30 @@ fun DownloadList(
                     },
                 ),
             drawOnEmpty = {
-                WithContentAlpha(0.75f) {
-                    Text(myStringResource(Res.string.list_is_empty), Modifier.align(Alignment.Center))
+                Column(
+                    Modifier.align(Alignment.Center).widthIn(max = 360.dp).padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    MyIcon(
+                        if (hasActiveFilter) MyIcons.search else MyIcons.download,
+                        null,
+                        Modifier.size(40.dp),
+                        tint = myColors.primary,
+                    )
+                    Text(
+                        myStringResource(if (hasActiveFilter) Res.string.no_matching_downloads else Res.string.no_downloads_yet),
+                        fontSize = myTextSizes.x2l,
+                        fontWeight = FontWeight.SemiBold,
+                        textAlign = TextAlign.Center,
+                    )
+                    WithContentAlpha(0.7f) {
+                        Text(
+                            myStringResource(if (hasActiveFilter) Res.string.no_matching_downloads_hint else Res.string.no_downloads_yet_hint),
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                    if (!hasActiveFilter) AddUrlButton(onClick = onNewDownload)
                 }
             },
             wrapHeader = {
@@ -262,7 +292,7 @@ fun DownloadList(
                                 )
                                 .let {
                                     if (isSelected) {
-                                        val selectionColor = myColors.onBackground
+                                        val selectionColor = myColors.primary
                                         it
                                             .border(
                                                 1.dp,
@@ -274,7 +304,7 @@ fun DownloadList(
                                         it.border(1.dp, Color.Transparent)
                                     }
                                 }
-                                .padding(vertical = 6.dp, horizontal = itemHorizontalPadding)
+                                .padding(vertical = 10.dp, horizontal = itemHorizontalPadding)
                         ) {
                             rowContent()
                         }

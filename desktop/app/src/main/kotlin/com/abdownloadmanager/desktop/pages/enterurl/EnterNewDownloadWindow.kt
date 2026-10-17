@@ -35,7 +35,7 @@ private fun EnterNewDownloadWindow(
     val windowState = rememberWindowState(
         initialBoundsProvider = WindowBoundsProvider(
             sizeProvider = WindowSizeProvider.Fixed(
-                size = DpSize(400.dp, 150.dp)
+                size = DpSize(560.dp, 230.dp)
                     .applyUiScale(LocalUiScale.current),
             ),
             positionProvider = WindowPositionProvider.CenteredOnScreen
@@ -44,6 +44,7 @@ private fun EnterNewDownloadWindow(
     CustomWindow(
         state = windowState,
         onCloseRequest = component::close,
+        minSize = DpSize(480.dp, 220.dp).applyUiScale(LocalUiScale.current),
         windowController = rememberWindowController(
             title = myStringResource(Res.string.new_download),
         ),

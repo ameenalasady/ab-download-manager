@@ -20,17 +20,12 @@ import androidx.compose.ui.draganddrop.DragAndDropTarget
 import androidx.compose.ui.draganddrop.awtTransferable
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
 import com.abdownloadmanager.desktop.pages.home.sections.DownloadList
+import com.abdownloadmanager.desktop.ui.template.ConfirmationPrompt
 import com.abdownloadmanager.desktop.pages.home.sections.SearchBox
 import com.abdownloadmanager.shared.pages.home.category.DefinedStatusCategories
 import com.abdownloadmanager.shared.pages.home.category.DownloadStatusCategoryFilter
@@ -293,28 +288,30 @@ fun HomePage(component: HomeComponent) {
             Spacer(
                 Modifier.fillMaxWidth()
                     .height(1.dp)
-                    .background(myColors.surface)
+                    .background(myColors.onBackground / 0.08f)
             )
-            Row {
+            Row(Modifier.weight(1f)) {
                 val categoriesWidth by component.categoriesWidth.collectAsState()
                 Column(
                     Modifier
-                        .padding(top = 8.dp).width(categoriesWidth)
+                        .width(categoriesWidth)
+                        .fillMaxHeight()
+                        .background(myColors.surface / 0.2f)
                         .verticalScroll(rememberScrollState())
+                        .padding(top = 12.dp)
                 ) {
                     Categories(
                         modifier = Modifier.fillMaxWidth(),
                         component = component,
                     )
-                    Spacer(Modifier.size(8.dp))
+                    Spacer(Modifier.size(16.dp))
                     QueuesSection(
                         modifier = Modifier.fillMaxWidth(),
                         component = component,
                     )
                     Spacer(Modifier.size(8.dp))
                 }
-                Spacer(Modifier.size(8.dp))
-                //split pane
+                // Resizable divider between navigation and the download workspace.
                 Handle(
                     Modifier.width(5.dp)
                         .fillMaxHeight()
@@ -323,24 +320,32 @@ fun HomePage(component: HomeComponent) {
                 }
                 Column(Modifier.weight(1f)) {
                     Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Spacer(Modifier.size(4.dp))
-                        AddUrlButton {
+                        AddUrlButton(Modifier.heightIn(min = 36.dp)) {
                             component.requestEnterNewURL()
                         }
-                        Actions(
-                            component.headerActions,
-                            component.showLabels.collectAsState().value
-                        )
+                        BoxWithConstraints(Modifier.weight(1f)) {
+                            Actions(
+                                component.headerActions,
+                                component.showLabels.collectAsState().value && maxWidth >= 800.dp,
+                            )
+                        }
                     }
                     var lastSelected by remember { mutableStateOf(null as Long?) }
                     DownloadList(
                         modifier = Modifier
-                            .padding(horizontal = 4.dp)
+                            .padding(horizontal = 12.dp)
                             .fillMaxWidth()
                             .weight(1f),
                         downloadList = listState,
+                        hasActiveFilter = component.filterState.textToSearch.isNotBlank() ||
+                            component.filterState.typeCategoryFilter != null ||
+                            component.filterState.statusFilter != DefinedStatusCategories.All ||
+                            component.filterState.queueFilter != null,
+                        onNewDownload = component::requestEnterNewURL,
                         downloadOptions = component.downloadOptions.collectAsState().value,
                         onRequestCloseOption = {
                             component.onRequestCloseDownloadItemOption()
@@ -369,10 +374,8 @@ fun HomePage(component: HomeComponent) {
                     Spacer(
                         Modifier
                             .fillMaxWidth()
-                            .height(2.dp)
-                            .background(
-                                myColors.surface
-                            )
+                            .height(1.dp)
+                            .background(myColors.onBackground / 0.08f)
                     )
                     Footer(component)
                 }
@@ -406,7 +409,7 @@ private fun shouldMergeTopBarWithTitleBar(component: HomeComponent): Boolean {
     val widthDp = density.run {
         LocalWindowInfo.current.containerSize.width.toDp()
     }
-    return widthDp > 700.dp
+    return widthDp > 900.dp
 }
 
 
@@ -416,114 +419,65 @@ private fun ShowDeletePrompts(
     onConfirm: () -> Unit,
     onCancel: () -> Unit,
 ) {
-    val shape = myShapes.defaultRounded
-    Dialog(onDismissRequest = onCancel) {
-        Column(
-            Modifier
-                .clip(shape)
-                .border(2.dp, myColors.onBackground / 10, shape)
-                .background(
-                    Brush.linearGradient(
-                        listOf(
-                            myColors.surface,
-                            myColors.background,
+    ConfirmationPrompt(
+        title = myStringResource(Res.string.confirm_delete_download_items_title),
+        confirmText = myStringResource(Res.string.delete),
+        onConfirm = onConfirm,
+        onCancel = onCancel,
+        destructive = true,
+    ) {
+        val finishedCount = deletePromptState.finishedCount
+        val unfinishedCount = deletePromptState.unfinishedCount
+        Text(
+            when {
+                deletePromptState.hasBothFinishedAndUnfinished() -> {
+                    Res.string.confirm_delete_download_finished_and_unfinished_items_description.asStringSourceWithARgs(
+                        Res.string.confirm_delete_download_finished_and_unfinished_items_description_createArgs(
+                            finishedCount = finishedCount.toString(),
+                            unfinishedCount = unfinishedCount.toString(),
                         )
-                    )
-                )
-                .padding(16.dp)
-                .width(IntrinsicSize.Max)
-                .widthIn(max = 260.dp)
-        ) {
-            Text(
-                myStringResource(Res.string.confirm_delete_download_items_title),
-                fontWeight = FontWeight.Bold,
-                fontSize = myTextSizes.xl,
-                color = myColors.onBackground,
-            )
-            Spacer(Modifier.height(12.dp))
-            val finishedCount = deletePromptState.finishedCount
-            val unfinishedCount = deletePromptState.unfinishedCount
-            Text(
-                when {
-                    deletePromptState.hasBothFinishedAndUnfinished() -> {
-                        Res.string.confirm_delete_download_finished_and_unfinished_items_description.asStringSourceWithARgs(
-                            Res.string.confirm_delete_download_finished_and_unfinished_items_description_createArgs(
-                                finishedCount = finishedCount.toString(),
-                                unfinishedCount = unfinishedCount.toString(),
-                            )
-                        )
-                    }
-
-                    deletePromptState.hasUnfinishedDownloads -> {
-                        Res.string.confirm_delete_download_unfinished_items_description.asStringSourceWithARgs(
-                            Res.string.confirm_delete_download_unfinished_items_description_createArgs(
-                                count = unfinishedCount.toString(),
-                            )
-                        )
-                    }
-
-                    else -> {
-                        Res.string.confirm_delete_download_items_description.asStringSourceWithARgs(
-                            Res.string.confirm_delete_download_items_description_createArgs(
-                                count = finishedCount.toString()
-                            ),
-                        )
-                    }
-                }.rememberString(),
-                fontSize = myTextSizes.base,
-                color = myColors.onBackground,
-            )
-            if (deletePromptState.hasFinishedDownloads) {
-                Spacer(Modifier.height(12.dp))
-                val alsoDeleteFileInteractionSource = remember { MutableInteractionSource() }
-                Row(
-                    Modifier
-                        .clickable(
-                            interactionSource = alsoDeleteFileInteractionSource,
-                            indication = null
-                        ) {
-                            deletePromptState.alsoDeleteFile = !deletePromptState.alsoDeleteFile
-                        },
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    CheckBox(
-                        value = deletePromptState.alsoDeleteFile,
-                        onValueChange = {
-                            deletePromptState.alsoDeleteFile = it
-                        },
-                        modifier = Modifier
-                            // the Row itself is clickable (focusable) so we don't need to focus this checkbox
-                            // is there a better way?
-                            .focusProperties { canFocus = false },
-                        interactionSource = alsoDeleteFileInteractionSource,
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        myStringResource(Res.string.also_delete_file_from_disk),
-                        fontSize = myTextSizes.base,
-                        color = myColors.onBackground,
                     )
                 }
-            }
+                deletePromptState.hasUnfinishedDownloads -> {
+                    Res.string.confirm_delete_download_unfinished_items_description.asStringSourceWithARgs(
+                        Res.string.confirm_delete_download_unfinished_items_description_createArgs(
+                            count = unfinishedCount.toString(),
+                        )
+                    )
+                }
+                else -> {
+                    Res.string.confirm_delete_download_items_description.asStringSourceWithARgs(
+                        Res.string.confirm_delete_download_items_description_createArgs(
+                            count = finishedCount.toString(),
+                        ),
+                    )
+                }
+            }.rememberString(),
+            fontSize = myTextSizes.base,
+            color = myColors.onBackground,
+        )
+        if (deletePromptState.hasFinishedDownloads) {
             Spacer(Modifier.height(12.dp))
+            val interactionSource = remember { MutableInteractionSource() }
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                Modifier.clickable(interactionSource = interactionSource, indication = null) {
+                    deletePromptState.alsoDeleteFile = !deletePromptState.alsoDeleteFile
+                },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                val confirmFocusRequester = remember { FocusRequester() }
-                LaunchedEffect(Unit) {
-                    confirmFocusRequester.requestFocus()
-                }
-                Spacer(Modifier.weight(1f))
-                ActionButton(
-                    text = myStringResource(Res.string.delete),
-                    onClick = onConfirm,
-                    focusedBorderColor = SolidColor(myColors.error),
-                    contentColor = myColors.error,
-                    modifier = Modifier.focusRequester(confirmFocusRequester)
+                CheckBox(
+                    value = deletePromptState.alsoDeleteFile,
+                    onValueChange = { deletePromptState.alsoDeleteFile = it },
+                    // The containing row already participates in keyboard focus.
+                    modifier = Modifier.focusProperties { canFocus = false },
+                    interactionSource = interactionSource,
                 )
                 Spacer(Modifier.width(8.dp))
-                ActionButton(text = myStringResource(Res.string.cancel), onClick = onCancel)
+                Text(
+                    myStringResource(Res.string.also_delete_file_from_disk),
+                    fontSize = myTextSizes.base,
+                    color = myColors.onBackground,
+                )
             }
         }
     }
@@ -535,55 +489,17 @@ private fun ShowConfirmPrompt(
     onConfirm: () -> Unit,
     onCancel: () -> Unit,
 ) {
-    val shape = myShapes.defaultRounded
-    Dialog(onDismissRequest = onCancel) {
-        Column(
-            Modifier
-                .clip(shape)
-                .border(2.dp, myColors.onBackground / 10, shape)
-                .background(
-                    Brush.linearGradient(
-                        listOf(
-                            myColors.surface,
-                            myColors.background,
-                        )
-                    )
-                )
-                .padding(16.dp)
-                .width(IntrinsicSize.Max)
-                .widthIn(max = 260.dp)
-        ) {
-            Text(
-                text = promptState.title.rememberString(),
-                fontWeight = FontWeight.Bold,
-                fontSize = myTextSizes.xl,
-                color = myColors.onBackground,
-            )
-            Spacer(Modifier.height(12.dp))
-            Text(
-                text = promptState.description.rememberString(),
-                fontSize = myTextSizes.base,
-                color = myColors.onBackground,
-            )
-            Spacer(Modifier.height(12.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                val confirmFocusRequester = remember { FocusRequester() }
-                LaunchedEffect(Unit) {
-                    confirmFocusRequester.requestFocus()
-                }
-                Spacer(Modifier.weight(1f))
-                ActionButton(
-                    text = myStringResource(Res.string.ok),
-                    onClick = onConfirm,
-                    modifier = Modifier.focusRequester(confirmFocusRequester)
-                )
-                Spacer(Modifier.width(8.dp))
-                ActionButton(text = myStringResource(Res.string.cancel), onClick = onCancel)
-            }
-        }
+    ConfirmationPrompt(
+        title = promptState.title.rememberString(),
+        confirmText = myStringResource(Res.string.ok),
+        onConfirm = onConfirm,
+        onCancel = onCancel,
+    ) {
+        Text(
+            text = promptState.description.rememberString(),
+            fontSize = myTextSizes.base,
+            color = myColors.onBackground,
+        )
     }
 }
 
@@ -593,73 +509,32 @@ private fun ShowDeleteCategoryPrompt(
     onConfirm: () -> Unit,
     onCancel: () -> Unit,
 ) {
-    val shape = myShapes.defaultRounded
-    Dialog(onDismissRequest = onCancel) {
-        Column(
-            Modifier
-                .clip(shape)
-                .border(2.dp, myColors.onBackground / 10, shape)
-                .background(
-                    Brush.linearGradient(
-                        listOf(
-                            myColors.surface,
-                            myColors.background,
-                        )
-                    )
+    ConfirmationPrompt(
+        title = myStringResource(
+            Res.string.confirm_delete_category_item_title,
+            Res.string.confirm_delete_category_item_title_createArgs(name = deletePromptState.category.name),
+        ),
+        confirmText = myStringResource(Res.string.delete),
+        onConfirm = onConfirm,
+        onCancel = onCancel,
+        destructive = true,
+    ) {
+        Text(
+            myStringResource(
+                Res.string.confirm_delete_category_item_description,
+                Res.string.confirm_delete_category_item_description_createArgs(
+                    value = deletePromptState.category.name,
                 )
-                .padding(16.dp)
-                .width(IntrinsicSize.Max)
-                .widthIn(max = 260.dp)
-        ) {
-            Text(
-                myStringResource(
-                    Res.string.confirm_delete_category_item_title,
-                    Res.string.confirm_delete_category_item_title_createArgs(
-                        name = deletePromptState.category.name
-                    ),
-                ),
-                fontWeight = FontWeight.Bold,
-                fontSize = myTextSizes.xl,
-                color = myColors.onBackground,
-            )
-            Spacer(Modifier.height(12.dp))
-            Text(
-                myStringResource(
-                    Res.string.confirm_delete_category_item_description,
-                    Res.string.confirm_delete_category_item_description_createArgs(
-                        value = deletePromptState.category.name
-                    )
-                ),
-                fontSize = myTextSizes.base,
-                color = myColors.onBackground,
-            )
-            Spacer(Modifier.height(12.dp))
-            Text(
-                myStringResource(Res.string.your_download_will_not_be_deleted),
-                fontSize = myTextSizes.base,
-                color = myColors.onBackground,
-            )
-            Spacer(Modifier.height(12.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                val confirmFocusRequester = remember { FocusRequester() }
-                LaunchedEffect(Unit) {
-                    confirmFocusRequester.requestFocus()
-                }
-                Spacer(Modifier.weight(1f))
-                ActionButton(
-                    text = myStringResource(Res.string.delete),
-                    onClick = onConfirm,
-                    focusedBorderColor = SolidColor(myColors.error),
-                    modifier = Modifier.focusRequester(confirmFocusRequester),
-                    contentColor = myColors.error,
-                )
-                Spacer(Modifier.width(8.dp))
-                ActionButton(text = myStringResource(Res.string.cancel), onClick = onCancel)
-            }
-        }
+            ),
+            fontSize = myTextSizes.base,
+            color = myColors.onBackground,
+        )
+        Spacer(Modifier.height(12.dp))
+        Text(
+            myStringResource(Res.string.your_download_will_not_be_deleted),
+            fontSize = myTextSizes.base,
+            color = myColors.onBackground,
+        )
     }
 }
 
@@ -739,10 +614,8 @@ private fun Categories(
     }
     Column(
         modifier
-            .padding(start = 16.dp)
+            .padding(horizontal = 12.dp)
             .clip(clipShape)
-            .border(1.dp, myColors.surface, clipShape)
-            .padding(1.dp)
     ) {
         var expendedItem: DownloadStatusCategoryFilter? by remember {
             mutableStateOf(
@@ -821,7 +694,7 @@ private fun HomeMenuBar(
 @Composable
 private fun Footer(component: HomeComponent) {
     Row(
-        modifier = Modifier.padding(vertical = 8.dp, horizontal = 16.dp),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp, horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         val selectionCount = component.selectionList.collectAsState().value.size
@@ -872,9 +745,11 @@ private fun FooterItem(icon: IconSource, value: String, unit: String) {
         WithContentAlpha(1f) {
             Text(value, maxLines = 1, fontSize = myTextSizes.base)
         }
-        Spacer(Modifier.width(8.dp))
-        WithContentAlpha(0.5f) {
-            Text(unit, maxLines = 1, fontSize = myTextSizes.base)
+        if (unit.isNotEmpty()) {
+            Spacer(Modifier.width(4.dp))
+            WithContentAlpha(0.65f) {
+                Text(unit, maxLines = 1, fontSize = myTextSizes.base)
+            }
         }
     }
 }
@@ -915,7 +790,7 @@ fun HomeSearch(
             modifier = modifier
                 .width(
                     animateDpAsState(
-                        if (isFocused) 220.dp else 180.dp
+                        if (isFocused) 260.dp else 220.dp
                     ).value
                 )
         )

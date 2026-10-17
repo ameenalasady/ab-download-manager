@@ -24,6 +24,7 @@ import com.abdownloadmanager.shared.util.ui.MultiplatformVerticalScrollbar
 import com.abdownloadmanager.shared.util.ui.WithContentColor
 import com.abdownloadmanager.shared.util.ui.icon.MyIcons
 import com.abdownloadmanager.shared.util.ui.myColors
+import com.abdownloadmanager.desktop.ui.template.dialogSurface
 import com.abdownloadmanager.shared.util.ui.theme.LocalUiScale
 import com.abdownloadmanager.shared.util.ui.theme.myShapes
 import com.abdownloadmanager.shared.util.ui.theme.mySpacings
@@ -95,16 +96,7 @@ private fun ShowAddToQueueDialog(
         Column(
             Modifier
                 .fillMaxSize()
-                .clip(shape)
-                .border(2.dp, myColors.onBackground / 10, shape)
-                .background(
-                    Brush.linearGradient(
-                        listOf(
-                            myColors.surface,
-                            myColors.background,
-                        )
-                    )
-                )
+                .dialogSurface(shape)
         ) {
             WithContentColor(myColors.onBackground) {
                 // needs improvements: extract this layout for reuse

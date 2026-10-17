@@ -6,6 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -40,12 +41,13 @@ fun ActionButton(
     focusedBorderColor: Brush = SolidColor(myColors.focusedBorderColor),
     disabledBorderColor: Brush = SolidColor(myColors.onBackground / 10),
     contentColor: Color = LocalContentColor.current,
-    contentPadding: PaddingValues = PaddingValues(vertical = 6.dp, horizontal = 24.dp),
+    contentPadding: PaddingValues = PaddingValues(vertical = 8.dp, horizontal = 16.dp),
     interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
     start: (@Composable RowScope.() -> Unit)? = null,
     end: (@Composable RowScope.() -> Unit)? = null,
 ) {
     val isFocused by interactionSource.collectIsFocusedAsState()
+    val isHovered by interactionSource.collectIsHoveredAsState()
     val shape = myShapes.defaultRounded
     val borderColor = if (isFocused) focusedBorderColor else borderColor
     Row(
@@ -54,6 +56,7 @@ fun ActionButton(
             .border(1.dp, if (enabled) borderColor else disabledBorderColor, shape)
             .clip(shape)
             .background(if (enabled) backgroundColor else disabledBackgroundColor)
+            .background(if (enabled && isHovered) contentColor / 0.06f else Color.Transparent)
             .combinedClickable(
                 enabled = enabled,
                 interactionSource = interactionSource,

@@ -66,7 +66,7 @@ object ThemeConfigurableRenderer : ConfigurableRenderer<ThemeConfigurable> {
                                     .clip(CircleShape)
                                     .border(
                                         1.dp,
-                                        Brush.verticalGradient(myColors.primaryGradientColors),
+                                        androidx.compose.ui.graphics.SolidColor(myColors.menuBorderColor),
                                         CircleShape
                                     )
                                     .padding(1.dp)
@@ -75,8 +75,8 @@ object ThemeConfigurableRenderer : ConfigurableRenderer<ThemeConfigurable> {
                                     )
                                     .size(16.dp)
                             )
-                            Spacer(Modifier.width(16.dp))
-                            Text(cfg.describe(it).rememberString(), fontSize = myTextSizes.lg)
+                            Spacer(Modifier.width(12.dp))
+                            Text(cfg.describe(it).rememberString(), fontSize = myTextSizes.base)
                         }
                     })
             }
