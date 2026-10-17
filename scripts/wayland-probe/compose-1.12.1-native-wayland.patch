@@ -22,3 +22,24 @@
          coroutineContext = coroutineContext
      )
      private val composeContainer
+@@ -122,3 +131,20 @@
++    override fun paint(g: java.awt.Graphics) {
++        if (
++            java.lang.Boolean.getBoolean("abdm.experimental.nativeWayland") &&
++            window.toolkit.javaClass.name == "sun.awt.wl.WLToolkit"
++        ) {
++            // SwingSkiaLayerComponent.paint updates the scene's density/size when the
++            // graphics configuration changes, but not PlatformWindowContext. A Wayland
++            // surface can acquire its scale after the last AWT resize. Without this,
++            // LocalWindowInfo.containerSize retains the unscaled viewport, while popup
++            // anchors/content are measured in scaled pixels. All popup clipping and
++            // placement must use the same current pixel space as the scene, including
++            // the first paint and later monitor-scale transitions (even without resize).
++            _composeContainer?.windowContext?.setContainerSizeFromComponent(this)
++        }
++        super.paint(g)
++    }
++
+     override fun setBounds(x: Int, y: Int, width: Int, height: Int) {
+         super.setBounds(x, y, width, height)
+         composeContainer.setBounds(0, 0, width, height)

@@ -83,6 +83,8 @@ def evidence_errors(case, code, text, maps, ui_source, display):
     else:
         marker = {'custom': 'CUSTOM_SMOKE_COMPLETE', 'dialog': 'DIALOG_SMOKE_COMPLETE'}.get(case.mode, 'SMOKE_COMPLETE')
         required.append(marker)
+        if case.toolkit == 'WLToolkit' and case.renderer == 'experimental' and case.opt_in and case.mode in ('window', 'dialog'):
+            required.append('POPUP_VIEWPORT_OK')
         if case.mode == 'custom':
             required += ['customContentDisposed=true', 'customMaximizedAfterVeto=6',
                          'customRestored=0', 'customClosingMaximized=6']
@@ -198,7 +200,7 @@ def main():
             if any(s in line for s in ['runtime=', 'toolkit=', 'DISPLAY=', 'mode=', 'SMOKE_',
                                       'Requested=', 'Observed=', 'windowOpened=', 'windowState=',
                                       'custom', 'dialog', 'jbrDecorations=', 'jbrWindowMove=', 'ewmhMove=',
-                                      'composeWindowPanelSource=', 'composeDensity=', 'screen=',
+                                      'composeWindowPanelSource=', 'composeDensity=', 'screen=', 'POPUP_VIEWPORT_OK',
                                       'nativeX11Guard=', 'awtBackend=', 'nativeRenderingOptIn=',
                                       'observedWindowHandle=', 'Exception', 'Error']):
                 print(line)

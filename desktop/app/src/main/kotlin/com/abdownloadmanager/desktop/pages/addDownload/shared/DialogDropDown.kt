@@ -1,43 +1,31 @@
 package com.abdownloadmanager.desktop.pages.addDownload.shared
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.runtime.*
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.v2.WindowBoundsProvider
-import androidx.compose.ui.window.v2.WindowSizeProvider
-import androidx.compose.ui.window.v2.rememberDialogState
-import com.abdownloadmanager.desktop.window.custom.BaseOptionDialog
-import com.abdownloadmanager.shared.util.ui.icon.MyIcons
-import com.abdownloadmanager.shared.util.ui.theme.LocalUiScale
-import com.abdownloadmanager.shared.util.ui.myColors
-import com.abdownloadmanager.desktop.ui.template.dialogSurface
-import androidx.compose.foundation.selection.selectable
-import ir.amirab.util.ifThen
+import com.abdownloadmanager.desktop.ui.template.OptionPopup
+import com.abdownloadmanager.desktop.ui.template.OptionPopupAnchor
+import com.abdownloadmanager.resources.Res
 import com.abdownloadmanager.shared.ui.widget.Text
 import com.abdownloadmanager.shared.util.div
-import com.abdownloadmanager.desktop.window.moveNearMouse
-import com.abdownloadmanager.resources.Res
-import com.abdownloadmanager.shared.util.ui.WithContentAlpha
+import com.abdownloadmanager.shared.util.ui.icon.MyIcons
+import com.abdownloadmanager.shared.util.ui.myColors
 import com.abdownloadmanager.shared.util.ui.theme.myShapes
 import com.abdownloadmanager.shared.util.ui.widget.MyIcon
 import ir.amirab.util.compose.resources.myStringResource
-import ir.amirab.util.desktop.screen.applyUiScale
 
 @Composable
 fun <T> DialogDropDown(
@@ -49,134 +37,44 @@ fun <T> DialogDropDown(
     dropdownOpen: Boolean,
     onRequestOpenDropDown: () -> Unit,
     onRequestCloseDropDown: () -> Unit,
-    dropDownSize: DpSize = DpSize(220.dp, 250.dp),
     renderItem: @Composable (T) -> Unit,
     renderEmpty: @Composable () -> Unit,
 ) {
-    Column(modifier) {
-        DropDownHeader(
-            item = selectedItem,
-            enabled = enabled,
-            onClick = onRequestOpenDropDown,
-            renderItem = renderItem
-        )
+    OptionPopupAnchor(modifier) {
+        DropDownHeader(selectedItem, enabled, onRequestOpenDropDown, renderItem)
         if (dropdownOpen) {
-            DropDownContent(
-                closeDialog = onRequestCloseDropDown,
-                dropDownSize = dropDownSize,
-                possibleItems = possibleItems,
-                selectedItem = selectedItem,
-                onItemSelected = onItemSelected,
-                drawOnEmpty = renderEmpty,
-                renderItem = renderItem,
-            )
+            OptionPopup(onDismissRequest = onRequestCloseDropDown, matchAnchorWidth = true) {
+                if (possibleItems.isEmpty()) {
+                    Box(Modifier.fillMaxWidth().padding(12.dp)) { renderEmpty() }
+                }
+                possibleItems.forEach { item ->
+                    val selected = item == selectedItem
+                    val bringIntoView = remember { BringIntoViewRequester() }
+                    LaunchedEffect(selected) {
+                        if (selected) bringIntoView.bringIntoView()
+                    }
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .bringIntoViewRequester(bringIntoView)
+                            .clip(myShapes.defaultRounded)
+                            .background(if (selected) myColors.primary / 0.12f else Color.Transparent)
+                            .heightIn(min = 36.dp)
+                            .selectable(selected = selected, onClick = {
+                                onItemSelected(item)
+                                onRequestCloseDropDown()
+                            })
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(Modifier.weight(1f)) { renderItem(item) }
+                        Spacer(Modifier.width(8.dp))
+                        if (selected) MyIcon(MyIcons.check, null, Modifier.size(16.dp))
+                        else Spacer(Modifier.size(16.dp))
+                    }
+                }
+            }
         }
     }
-}
-
-@Composable
-fun <T> DropDownContent(
-    closeDialog: () -> Unit,
-    dropDownSize: DpSize,
-    possibleItems: List<T>,
-    selectedItem: T?,
-    onItemSelected: (T) -> Unit,
-    drawOnEmpty: @Composable () -> Unit,
-    renderItem: @Composable (T) -> Unit,
-) {
-    BaseOptionDialog(
-        onCloseRequest = closeDialog,
-        state = rememberDialogState(
-            initialBoundsProvider = WindowBoundsProvider(
-                sizeProvider = WindowSizeProvider.Fixed(
-                    size = dropDownSize.applyUiScale(LocalUiScale.current)
-                )
-            ),
-        ),
-        resizeable = true,
-        content = {
-            LaunchedEffect(window) {
-                window.moveNearMouse()
-            }
-            val shape = myShapes.defaultRounded
-
-            Box(
-                Modifier
-                    .dialogSurface(shape)
-            ) {
-                val listState = rememberLazyListState()
-                LazyColumn(
-                    Modifier
-                        .fillMaxSize()
-                        .padding(8.dp),
-                    state = listState,
-                ) {
-                    items(possibleItems) {
-                        val isSelected = it == selectedItem
-                        WithContentAlpha(
-                            if (isSelected) 1f else 0.75f
-                        ) {
-                            Row(
-                                Modifier
-                                    .clip(shape)
-                                    .background(if (isSelected) myColors.primary / 0.12f else Color.Transparent)
-                                    .heightIn(min = 36.dp)
-                                    .selectable(selected = isSelected, onClick = {
-                                        onItemSelected(it)
-                                        closeDialog()
-                                    })
-                                    .padding(
-                                        vertical = 8.dp,
-                                        horizontal = 8.dp
-                                    )
-                            ) {
-                                Box(
-                                    Modifier.weight(1f)
-                                ) {
-                                    renderItem(it)
-                                }
-                                val selectedIconModifier = Modifier.size(16.dp)
-                                if (isSelected) {
-                                    MyIcon(
-                                        MyIcons.check,
-                                        null,
-                                        selectedIconModifier,
-                                    )
-                                } else {
-                                    Spacer(selectedIconModifier)
-                                }
-                            }
-                        }
-                    }
-                }
-                if (possibleItems.isEmpty()) {
-                    Box(Modifier.padding().fillMaxSize()) {
-                        drawOnEmpty()
-                    }
-                }
-                AnimatedVisibility(
-                    visible = listState.canScrollForward,
-                    modifier = Modifier.matchParentSize(),
-                    enter = fadeIn(),
-                    exit = fadeOut(),
-                ) {
-                    Spacer(
-                        Modifier
-                            .fillMaxSize()
-                            .background(
-                                Brush.verticalGradient(
-                                    colorStops = arrayOf(
-                                        0f to Color.Transparent,
-                                        0.8f to Color.Transparent,
-                                        1f to myColors.background,
-                                    )
-                                )
-                            )
-                    )
-                }
-            }
-        }
-    )
 }
 
 @Composable
@@ -187,49 +85,24 @@ private fun <T> DropDownHeader(
     renderItem: @Composable (T) -> Unit,
 ) {
     val borderColor = myColors.onBackground / 0.1f
-    val background = myColors.surface / 50
     val shape = myShapes.defaultRounded
     Row(
-        Modifier
+        Modifier.fillMaxWidth()
             .heightIn(min = 36.dp)
             .height(IntrinsicSize.Max)
             .clip(shape)
-            .ifThen(!enabled) {
-                alpha(0.5f)
-            }
+            .alpha(if (enabled) 1f else 0.5f)
             .border(1.dp, borderColor, shape)
-            .background(background)
-            .clickable(
-                enabled = enabled
-            ) { onClick() }
-            .padding(horizontal = 8.dp)
+            .background(myColors.surface / 50)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        val contentModifier = Modifier
-            .padding(vertical = 8.dp)
-            .weight(1f)
-        if (item != null) {
-            Box(contentModifier) {
-                renderItem(item)
-            }
-        } else {
-            Text(
-                myStringResource(Res.string.no_category_selected),
-                contentModifier
-            )
-        }
-        Spacer(
-            Modifier
-                .padding(horizontal = 8.dp)
-                .fillMaxHeight().padding(vertical = 1.dp)
-                .width(1.dp)
-                .background(borderColor)
-        )
-        MyIcon(
-            MyIcons.down,
-            null,
-            Modifier
-                .align(Alignment.CenterVertically)
-                .size(16.dp),
-        )
+        val contentModifier = Modifier.padding(vertical = 8.dp).weight(1f)
+        if (item != null) Box(contentModifier) { renderItem(item) }
+        else Text(myStringResource(Res.string.no_category_selected), contentModifier)
+        Spacer(Modifier.padding(horizontal = 8.dp).fillMaxHeight().padding(vertical = 1.dp)
+            .width(1.dp).background(borderColor))
+        MyIcon(MyIcons.down, null, Modifier.size(16.dp))
     }
 }

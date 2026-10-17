@@ -120,8 +120,9 @@ fun rememberMyComponentRectPositionProvider(
     val offsetPx = with(LocalDensity.current) {
         IntOffset(offset.x.roundToPx(), offset.y.roundToPx())
     }
-    return remember(anchor, alignment, offsetPx) {
-        ComponentPopupPositionProvider(anchor, alignment, offsetPx)
+    val marginPx = with(LocalDensity.current) { 4.dp.roundToPx() }
+    return remember(anchor, alignment, offsetPx, marginPx) {
+        ComponentPopupPositionProvider(anchor, alignment, offsetPx, marginPx = marginPx)
     }
 }
 
@@ -135,9 +136,32 @@ fun rememberMyComponentCustomRectPositionProvider(
     val offsetPx = with(LocalDensity.current) {
         IntOffset(offset.x.roundToPx(), offset.y.roundToPx())
     }
-    return remember(providedAnchorBounds, anchor, alignment, offsetPx) {
-        ComponentPopupPositionProvider(anchor, alignment, offsetPx, providedAnchorBounds)
+    val marginPx = with(LocalDensity.current) { 4.dp.roundToPx() }
+    return remember(providedAnchorBounds, anchor, alignment, offsetPx, marginPx) {
+        ComponentPopupPositionProvider(anchor, alignment, offsetPx, providedAnchorBounds, marginPx)
     }
+}
+
+/**
+ * Measurement counterpart to below-first anchored placement. A picker may use its
+ * control's width or a preferred panel width; both stay within the viewport. Its
+ * scrollable content fits on at least one side without covering the anchor.
+ * All arguments are in layout pixels, including density-scaled margin and gap.
+ */
+fun anchoredPopupConstraints(
+    anchorBounds: IntRect,
+    windowSize: IntSize,
+    preferredWidth: Int? = null,
+    marginPx: Int = 4,
+    gapPx: Int = 4,
+): IntSize {
+    val availableWidth = (windowSize.width - 2 * marginPx).coerceAtLeast(1)
+    val above = anchorBounds.top - marginPx - gapPx
+    val below = windowSize.height - anchorBounds.bottom - marginPx - gapPx
+    return IntSize(
+        (preferredWidth ?: anchorBounds.width).coerceIn(1, availableWidth),
+        maxOf(above, below).coerceAtLeast(1),
+    )
 }
 
 /** Keep anchored menus reachable at the window edges, including RTL and cascading menus. */
@@ -146,6 +170,7 @@ internal class ComponentPopupPositionProvider(
     private val alignment: Alignment,
     private val offsetPx: IntOffset,
     private val providedAnchorBounds: IntRect? = null,
+    private val marginPx: Int = 4,
 ) : PopupPositionProvider {
     override fun calculatePosition(
         anchorBounds: IntRect,
@@ -158,7 +183,7 @@ internal class ComponentPopupPositionProvider(
         val area = IntSize(popupContentSize.width * 2, popupContentSize.height * 2)
         val position = alignment.align(popupContentSize, area, layoutDirection)
         val initial = bounds.topLeft + point - IntOffset(popupContentSize.width, popupContentSize.height) + position + offsetPx
-        val margin = 4
+        val margin = marginPx
         val maxX = (windowSize.width - popupContentSize.width - margin).coerceAtLeast(margin)
         val maxY = (windowSize.height - popupContentSize.height - margin).coerceAtLeast(margin)
         var x = initial.x

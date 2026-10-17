@@ -37,16 +37,27 @@ python3 scripts/ui-review/control.py --profile build/ui-review/my-review-profile
 Supported actions:
 
 - `settings`, `close-settings`, `url`, `close-url`, `queues`, `close-queues`, `about`, `close-about`;
+- `add http://127.0.0.1:PORT/file [http://127.0.0.1:PORT/another]`, `close-add`;
+  serve disposable files with a local HTTP fixture (non-loopback URLs are refused);
+- `enable-category` on an open single-download form, `ui-scale 1.5` (0.75–2.0);
+- `invalid-add-name`, `invalid-add-folder` on a single-download form: deterministic
+  validation states; the folder fixture is a regular file inside the disposable profile.
+  Close/reopen the form to reset; do not confirm downloads in these validation states;
+- `assert-no-option-dialogs` after opening a picker: fails if it created a visible AWT Dialog;
+  pair with a screenshot to confirm the intended picker actually opened;
 - `search text` (or `search` to clear);
 - `resize WIDTH HEIGHT Window title prefix`;
 - `click X Y Window title prefix`, `context X Y Window title prefix` (window-local coordinates);
-- `key JAVA_KEY_CODE` (e.g. 40 Down, 38 Up, 10 Enter, 27 Escape).
+- `key JAVA_KEY_CODE` (e.g. 40 Down, 38 Up, 10 Enter, 27 Escape);
+- `scroll X Y ROTATION Window title prefix` dispatches a local wheel event (positive scrolls down).
 
 Actions invoke app components or dispatch events **only to this JVM's own AWT component tree**.
 The command channel is in the disposable profile. `control.py` verifies the PID and profile
 before sending commands. Captures use KWin to activate a PID/title-matched window and Spectacle
 to capture it; they require KDE. This is not an OS-input/IME or screen-reader acceptance test.
-Context menus positioned from the OS cursor may not reflect the synthetic event coordinates.
+Click coordinates are AWT window-local units, not screenshot device pixels; monitor scaling
+and backend can change their relationship. Context menus positioned from the OS cursor may
+not reflect the synthetic event coordinates.
 Never invoke power actions in a UI review.
 
 To close just this review instance gracefully:

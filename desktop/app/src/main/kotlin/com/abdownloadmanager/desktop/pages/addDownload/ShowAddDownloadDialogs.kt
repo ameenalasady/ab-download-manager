@@ -53,8 +53,8 @@ private fun AddDownloadWindow(
     val uiScale = LocalUiScale.current
     when (addDownloadComponent) {
         is BaseAddSingleDownloadComponent -> {
-            val h = 265.applyUiScale(uiScale)
-            val w = 500.applyUiScale(uiScale)
+            val h = 360.applyUiScale(uiScale)
+            val w = 600.applyUiScale(uiScale)
             val size = remember {
                 DpSize(
                     height = h.dp,

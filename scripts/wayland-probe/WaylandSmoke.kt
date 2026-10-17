@@ -11,6 +11,7 @@ import androidx.compose.ui.awt.ComposeWindow
 import androidx.compose.ui.awt.RenderSettings
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.dp
 import com.abdownloadmanager.desktop.window.linux.X11Ewmh
 import ir.amirab.util.desktop.window.AwtWindowBackend
@@ -59,7 +60,7 @@ fun main(args: Array<String>) {
         val frame: JFrame
         if (mode == "window") {
             frame = ComposeWindow().apply {
-                setContent { SmokeContent(draws, updates) }
+                setContent { SmokeContent(draws, updates, verifyViewport = true) }
             }
         } else {
             frame = JFrame()
@@ -224,7 +225,7 @@ private fun dialogSmoke(draws: AtomicInteger, updates: AtomicInteger) {
         val dialog = ComposeDialog(owner = owner as java.awt.Window).apply {
             title = "ABDM isolated native ComposeDialog probe"
             defaultCloseOperation = WindowConstants.DO_NOTHING_ON_CLOSE
-            setContent { SmokeContent(draws, updates) }
+            setContent { SmokeContent(draws, updates, verifyViewport = true) }
             setSize(700, 460)
         }
         var closes = 0
@@ -255,7 +256,9 @@ private fun dialogSmoke(draws: AtomicInteger, updates: AtomicInteger) {
 }
 
 @Composable
-private fun SmokeContent(draws: AtomicInteger, updates: AtomicInteger) {
+private fun SmokeContent(draws: AtomicInteger, updates: AtomicInteger, verifyViewport: Boolean = false) {
+    var layoutSize by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+    val windowInfo = androidx.compose.ui.platform.LocalWindowInfo.current
     var text by remember { mutableStateOf("Native Wayland Compose feasibility test") }
     var tick by remember { mutableStateOf(0) }
     var menu by remember { mutableStateOf(false) }
@@ -267,11 +270,24 @@ private fun SmokeContent(draws: AtomicInteger, updates: AtomicInteger) {
             tick++
             updates.incrementAndGet()
             menu = tick == 2 || tick == 3
+            if (verifyViewport && tick == 2 &&
+                AwtWindowBackend.current == AwtWindowBackend.Wayland &&
+                java.lang.Boolean.getBoolean("abdm.experimental.nativeWayland")
+            ) {
+                // When the first popup opens, a late Wayland graphics configuration must
+                // not leave clipping in logical pixels while layout is in device pixels.
+                check(layoutSize.width > 0 && layoutSize == windowInfo.containerSize) {
+                    "Popup viewport ${windowInfo.containerSize} differs from layout $layoutSize"
+                }
+                println("POPUP_VIEWPORT_OK viewport=${windowInfo.containerSize} layout=$layoutSize")
+            }
         }
     }
     MaterialTheme {
         Column(
-            Modifier.fillMaxSize().background(Color(0xffedf4fa))
+            Modifier.fillMaxSize()
+                .onSizeChanged { layoutSize = it }
+                .background(Color(0xffedf4fa))
                 .drawWithContent { drawContent(); draws.incrementAndGet() }
                 .padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)

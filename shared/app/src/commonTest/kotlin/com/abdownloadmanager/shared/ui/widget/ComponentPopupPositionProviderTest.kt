@@ -68,6 +68,86 @@ class ComponentPopupPositionProviderTest {
     }
 
     @Test
+    fun categoryPickerFitsBelowItsFieldAtDefaultAddDownloadSize() {
+        val anchor = IntRect(148, 88, 536, 124)
+        val size = anchoredPopupConstraints(anchor, IntSize(600, 340))
+        assertEquals(IntOffset(148, 128), dropdown().calculatePosition(
+            anchor, IntSize(600, 340), LayoutDirection.Ltr, size,
+        ))
+    }
+
+    @Test
+    fun footerPickerFallsBackAboveWithoutCoveringItsTriggerAtMultipleUiScales() {
+        for (scale in listOf(1, 2, 3)) {
+            val provider = ComponentPopupPositionProvider(
+                Alignment.BottomStart, Alignment.BottomEnd, IntOffset(0, 4 * scale), marginPx = 4 * scale,
+            )
+            assertEquals(IntOffset(20 * scale, 122 * scale), provider.calculatePosition(
+                IntRect(20 * scale, 294 * scale, 300 * scale, 328 * scale),
+                IntSize(600 * scale, 340 * scale),
+                LayoutDirection.Ltr,
+                IntSize(280 * scale, 168 * scale),
+            ))
+        }
+    }
+
+    @Test
+    fun pickerMeasurementMatchesTriggerAtFractionalAndLargeDensities() {
+        for (scale in listOf(1.0, 1.25, 1.5, 2.0)) {
+            fun px(value: Int) = (value * scale).toInt()
+            val anchor = IntRect(px(148), px(90), px(540), px(126))
+            val size = anchoredPopupConstraints(anchor, IntSize(px(600), px(340)),
+                marginPx = px(4), gapPx = px(4))
+            assertEquals(anchor.width, size.width)
+            assertEquals(px(340) - anchor.bottom - px(4) * 2, size.height)
+            val provider = ComponentPopupPositionProvider(
+                Alignment.BottomStart, Alignment.BottomEnd, IntOffset(0, px(4)), marginPx = px(4),
+            )
+            assertEquals(IntOffset(anchor.left, anchor.bottom + px(4)), provider.calculatePosition(
+                anchor, IntSize(px(600), px(340)), LayoutDirection.Ltr, size,
+            ))
+        }
+    }
+
+    @Test
+    fun panelWidthIsLimitedByViewportRatherThanTrigger() {
+        assertEquals(IntSize(292, 192), anchoredPopupConstraints(
+            IntRect(260, 200, 292, 232), IntSize(300, 400), preferredWidth = 340,
+        ))
+    }
+
+    @Test
+    fun longPickerScrollsOnLargerSideWithoutOverlappingAnchor() {
+        val anchor = IntRect(100, 240, 300, 276)
+        val size = anchoredPopupConstraints(anchor, IntSize(600, 400))
+        assertEquals(IntSize(200, 232), size)
+        assertEquals(IntOffset(100, 4), dropdown().calculatePosition(
+            anchor, IntSize(600, 400), LayoutDirection.Ltr, size,
+        ))
+    }
+
+    @Test
+    fun solutionsPreferBelowWhenWindowHasRoom() {
+        assertEquals(IntOffset(20, 264), dropdown().calculatePosition(
+            IntRect(20, 224, 300, 260), window, LayoutDirection.Ltr, IntSize(280, 168),
+        ))
+    }
+
+    @Test
+    fun pickerTracksControlBoundsAfterLayoutChanges() {
+        val provider = ComponentPopupPositionProvider(
+            Alignment.BottomStart, Alignment.BottomEnd, IntOffset.Zero,
+        )
+        val before = provider.calculatePosition(
+            IntRect(152, 80, 580, 116), window, LayoutDirection.Ltr, menu,
+        )
+        val after = provider.calculatePosition(
+            IntRect(192, 96, 620, 132), window, LayoutDirection.Ltr, menu,
+        )
+        assertEquals(IntOffset(40, 16), after - before)
+    }
+
+    @Test
     fun explicitAnchorBoundsAreHonored() {
         val provider = ComponentPopupPositionProvider(
             Alignment.BottomStart, Alignment.BottomEnd, IntOffset.Zero, IntRect(300, 200, 400, 240),

@@ -2,28 +2,28 @@ package com.abdownloadmanager.desktop.pages.addDownload.single
 
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.onClick
-import androidx.compose.foundation.window.WindowDraggableArea
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.v2.WindowBoundsProvider
-import androidx.compose.ui.window.v2.WindowSizeProvider
-import androidx.compose.ui.window.v2.rememberDialogState
 import arrow.core.Some
 import com.abdownloadmanager.desktop.pages.addDownload.shared.*
-import com.abdownloadmanager.desktop.window.custom.BaseOptionDialog
-import com.abdownloadmanager.desktop.window.moveNearMouse
+import com.abdownloadmanager.desktop.ui.template.OptionPopup
+import com.abdownloadmanager.desktop.ui.template.OptionPopupAnchor
 import com.abdownloadmanager.resources.Res
 import com.abdownloadmanager.shared.downloaderinui.add.CanAddResult
 import com.abdownloadmanager.shared.pages.adddownload.shared.LastUsedLocationsProp
@@ -35,10 +35,8 @@ import com.abdownloadmanager.shared.util.div
 import com.abdownloadmanager.shared.util.downloaderror.DownloadErrorReason
 import com.abdownloadmanager.shared.util.mvi.HandleEffects
 import com.abdownloadmanager.shared.util.ui.WithContentAlpha
-import com.abdownloadmanager.shared.util.ui.WithContentColor
 import com.abdownloadmanager.shared.util.ui.icon.MyIcons
 import com.abdownloadmanager.shared.util.ui.myColors
-import com.abdownloadmanager.desktop.ui.template.dialogSurface
 import com.abdownloadmanager.shared.util.ui.theme.myShapes
 import com.abdownloadmanager.shared.util.ui.theme.mySpacings
 import com.abdownloadmanager.shared.util.ui.theme.myTextSizes
@@ -52,11 +50,10 @@ import ir.amirab.util.compose.resources.myStringResource
 fun AddDownloadPage(
     component: BaseAddSingleDownloadComponent,
 ) {
-    val onDuplicateStrategy by component.onDuplicateStrategy.collectAsState()
     Column(
         Modifier
-            .padding(horizontal = 32.dp)
-            .padding(top = 8.dp, bottom = 16.dp)
+            .fillMaxSize()
+            .padding(horizontal = 20.dp, vertical = 12.dp)
     ) {
         val credentials by component.credentials.collectAsState()
         fun setLink(link: String) {
@@ -80,39 +77,25 @@ fun AddDownloadPage(
                 }
             }
         }
-        UrlTextField(
-            text = credentials.link,
-            setText = {
-                setLink(it)
-            },
-            modifier = Modifier
-        )
-        Row {
-            val canAddResult by component.canAddResult.collectAsState()
-            Column(Modifier.weight(1f)) {
+        Column(
+            Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            DownloadFormRow(myStringResource(Res.string.download_link)) {
+                UrlTextField(text = credentials.link, setText = ::setLink)
+            }
+            Column {
                 val useCategory by component.useCategory.collectAsState()
-                Spacer(Modifier.size(8.dp))
                 Row(
                     modifier = Modifier.height(IntrinsicSize.Max),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .onClick {
-                                component.setUseCategory(!useCategory)
-                            }
-                            .padding(vertical = 4.dp)
-                    ) {
-                        CheckBox(
-                            size = 16.dp,
-                            value = useCategory,
-                            onValueChange = { component.setUseCategory(it) }
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text(myStringResource(Res.string.use_category))
-                    }
-                    Spacer(Modifier.width(8.dp))
+                    LabeledCheckbox(
+                        modifier = Modifier.width(128.dp).padding(end = 12.dp),
+                        value = useCategory,
+                        onValueChange = component::setUseCategory,
+                        description = myStringResource(Res.string.use_category),
+                    )
                     CategorySelect(
                         modifier = Modifier.weight(1f),
                         enabled = useCategory,
@@ -131,18 +114,15 @@ fun AddDownloadPage(
                         },
                     )
                 }
-                val isFolderChanged by component.isFolderChangedResult.collectAsState()
-                val rememberFolderAsDefault by component.rememberFolderAsDefault.collectAsState()
-                Spacer(Modifier.size(8.dp))
+            }
+            val isFolderChanged by component.isFolderChangedResult.collectAsState()
+            val rememberFolderAsDefault by component.rememberFolderAsDefault.collectAsState()
+            DownloadFormRow(myStringResource(Res.string.location)) {
                 LocationTextField(
                     modifier = Modifier.fillMaxWidth(),
                     text = component.folder.collectAsState().value,
                     setText = {
                         component.setFolder(it)
-                    },
-                    errorText = when (canAddResult) {
-                        CanAddResult.CantWriteInThisFolder -> myStringResource(Res.string.cant_write_to_this_folder)
-                        else -> null
                     },
                     lastUsedLocations = LastUsedLocationsProp(
                         locations = component.lastUsedLocations.collectAsState().value,
@@ -155,149 +135,151 @@ fun AddDownloadPage(
                         categoryName = isFolderChanged.categoryOrNull()?.name,
                     ),
                 )
-                val name by component.name.collectAsState()
-                Spacer(Modifier.size(8.dp))
+            }
+            val name by component.name.collectAsState()
+            DownloadFormRow(myStringResource(Res.string.name)) {
                 NameTextField(
                     text = name,
                     setText = {
                         component.setName(it)
                     },
-                    errorText = when (canAddResult) {
-                        is CanAddResult.DownloadAlreadyExists -> {
-                            if (onDuplicateStrategy == null) {
-                                myStringResource(Res.string.download_already_exists)
-                            } else {
-                                null
-                            }
-                        }
-
-                        CanAddResult.InvalidFileName -> myStringResource(Res.string.invalid_file_name)
-                        else -> null
-                    }.takeIf { name.isNotEmpty() }
                 )
             }
-            Spacer(Modifier.size(24.dp))
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier
-                    .align(Alignment.Top)
-                    .width(IntrinsicSize.Max)
-            ) {
-                RenderFileTypeAndSize(component)
-                RenderResumeSupport(component)
-                ConfigActionsButtons(component)
+            DownloadFormRow(myStringResource(Res.string.size)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    FlowRow(
+                        modifier = Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        itemVerticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RenderFileTypeAndSize(component)
+                        RenderResumeSupport(component)
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    ConfigActionsButtons(component)
+                }
             }
         }
-        Spacer(Modifier.weight(1f))
+        DownloadStatus(component)
+        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.fillMaxWidth().height(1.dp).background(myColors.onBackground / 10))
+        Spacer(Modifier.height(12.dp))
         MainActionButtons(component)
+    }
+}
+
+@Composable
+private fun DownloadFormRow(label: String, content: @Composable () -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+        Text(
+            label,
+            modifier = Modifier.width(128.dp).padding(end = 12.dp, top = 8.dp),
+            fontSize = myTextSizes.base,
+        )
+        Box(Modifier.weight(1f)) { content() }
+    }
+}
+
+/** A reserved, non-scrolling status lane: validation never inserts rows into the form. */
+@Composable
+private fun DownloadStatus(component: BaseAddSingleDownloadComponent) {
+    val result by component.canAddResult.collectAsState()
+    val strategy by component.onDuplicateStrategy.collectAsState()
+    val name by component.name.collectAsState()
+    val duplicate = result is CanAddResult.DownloadAlreadyExists
+    val message = when {
+        result == CanAddResult.CantWriteInThisFolder -> myStringResource(Res.string.cant_write_to_this_folder)
+        result == CanAddResult.InvalidFileName && name.isNotEmpty() -> myStringResource(Res.string.invalid_file_name)
+        duplicate && strategy == null -> myStringResource(Res.string.download_already_exists)
+        strategy == OnDuplicateStrategy.AddNumbered -> myStringResource(Res.string.download_strategy_add_a_numbered_file)
+        strategy == OnDuplicateStrategy.OverrideDownload -> myStringResource(Res.string.download_strategy_override_existing_file)
+        else -> null
+    }
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 36.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite }) {
+            if (message != null) {
+                Tooltip(message.asStringSource()) {
+                    Text(
+                        text = message,
+                        fontSize = myTextSizes.sm,
+                        color = if (strategy != null && (duplicate || result == CanAddResult.CanAdd)) {
+                            myColors.onBackground / 70
+                        } else {
+                            myColors.error
+                        },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+        if (duplicate || strategy != null) {
+            SolutionButton(component, myStringResource(
+                if (strategy == null) Res.string.show_solutions else Res.string.change_solution
+            ))
+        }
+    }
+}
+
+@Composable
+private fun SolutionButton(component: BaseAddSingleDownloadComponent, text: String) {
+    OptionPopupAnchor {
+        ActionButton(
+            text = text,
+            backgroundColor = SolidColor(Color.Transparent),
+            borderColor = SolidColor(Color.Transparent),
+            contentColor = myColors.primary,
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+            end = {
+                Spacer(Modifier.width(6.dp))
+                MyIcon(MyIcons.down, null, Modifier.size(12.dp))
+            },
+            onClick = { component.showSolutionsOnDuplicateDownloadUi = true },
+        )
         if (component.showSolutionsOnDuplicateDownloadUi) {
             ShowSolutionsOnDuplicateDownload(component)
-        }
-        ShowAddToQueueDialog(
-            queueComponent = component.selectQueueComponent,
-        )
-        if (component.showMoreSettings) {
-            ExtraConfig(
-                onDismiss = { component.showMoreSettings = false },
-                configurables = component.configurables,
-            )
         }
     }
 }
 
 @Composable
 private fun ShowSolutionsOnDuplicateDownload(component: BaseAddSingleDownloadComponent) {
-    val state = rememberDialogState(
-        initialBoundsProvider = WindowBoundsProvider(
-            sizeProvider = WindowSizeProvider.Unconstrained
-        )
-    )
     val close = {
         component.showSolutionsOnDuplicateDownloadUi = false
     }
-    val onDuplicateStrategy by component.onDuplicateStrategy.collectAsState()
-    BaseOptionDialog(
-        onCloseRequest = close,
-        state = state,
-        resizeable = false,
-    ) {
-        LaunchedEffect(window) {
-            window.moveNearMouse()
-        }
-
-
-        val shape = myShapes.defaultRounded
-        Column(
-            Modifier.dialogSurface(shape)
+    OptionPopup(onDismissRequest = close) {
+        OnDuplicateStrategySolutionItem(
+            title = myStringResource(Res.string.download_strategy_add_a_numbered_file),
+            description = myStringResource(Res.string.download_strategy_add_a_numbered_file_description),
         ) {
-            WithContentColor(myColors.onBackground) {
-                Column(
-                    Modifier.widthIn(max = 300.dp)
-                ) {
-                    WindowDraggableArea(Modifier) {
-                        Column(
-                            Modifier.padding(vertical = 8.dp, horizontal = 16.dp)
-                        ) {
-                            Text(
-                                myStringResource(Res.string.select_a_solution),
-                                Modifier,
-                                fontSize = myTextSizes.base
-                            )
-                            Spacer(Modifier.height(8.dp))
-                            WithContentAlpha(0.75f) {
-                                Text(
-                                    myStringResource(Res.string.select_download_strategy_description),
-                                    Modifier,
-                                    fontSize = myTextSizes.sm,
-                                )
-                            }
-                        }
-                    }
-                    Column(
-                        Modifier
-                            .padding(horizontal = 8.dp)
-                            .padding(bottom = 8.dp)
-                    ) {
-                        Spacer(Modifier.height(4.dp))
-                        Divider()
-                        Spacer(Modifier.height(4.dp))
-                        Column {
-                            OnDuplicateStrategySolutionItem(
-                                isSelected = onDuplicateStrategy == OnDuplicateStrategy.AddNumbered,
-                                title = myStringResource(Res.string.download_strategy_add_a_numbered_file),
-                                description = myStringResource(Res.string.download_strategy_add_a_numbered_file_description),
-                            ) {
-                                component.setOnDuplicateStrategy(OnDuplicateStrategy.AddNumbered)
-                                close()
-                            }
-                            OnDuplicateStrategySolutionItem(
-                                isSelected = onDuplicateStrategy == OnDuplicateStrategy.OverrideDownload,
-                                title = myStringResource(Res.string.download_strategy_override_existing_file),
-                                description = myStringResource(Res.string.download_strategy_override_existing_file_description),
-                            ) {
-                                component.setOnDuplicateStrategy(OnDuplicateStrategy.OverrideDownload)
-                                close()
-                            }
-                            OnDuplicateStrategySolutionItem(
-                                isSelected = null,
-                                title = myStringResource(Res.string.download_strategy_update_download_link),
-                                description = myStringResource(Res.string.download_strategy_update_download_link_description),
-                            ) {
-                                component.updateDownloadCredentialsOfOriginalDownload()
-                                close()
-                            }
-                            OnDuplicateStrategySolutionItem(
-                                isSelected = null,
-                                title = myStringResource(Res.string.download_strategy_show_downloaded_file),
-                                description = myStringResource(Res.string.download_strategy_show_downloaded_file_description),
-                            ) {
-                                component.openDownloadFileForCurrentLink()
-                                close()
-                            }
-                        }
-                    }
-                }
-            }
+            component.setOnDuplicateStrategy(OnDuplicateStrategy.AddNumbered)
+            close()
+        }
+        OnDuplicateStrategySolutionItem(
+            title = myStringResource(Res.string.download_strategy_override_existing_file),
+            description = myStringResource(Res.string.download_strategy_override_existing_file_description),
+        ) {
+            component.setOnDuplicateStrategy(OnDuplicateStrategy.OverrideDownload)
+            close()
+        }
+        OnDuplicateStrategySolutionItem(
+            title = myStringResource(Res.string.download_strategy_update_download_link),
+            description = myStringResource(Res.string.download_strategy_update_download_link_description),
+        ) {
+            component.updateDownloadCredentialsOfOriginalDownload()
+            close()
+        }
+        OnDuplicateStrategySolutionItem(
+            title = myStringResource(Res.string.download_strategy_show_downloaded_file),
+            description = myStringResource(Res.string.download_strategy_show_downloaded_file_description),
+        ) {
+            component.openDownloadFileForCurrentLink()
+            close()
         }
     }
 }
@@ -306,47 +288,22 @@ private fun ShowSolutionsOnDuplicateDownload(component: BaseAddSingleDownloadCom
 private fun OnDuplicateStrategySolutionItem(
     title: String,
     description: String,
-    isSelected: Boolean?,
     onClick: () -> Unit,
 ) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(8.dp)
-    ) {
-        isSelected?.let {
-            CheckBox(isSelected, { onClick() }, size = 12.dp)
+    Tooltip(description.asStringSource()) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(myShapes.defaultRounded)
+                .semantics { contentDescription = description }
+                .clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onClick)
+                .heightIn(min = 40.dp)
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            Text(title, fontSize = myTextSizes.base)
         }
-        Spacer(Modifier.width(8.dp))
-        Column {
-            Text(
-                title,
-                fontSize = myTextSizes.base,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(Modifier.height(4.dp))
-            WithContentAlpha(0.7f) {
-                Text(
-                    text = description,
-                    fontSize = myTextSizes.sm,
-                    modifier = Modifier
-                )
-            }
-        }
-
     }
-}
-
-
-@Composable
-private fun Divider() {
-    Spacer(
-        Modifier.fillMaxWidth()
-            .height(1.dp)
-            .background(myColors.onBackground / 10),
-    )
 }
 
 
@@ -354,43 +311,25 @@ private fun Divider() {
 fun RenderResumeSupport(component: BaseAddSingleDownloadComponent) {
     val responseResult by component.checkResponseResult.collectAsState()
     val fileInfo = responseResult?.getOrNull()?.takeIf { it.isSuccessFul }
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.height(16.dp)
-
-    ) {
-        val lineModifier = Modifier.weight(1f)
-            .height(1.dp)
-            .background(myColors.onBackground / 10)
-        Box(lineModifier)
-        val canAddToDownloads by component.canAddToDownloads.collectAsState()
-        AnimatedVisibility(
-            visible = canAddToDownloads && fileInfo != null,
+    if (fileInfo == null) return
+    val label = myStringResource(Res.string.resume_support)
+    val value = myStringResource(if (fileInfo.resumeSupport) Res.string.yes else Res.string.no)
+    Tooltip("$label: $value".asStringSource()) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.semantics(mergeDescendants = true) {
+                contentDescription = "$label: $value"
+            },
         ) {
-            fileInfo?.let { fileInfo ->
-                val iconModifier = Modifier
-                    .padding(horizontal = 2.dp)
-                    .size(10.dp)
-                if (fileInfo.resumeSupport) {
-                    MyIcon(
-                        icon = MyIcons.check,
-                        contentDescription = null,
-                        modifier = iconModifier,
-                        tint = myColors.success
-                    )
-                } else {
-                    MyIcon(
-                        icon = MyIcons.clear,
-                        contentDescription = null,
-                        modifier = iconModifier,
-                        tint = myColors.error,
-                    )
-                }
-            }
+            MyIcon(
+                icon = if (fileInfo.resumeSupport) MyIcons.check else MyIcons.clear,
+                contentDescription = null,
+                modifier = Modifier.size(12.dp),
+                tint = if (fileInfo.resumeSupport) myColors.success else myColors.error,
+            )
+            Text(label, fontSize = myTextSizes.sm, color = myColors.onBackground / 70)
         }
-        Box(lineModifier)
-
-
     }
 }
 
@@ -403,16 +342,24 @@ fun ConfigActionsButtons(component: BaseAddSingleDownloadComponent) {
             component.refresh()
         }
         Spacer(Modifier.width(6.dp))
-        IconActionButton(
-            MyIcons.settings,
-            Res.string.settings.asStringSource(),
-            indicateActive = component.showMoreSettings,
-            requiresAttention = responseResult?.getOrNull()?.requireBasicAuth ?: false
-        ) {
-            component.showMoreSettings = true
+        OptionPopupAnchor {
+            IconActionButton(
+                MyIcons.settings,
+                Res.string.settings.asStringSource(),
+                indicateActive = component.showMoreSettings,
+                requiresAttention = responseResult?.getOrNull()?.requireBasicAuth ?: false
+            ) {
+                component.showMoreSettings = true
+            }
+            if (component.showMoreSettings) {
+                ExtraConfig(
+                    onDismiss = { component.showMoreSettings = false },
+                    configurables = component.configurables,
+                )
+            }
         }
-        Spacer(Modifier.width(6.dp))
         component.lastError.collectAsState().value?.let { downloadErrorReason ->
+            Spacer(Modifier.width(6.dp))
             DownloadErrorInfoButton(
                 onClick = component::openDownloadErrorDialog,
                 responseInfo = responseResult?.getOrNull(),
@@ -424,66 +371,45 @@ fun ConfigActionsButtons(component: BaseAddSingleDownloadComponent) {
 
 @Composable
 private fun MainActionButtons(component: BaseAddSingleDownloadComponent) {
-    Row {
-        val onDuplicateStrategy by component.onDuplicateStrategy.collectAsState()
-        val canAddResult by component.canAddResult.collectAsState()
-        if (canAddResult is CanAddResult.DownloadAlreadyExists && onDuplicateStrategy == null) {
-            ActionButton(
-                text = myStringResource(Res.string.show_solutions),
-                modifier = Modifier,
-                onClick = { component.showSolutionsOnDuplicateDownloadUi = true },
-            )
-            if (component.shouldShowOpenFile.collectAsState().value) {
-                Spacer(Modifier.width(8.dp))
-                ActionButton(
-                    text = myStringResource(Res.string.open_file),
-                    modifier = Modifier,
-                    onClick = { component.openExistingFile() },
-                    onLongClick = { component.openExistingFile(useAppChooser = true) },
-                )
-            }
-        } else {
-            val canAddToDownloads by component.canAddToDownloads.collectAsState()
-            ActionButton(
-                text = myStringResource(Res.string.add),
-                modifier = Modifier,
-                enabled = canAddToDownloads,
-                onClick = {
-                    component.selectQueueComponent.openAddToQueueDialog()
-                },
-                onLongClick = {
-                    component.selectQueueComponent.fastConfirm()
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+        FlowRow(
+            modifier = Modifier.weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            val onDuplicateStrategy by component.onDuplicateStrategy.collectAsState()
+            val canAddResult by component.canAddResult.collectAsState()
+            if (canAddResult is CanAddResult.DownloadAlreadyExists && onDuplicateStrategy == null) {
+                if (component.shouldShowOpenFile.collectAsState().value) {
+                    ActionButton(
+                        text = myStringResource(Res.string.open_file),
+                        onClick = { component.openExistingFile() },
+                        onLongClick = { component.openExistingFile(useAppChooser = true) },
+                    )
                 }
-
-            )
-            Spacer(Modifier.width(8.dp))
-            PrimaryMainActionButton(
-                text = myStringResource(Res.string.download),
-                modifier = Modifier,
-                enabled = canAddToDownloads,
-                onClick = {
-                    component.onRequestDownload()
-                },
-            )
-            if (onDuplicateStrategy != null) {
-                Spacer(Modifier.width(8.dp))
-                ActionButton(
-                    text = myStringResource(Res.string.change_solution),
+            } else {
+                val canAddToDownloads by component.canAddToDownloads.collectAsState()
+                OptionPopupAnchor {
+                    ActionButton(
+                        text = myStringResource(Res.string.add),
+                        enabled = canAddToDownloads,
+                        onClick = { component.selectQueueComponent.openAddToQueueDialog() },
+                        onLongClick = { component.selectQueueComponent.fastConfirm() },
+                    )
+                    ShowAddToQueueDialog(queueComponent = component.selectQueueComponent)
+                }
+                PrimaryMainActionButton(
+                    text = myStringResource(Res.string.download),
                     modifier = Modifier,
-                    onClick = { component.showSolutionsOnDuplicateDownloadUi = true },
+                    enabled = canAddToDownloads,
+                    onClick = { component.onRequestDownload() },
                 )
             }
-
         }
-        //        Spacer(Modifier.weight(1f))
-        Spacer(Modifier.weight(1f))
-
+        Spacer(Modifier.width(16.dp))
         ActionButton(
             text = myStringResource(Res.string.cancel),
-            modifier = Modifier,
-            onClick = {
-                component.onRequestClose()
-            },
+            onClick = { component.onRequestClose() },
         )
     }
 }
@@ -496,7 +422,7 @@ fun RenderFileTypeAndSize(
     val linkCheckResult by component.checkResponseResult.collectAsState()
     val fileIconProvider = component.iconProvider
     val iconModifier = Modifier.size(mySpacings.iconSize)
-    Box(Modifier.padding(top = 16.dp)) {
+    Box {
         AnimatedContent(
             targetState = isLinkLoading,
             transitionSpec = {

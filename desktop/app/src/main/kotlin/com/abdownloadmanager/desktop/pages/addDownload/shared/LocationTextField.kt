@@ -4,30 +4,23 @@ import com.abdownloadmanager.shared.ui.widget.MyTextFieldWithIcons
 import com.abdownloadmanager.shared.ui.widget.MyTextFieldIcon
 import com.abdownloadmanager.shared.util.ui.icon.MyIcons
 import com.abdownloadmanager.shared.util.ui.myColors
-import com.abdownloadmanager.desktop.ui.template.dialogSurface
 import com.abdownloadmanager.shared.util.ui.theme.myTextSizes
 import com.abdownloadmanager.shared.ui.widget.Text
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.window.WindowDraggableArea
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.v2.WindowBoundsProvider
-import androidx.compose.ui.window.v2.WindowSizeProvider
-import androidx.compose.ui.window.v2.rememberDialogState
-import com.abdownloadmanager.desktop.window.custom.BaseOptionDialog
-import com.abdownloadmanager.desktop.window.moveNearMouse
+import com.abdownloadmanager.desktop.ui.template.OptionPopup
+import com.abdownloadmanager.desktop.ui.template.OptionPopupAnchor
 import com.abdownloadmanager.resources.Res
 import com.abdownloadmanager.shared.ui.widget.LabeledCheckbox
 import com.abdownloadmanager.shared.util.div
@@ -64,7 +57,7 @@ fun LocationTextField(
         directory?.let(setText)
     }
 
-    Box(modifier) {
+    OptionPopupAnchor(modifier) {
         MyTextFieldWithIcons(
             text,
             setText,
@@ -77,7 +70,6 @@ fun LocationTextField(
                         icon = MyIcons.folder,
                         contentDescription = myStringResource(Res.string.download_location),
                     ) {
-                        downloadLauncherFolderPickerLauncher
                         downloadLauncherFolderPickerLauncher.launch()
                     }
                     MyTextFieldIcon(
@@ -112,29 +104,14 @@ private fun LocationOptionsDialog(
     lastUsedLocations: LastUsedLocationsProp,
     rememberFolder: RememberFolderProp,
 ) {
-    val state = rememberDialogState(
-        initialBoundsProvider = WindowBoundsProvider(
-            sizeProvider = WindowSizeProvider.Unconstrained
-        )
-    )
-    BaseOptionDialog(
-        onCloseRequest = onDismiss,
-        state = state,
-        resizeable = false,
-    ) {
-        LaunchedEffect(window) {
-            window.moveNearMouse()
-        }
-        val shape = myShapes.defaultRounded
+    OptionPopup(onDismissRequest = onDismiss, matchAnchorWidth = true) {
         Column(
             Modifier
-                .width(IntrinsicSize.Max)
-                .widthIn(min = 320.dp, max = 460.dp)
-                .dialogSurface(shape)
+                .fillMaxWidth()
         ) {
             WithContentColor(myColors.onBackground) {
                 Column {
-                    WindowDraggableArea(Modifier.fillMaxWidth()) {
+                    Box(Modifier.fillMaxWidth()) {
                         Row(
                             Modifier
                                 .fillMaxWidth()
@@ -144,7 +121,7 @@ private fun LocationOptionsDialog(
                             Text(
                                 myStringResource(Res.string.download_location),
                                 modifier = Modifier.weight(1f),
-                                fontSize = myTextSizes.lg,
+                                fontSize = myTextSizes.base,
                                 fontWeight = FontWeight.Bold,
                             )
                             Spacer(Modifier.width(8.dp))

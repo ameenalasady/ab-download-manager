@@ -125,6 +125,7 @@ class ProbeEvidenceTest(unittest.TestCase):
         nativeX11Guard=true xOpenDisplayAttempted=false
         wl_surface#9.attach(wl_buffer#41, 0, 0)
         wl_surface#9.commit()
+        POPUP_VIEWPORT_OK viewport=1400 x 920 layout=1400 x 920
         SMOKE_COMPLETE draws=20 updates=5
     '''
 
@@ -133,7 +134,7 @@ class ProbeEvidenceTest(unittest.TestCase):
         self.assertEqual(runner.evidence_errors(case, 0, self.native, 'libawt_wlawt.so', self.source, ':0'), [])
         for marker in ['toolkit=sun.awt.wl.WLToolkit', 'awtBackend=Wayland', 'DISPLAY=null',
                        'nativeRenderingOptIn=true', self.source, 'nativeX11Guard=true',
-                       '.attach(wl_buffer#', '.commit()', 'SMOKE_COMPLETE']:
+                       '.attach(wl_buffer#', '.commit()', 'POPUP_VIEWPORT_OK', 'SMOKE_COMPLETE']:
             with self.subTest(marker=marker):
                 self.assertTrue(runner.evidence_errors(case, 0, self.native.replace(marker, 'missing'),
                                                        'libawt_wlawt.so', self.source, ':0'))

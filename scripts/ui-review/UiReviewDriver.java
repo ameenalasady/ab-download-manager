@@ -1,10 +1,15 @@
 import com.abdownloadmanager.desktop.AppComponent;
+import com.abdownloadmanager.shared.pages.adddownload.AddDownloadCredentialsInUiProps;
+import com.abdownloadmanager.shared.pages.adddownload.ImportOptions;
+import com.abdownloadmanager.shared.pages.adddownload.single.BaseAddSingleDownloadComponent;
+import ir.amirab.downloader.downloaditem.http.HttpDownloadCredentials;
 import kotlin.jvm.internal.Reflection;
 import org.koin.core.context.GlobalContext;
 
 import javax.swing.SwingUtilities;
 import java.awt.*;
 import java.awt.event.MouseEvent;
+import java.awt.event.MouseWheelEvent;
 import java.awt.event.KeyEvent;
 import java.nio.file.*;
 import java.util.Arrays;
@@ -63,12 +68,45 @@ public final class UiReviewDriver {
             case "close-settings" -> app.closeSettings();
             case "url" -> app.openEnterNewURLWindow();
             case "close-url" -> app.closeEnterNewURLWindow();
+            case "close-add" -> app.closeAddDownloadDialog();
+            case "assert-no-option-dialogs" -> {
+                if (Arrays.stream(Window.getWindows()).anyMatch(w -> w.isShowing() && w instanceof Dialog))
+                    throw new IllegalStateException("An option picker opened a top-level dialog instead of a local popup");
+            }
+            case "enable-category" -> {
+                var component = (BaseAddSingleDownloadComponent) app.getOpenedAddDownloadDialogs().getValue().getFirst();
+                component.setUseCategory(true);
+            }
+            case "invalid-add-name" -> {
+                var component = (BaseAddSingleDownloadComponent) app.getOpenedAddDownloadDialogs().getValue().getFirst();
+                component.setName("invalid/name");
+            }
+            case "invalid-add-folder" -> {
+                Path blocked = root.resolve("not-a-download-directory");
+                Files.writeString(blocked, "Disposable validation fixture");
+                var component = (BaseAddSingleDownloadComponent) app.getOpenedAddDownloadDialogs().getValue().getFirst();
+                component.setFolder(blocked.toString());
+            }
             case "queues" -> app.openQueues(null);
             case "close-queues" -> app.closeQueues();
             case "about" -> app.openAboutPage();
             case "close-about" -> app.closeAbout();
             default -> {
-                if (command.equals("search") || command.startsWith("search ")) {
+                if (command.startsWith("add ")) {
+                    var links = Arrays.stream(command.substring(4).split(" ")).map(link -> {
+                        var uri = java.net.URI.create(link);
+                        if (!"http".equals(uri.getScheme()) || !"127.0.0.1".equals(uri.getHost()))
+                            throw new IllegalArgumentException("Use a loopback HTTP fixture for UI review");
+                        return new AddDownloadCredentialsInUiProps(
+                            new HttpDownloadCredentials(link, null, null, null, null, null),
+                            new AddDownloadCredentialsInUiProps.Configs(null));
+                    }).toList();
+                    app.openAddDownloadDialog(links, new ImportOptions());
+                } else if (command.startsWith("ui-scale ")) {
+                    float scale = Float.parseFloat(command.substring(9));
+                    if (scale < 0.75f || scale > 2f) throw new IllegalArgumentException("Review scale out of range");
+                    app.getAppSettings().getUiScale().setValue(scale);
+                } else if (command.equals("search") || command.startsWith("search ")) {
                     app.getShowHomeSlot().getValue().getChild().getInstance().getFilterState()
                         .setTextToSearch(command.length() > 6 ? command.substring(7) : "");
                 } else if (command.startsWith("key ")) {
@@ -85,6 +123,19 @@ public final class UiReviewDriver {
                         .filter(w -> w.isVisible() && w instanceof Frame f && f.getTitle().startsWith(parts[3]))
                         .findFirst().orElseThrow();
                     window.setSize(Integer.parseInt(parts[1]), Integer.parseInt(parts[2]));
+                } else if (command.startsWith("scroll ")) {
+                    String[] parts = command.split(" ", 5);
+                    int x = Integer.parseInt(parts[1]), y = Integer.parseInt(parts[2]);
+                    int rotation = Integer.parseInt(parts[3]);
+                    Window window = Arrays.stream(Window.getWindows())
+                        .filter(w -> w.isVisible() && w instanceof Frame f && f.getTitle().startsWith(parts[4]))
+                        .findFirst().orElseThrow();
+                    Component target = SwingUtilities.getDeepestComponentAt(window, x, y);
+                    if (target == null) throw new IllegalStateException("No component at requested position");
+                    Point point = SwingUtilities.convertPoint(window, x, y, target);
+                    target.dispatchEvent(new MouseWheelEvent(target, MouseEvent.MOUSE_WHEEL,
+                        System.currentTimeMillis(), 0, point.x, point.y, 0, false,
+                        MouseWheelEvent.WHEEL_UNIT_SCROLL, 3, rotation));
                 } else if (command.startsWith("click ") || command.startsWith("context ")) {
                     String[] parts = command.split(" ", 4);
                     int x = Integer.parseInt(parts[1]), y = Integer.parseInt(parts[2]);

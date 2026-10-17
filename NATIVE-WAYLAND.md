@@ -5,6 +5,37 @@ Read `HANDOFF-native-wayland.md` for preservation requirements and the stable fa
 This document describes implementation after the bootstrap handoff. Native is now installed
 for explicitly approved real-life testing; the original XWayland installation is preserved.
 
+## Add Download form cohesion follow-up (installed)
+
+The approved candidate **`ABDownloadManagerNativeWayland-20261017-180057`** is now the
+user-local native release and was verified running on actual WLToolkit/Wayland from the
+user desktop entry. The existing native profile and two completed downloads were retained;
+no active transfers were present during activation. The separate pacman/AUR XWayland
+installation and its data/integration were not changed. Desktop-only rollback:
+`~/.local/state/abdm-backups/native-desktop-20261017-180532-b52575/restore-desktop.sh`.
+
+See the newest `UI-PASS.md` section for the 600×360 form, reserved validation/status lane,
+compact solutions action, explicit Size/resume presentation and isolated screenshot
+reviews. 43 Kotlin tests, 41 Python tests, bundle build, both-backend full-app smoke and
+real-app review passed. The essential viewport synchronization patch is unchanged in the
+installed artifact (SHA-256 `24773ad1996ff30af8789631e245ebc51f7e6cc8ad0f9f0df4a50b0dccfb422f`);
+no popup offsets were added. The preceding 600×340 popup refinement was installed as
+174708 and is superseded by this release.
+
+## Popup placement follow-up (historical source/build-stage notes)
+
+See `UI-PASS.md` for the Add Download layout and picker conversion. In addition to replacing
+mouse-positioned top-level picker dialogs with parent-local popups, the pinned native
+ComposeWindowPanel patch now refreshes PlatformWindowContext's viewport before Swing
+painting. A late Wayland graphics configuration previously updated scene density but left
+LocalWindowInfo.containerSize at the old pixel size, so all popup placement/clipping used
+a stale viewport. This is a rendering-boundary synchronization fix, not per-control offsets;
+normal Compose/XToolkit rendering is unchanged. Window/dialog probes now require viewport/
+layout equality in device pixels (verified at density 2), alongside existing protocol,
+artifact, lifecycle and native-library evidence. The 14-case matrix and both-backend
+full-app regression pass. Installed release, integrations and real-use data are unchanged.
+Interactive mixed-monitor transitions still require acceptance.
+
 ## 2026-10-17 UI consistency pass reinstall
 
 The user reviewed and approved the desktop UI consistency pass (see `UI-PASS.md`) and asked
