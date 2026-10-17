@@ -12,6 +12,8 @@
 
 ### Fixed
 
+- Local browser integration: capture extensionless attachments whose MIME type maps to a registered file type, including GoFile downloads, without overriding filename exclusions or intercepting inline media.
+
 ### Security
 
 ## 1.11.0

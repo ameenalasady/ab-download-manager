@@ -79,6 +79,10 @@ For alternative installation methods, uninstallation instructions, and more deta
 
 You can download the browser extension to integrate the app with your browser.
 
+This local checkout also includes a [browser-extension capture fix](integration/browser-extension/README.md)
+for extensionless attachments; [installation and rollback](PLASMA-LOCAL.md#extensionless-browser-download-capture)
+are separate from the desktop Wayland build.
+
 <p align="left">
 <a href="https://addons.mozilla.org/firefox/addon/ab-download-manager/">
     <picture>

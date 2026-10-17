@@ -14,6 +14,62 @@ external-app environment fix and an idle-only graceful restart; it is installed,
 VLC/default associations and the fallback. Latest rollback details are in `NATIVE-WAYLAND.md`.
 This document otherwise records that fallback.
 
+## Extensionless browser download capture
+
+The GoFile bypass reported on 2026-10-16 was in browser integration 1.5.0,
+not the desktop application or Wayland backend. The response was HTTP 200,
+`Content-Type: video/mp4`, with an RFC 5987 attachment filename lacking a suffix.
+The extension checked the filename suffix against its registered types, rejected
+the attachment, and repeated that rejection in `downloads.onCreated`.
+
+The browser source is now included in `integration/browser-extension`, based on
+upstream revision `658a0c70188d78033f478ba51c102a273322166f`. Its shared
+`isRegisteredDownloadContent` helper uses the MIME database only for explicit
+attachments without a filename suffix. It respects registered file types and
+does not override explicit suffix exclusions or capture inline page/media
+resources. Unknown/generic MIME types still need manual forwarding.
+No GoFile-specific URL or filename exception was introduced.
+
+**Installed:** `AB Download Manager Browser Integration (Local capture fix)`,
+version 1.5.0, same extension ID `firefox-integration@abdownloadmanager.com`.
+It was installed persistently through Zen's AddonManager, not temporarily through
+about:debugging. All five stored extension settings were unchanged. Its archive
+matches `integration/browser-extension/dist/firefox-capture-fixed.xpi`, SHA-256
+`61cc7dc18f0e075eb8950798a2580fb3fd49a24874891590cbecbc2097f39bb6`.
+The desktop application, native-host manifests and Wayland implementation were
+not changed or rebuilt for this fix.
+
+The user explicitly selected persistent unsigned installation and approved a
+browser restart. This requires `xpinstall.signatures.required=false` in the Zen
+profile; `~/.config/zen/oxy3otm0.Default (release)/user.js` retains only that override.
+This relaxes signature enforcement for other add-ons in the same profile too.
+Normal extension update policy was preserved, so a future official update may
+replace this local build.
+
+Verification:
+- The original signed extension downloaded an extensionless fixture in-browser
+  while forwarding a normal `.mp4` control.
+- The fixed extension forwarded the fixture and the real GoFile URL in isolated
+  Zen; the GoFile request produced no browser-download event. No real media was
+  downloaded.
+- All 10 regression tests passed; Firefox and Chromium production builds succeeded.
+- After persistent installation in the real Zen profile, a bounded 67,584-byte
+  extensionless fixture reached the real manager: `/add` returned HTTP 200 and
+  there were zero browser-download events. No Start action was invoked.
+- The initial synthetic quit shortcut disrupted the terminal and left Ctrl held,
+  as reported by the user, who recovered by relogging. No further synthetic input
+  was used. Installation after the relog required no additional browser restart.
+  Temporary debugging overrides and observation hooks were removed; debugging
+  preferences returned to their defaults and port 33453 was closed.
+
+**Rollback:** in Zen's Add-ons Manager, use **Install Add-on From File** to install
+`~/.local/state/abdm-backups/browser-capture-20261016-221404/original-signed.xpi`.
+After the signed original is active, remove the signature override from `user.js`
+and reset `xpinstall.signatures.required` in about:config. The backup also holds
+the prior preferences and session recovery files; do not restore those entire
+files over later browsing changes. Rebuild instructions are in the
+[`browser extension README`](integration/browser-extension/README.md).
+
 ## Origin and installation
 
 - Original modified checkout: `~/Code/ab-download-manager`, based on `v1.10.2`. Left unchanged.
