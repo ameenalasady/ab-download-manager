@@ -163,7 +163,7 @@ public:
                         reply["result"] = QJsonObject{{"ok", true}, {"requestId", "manual-review"}};
                     }
                     if (reviewCapability && request["op"] == "browser.probe")
-                        reply["result"] = QJsonObject{{"ok", true}, {"requestId", request["requestId"]}, {"index", request["index"]}, {"size", "3145728"}};
+                        reply["result"] = QJsonObject{{"ok", true}, {"requestId", request["requestId"]}, {"index", request["index"]}, {"statusCode", 206}, {"size", "3145728"}};
                     if (fulfillBrowserAccept && request["op"] == "browser.accept" && reply["result"].toObject()["ok"].toBool()) {
                         QJsonArray ids;
                         for (const auto &value : request["items"].toArray()) {

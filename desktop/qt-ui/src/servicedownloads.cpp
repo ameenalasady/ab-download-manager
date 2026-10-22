@@ -522,7 +522,10 @@ void ServiceDownloads::readFrames() {
                && reply["commandId"].toString() == m_pending) {
         m_pending.clear();
         const auto result = reply["result"].toObject();
-        if (!result["ok"].toBool()) {
+        if (m_commandOperation == "browser.probe" && !result["ok"].toBool()) {
+            // One unreachable link is that row's answer, not a reason to skip the rest.
+            emit browserMetadataReady(m_probeRequest, m_probeIndex, QStringLiteral("-1"), tr("Unavailable"));
+        } else if (!result["ok"].toBool()) {
             fail(result["error"].toString(tr("Command failed")), m_commandTarget);
             if (!m_batch.isEmpty()) dropBatch(tr("The remaining %n action(s) were not sent.", nullptr, int(m_batch.size())));
         } else if (m_batch.isEmpty()) clearError();
@@ -546,7 +549,11 @@ void ServiceDownloads::readFrames() {
             bool ok = false; const auto size = result["size"].toString().toLongLong(&ok);
             const int index = result["index"].toInt(-1); const QString requestId = result["requestId"].toString();
             if (!ok || size < -1 || index < 0 || index >= 100 || requestId.isEmpty() || requestId.size() > 64) { invalid(); return; }
-            emit browserMetadataReady(requestId, index, QString::number(size), sizeText(size, sizeUnit()));
+            // A 404/403 page's Content-Length is not the download's size.
+            const int status = result["statusCode"].toInt();
+            if (result["requiresAuth"].toBool()) emit browserMetadataReady(requestId, index, QStringLiteral("-1"), tr("Login required"));
+            else if (status < 200 || status >= 300) emit browserMetadataReady(requestId, index, QStringLiteral("-1"), tr("Unavailable"));
+            else emit browserMetadataReady(requestId, index, QString::number(size), sizeText(size, sizeUnit()));
         }
         if (m_commandOperation == "browser.dismiss" && result["ok"].toBool()) m_dismissedRequest = m_browserCommandId;
         m_browserCommandId.clear();
@@ -769,6 +776,7 @@ bool ServiceDownloads::command(QJsonObject cmd) {
     if (!m_capabilities.contains(cmd["op"].toString())) { fail(tr("This service does not support that operation.")); return false; }
     m_commandOperation = cmd["op"].toString();
     m_commandTarget = cmd.value("id").toString();
+    if (m_commandOperation == "browser.probe") { m_probeRequest = cmd["requestId"].toString(); m_probeIndex = cmd["index"].toInt(-1); }
     m_pending = QUuid::createUuid().toString(QUuid::WithoutBraces);
     cmd["type"] = "command"; cmd["epoch"] = m_epoch; cmd["commandId"] = m_pending;
     // One request in flight: a routine snapshot defers, never rejects, a user command.
