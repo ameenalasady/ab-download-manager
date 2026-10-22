@@ -128,7 +128,10 @@ class RuntimePolicyTest {
     @Test fun httpOptionsValidateAtomicallyWithoutEchoingSecretsAndSurviveJoinedRestart() = runBlocking {
         val root = Files.createTempDirectory("abdm-runtime-engine-")
         val file = fixture(root); val policy = RuntimePolicy.load(file)
-        val lifecycle = ServiceLifecycle(policy.profile, policy)
+        // HTTP option persistence needs no browser listener. The runtime default
+        // would contend for the desktop's port 15151 and may drain a 15 s bind retry.
+        // BrowserIntegrationTest exercises the listener on owned ephemeral ports.
+        val lifecycle = ServiceLifecycle(policy.profile, policy, browserIntegration = false)
         try {
             var engine = lifecycle.start()
             val credentials = buildJsonObject { put("username", "fixture-user"); put("password", "private-password"); put("headers", buildJsonObject { put("Cookie", "fixture-secret") }) }

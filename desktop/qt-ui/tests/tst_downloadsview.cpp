@@ -1,5 +1,6 @@
 #include "previewdownloads.h"
 #include "nativewindowstyle.h"
+#include "renderwait.h"
 #include <QAccessible>
 #include <QElapsedTimer>
 #include <QQuickItem>
@@ -11,7 +12,10 @@
 class DownloadsViewTest : public QObject
 {
     Q_OBJECT
+    QElapsedTimer caseTimer;
 private slots:
+    void init() { caseTimer.start(); }
+    void cleanup() { qInfo().noquote() << QStringLiteral("CASE %1: %2 ms").arg(QTest::currentTestFunction()).arg(caseTimer.elapsed()); }
     void initTestCase() {
         QGuiApplication::setDesktopFileName(QStringLiteral("org.abdownloadmanager.QtCapability.ViewTest-%1").arg(QCoreApplication::applicationPid()));
         QQuickStyle::setStyle(QStringLiteral("org.kde.desktop"));
@@ -377,6 +381,7 @@ void DownloadsViewTest::desktopThemeAndReviewGallery()
         }
     }
     const QString directory = qEnvironmentVariable("QT_UI_REVIEW_DIR");
+    const bool gallery = !directory.isEmpty() || qEnvironmentVariableIntValue("QT_UI_CHROME_HOLD_MS") > 0;
     // Lock logical geometry while capturing: a Wayland configure can otherwise
     // supersede resize() and silently label a narrow frame as the default size.
     QSize frame(948, 762);
@@ -401,7 +406,8 @@ void DownloadsViewTest::desktopThemeAndReviewGallery()
         // configure; re-assert the requested frame instead of mislabelling it.
         for (int attempt = 0; attempt < 4; ++attempt) {
             if (view.size() != frame && !lock(frame)) return false;
-            QTest::qWait(350); // Let style/Kirigami padding animations settle.
+            if (!waitForRenderedFrame(&view)) return false;
+            if (gallery) QTest::qWait(350); // Retain gallery animation settling.
             if (view.size() == frame) break;
         }
         const auto image = view.grabWindow();
@@ -435,7 +441,8 @@ void DownloadsViewTest::desktopThemeAndReviewGallery()
     const auto captureDialog = [&](const char *object, const QString &name) {
         auto *window = dialogWindow(view, object);
         if (!window || window == &view || !QTest::qWaitForWindowExposed(window)) return false;
-        QTest::qWait(350);
+        if (!waitForRenderedFrame(window)) return false;
+        if (gallery) QTest::qWait(350); // Retain gallery animation settling.
         const auto image = window->grabWindow();
         // Optional owned-window compositor inspection (includes server-side decorations).
         // Normal CTest runs never wait here.

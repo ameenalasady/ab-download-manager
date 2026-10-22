@@ -1,5 +1,6 @@
 #include "servicedownloads.h"
 #include "previewdownloads.h"
+#include "renderwait.h"
 #include <QAbstractItemModelTester>
 #include <QDir>
 #include <QFile>
@@ -1583,7 +1584,10 @@ private slots:
         QTRY_VERIFY(window->height() < progressHeight);
         QVERIFY(!list->isVisible());
         QVERIFY(!window->findChild<QObject *>("downloadWindowProgress")->property("visible").toBool());
-        QTest::qWait(350);
+        auto *content = window->findChild<QObject *>("downloadContent"); QVERIFY(content);
+        QTRY_COMPARE(window->height(), qCeil(content->property("contentHeight").toReal()));
+        QVERIFY(waitForRenderedFrame(window));
+        if (!capture.isEmpty() || hold) QTest::qWait(350); // Preserve opt-in gallery settling.
         qInfo() << "natural completion size" << window->size();
         if (!capture.isEmpty()) QVERIFY(window->grabWindow().save(capture + "/completion-default.png"));
         if (hold) QTest::qWait(hold);

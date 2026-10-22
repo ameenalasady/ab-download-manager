@@ -145,8 +145,13 @@ class BrowserIntegrationTest {
     }
 
     @Test fun portConflictIsReportedNotPersistedAndSettingsRebindWithWriteOnlyKey() = runBlocking<Unit> {
-        ServerSocket(0, 50, java.net.InetAddress.getByName("127.0.0.1")).use { occupied ->
-            val settings = """{"apiEnabled":true,"apiPort":${occupied.localPort}}"""
+        // An unrelated but responsive occupant still causes a real bind conflict,
+        // without spending a one-second read timeout on every identity probe.
+        val occupied = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        occupied.createContext("/") { e -> e.sendResponseHeaders(404, -1); e.close() }
+        occupied.start()
+        try {
+            val settings = """{"apiEnabled":true,"apiPort":${occupied.address.port}}"""
             val root = profile(settings)
             val lifecycle = ServiceLifecycle(root, browserIntegration = true)
             try {
@@ -170,7 +175,7 @@ class BrowserIntegrationTest {
                 assertEquals("disabled", engine.snapshot().getValue("browserIntegration").jsonObject.getValue("state").jsonPrimitive.content)
                 assertFails { post(port, "ping", "null", key = "rotated-key") }
             } finally { lifecycle.stop(); root.toFile().deleteRecursively() }
-        }
+        } finally { occupied.stop(0) }
     }
 
     @Test fun coexistenceRetriesOnlyBindingAndResumesWhenThePortIsReleased() = runBlocking {

@@ -24,15 +24,16 @@ class DesktopAdaptersTest {
         val helper = root.resolve("monitor.sh").toFile().apply {
             writeText("""
                 last=''
-                while :; do
+                # Poll state, but stop promptly on stdin EOF like the real helper.
+                # Bash read returns 142 on timeout and 1 on EOF. No TERM fallback.
+                while IFS= read -r -t 0.05 unused || [ "${'$'}?" = 142 ]; do
                   state=${'$'}(head -c 32 "${'$'}1")
                   if [ "${'$'}state" != "${'$'}last" ]; then printf '%s\n' "${'$'}state"; last=${'$'}state; fi
-                  sleep 0.05
                 done
             """.trimIndent())
         }
         val launcher = FrontendLauncher(null)
-        val lifecycle = ServiceLifecycle(root, launcher = launcher, activityCommand = listOf("/bin/sh", helper.path, state.path))
+        val lifecycle = ServiceLifecycle(root, launcher = launcher, activityCommand = listOf("/bin/bash", helper.path, state.path))
         try {
             val engine = lifecycle.start()
             engine.command(buildJsonObject { put("op", "settings.update"); put("settings", buildJsonObject { put("speedLimit", "1024"); put("useSpeedLimit", "EnabledWhenBessy") }) })
@@ -174,14 +175,23 @@ class DesktopAdaptersTest {
 
     @Test fun pausingTheActiveManualDownloadStartsTheWaitingOneButNeverRestartsItself() = runBlocking {
         val root = Files.createTempDirectory("abdm-manual-slot-test-")
-        val body = ByteArray(256 * 1024) { it.toByte() }
+        // Keep the original first-transfer pause window; the second only needs to
+        // complete after taking the freed slot, not stream for another 1.3 seconds.
+        val firstBody = ByteArray(256 * 1024) { it.toByte() }
+        val secondBody = ByteArray(64 * 1024) { it.toByte() }
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
-        server.executor = java.util.concurrent.Executors.newCachedThreadPool()
+        val executor = java.util.concurrent.Executors.newCachedThreadPool()
+        server.executor = executor
         server.createContext("/") { e ->
+            val body = if (e.requestURI.path == "/first.bin") firstBody else secondBody
             e.responseHeaders.add("Content-Length", body.size.toString())
             e.sendResponseHeaders(200, if (e.requestMethod == "HEAD") -1 else body.size.toLong())
             if (e.requestMethod != "HEAD") runCatching {
-                e.responseBody.use { out -> body.toList().chunked(8192).forEach { out.write(it.toByteArray()); out.flush(); Thread.sleep(40) } }
+                e.responseBody.use { out ->
+                    body.toList().chunked(8192).forEach { chunk ->
+                        out.write(chunk.toByteArray()); out.flush(); Thread.sleep(40)
+                    }
+                }
             }
             e.close()
         }
@@ -205,7 +215,12 @@ class DesktopAdaptersTest {
             withTimeout(15_000) { while (state(second) != "completed") delay(20) }
             delay(800) // Past the debounced refill: the user-paused download stays paused.
             assertEquals("paused", state(first))
-        } finally { lifecycle.stop(); server.stop(0); root.toFile().deleteRecursively() }
+        } finally {
+            lifecycle.stop(); server.stop(0)
+            executor.shutdownNow()
+            check(executor.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS))
+            root.toFile().deleteRecursively()
+        }
     }
 
     @Test fun clipboardExtractionIsBoundedDeduplicatedAndDoesNotExecuteCommands() {
