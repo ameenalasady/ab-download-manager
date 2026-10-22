@@ -47,6 +47,7 @@ class EngineSession(
     private val root: Path, private val runtime: RuntimePolicy = RuntimePolicy.isolated(root),
     browserIntegration: Boolean = !runtime.isolated, private val launcher: FrontendLauncher = FrontendLauncher(null),
     private val notifier: DesktopNotifier = NoDesktopNotifier, activityCommand: List<String>? = null,
+    private val power: PowerExecutor = LogindPowerExecutor,
 ) {
     init { ProfileCopies.requireNotQuarantined(root) }
     private val foldersRegistry = DownloadFoldersRegistry()
@@ -118,9 +119,22 @@ class EngineSession(
     private var monitorSubscription: Job? = null
     private val failureStorage = FailedDownloadErrorStorageInMemory()
     private val failures = FailedDownloads(manager, failureStorage, errorRegistry, queueScope)
-    // Explicit isolated policy: never execute desktop, notification, opener or power actions.
+    // Per-download completion actions (desktop, opener, power) never run here; queue power
+    // actions only after the frontend countdown below.
     private val completion = OnDownloadCompletionActionRunner(manager, queueScope, NoOpOnDownloadCompletionActionProvider())
-    private val queueCompletion = OnQueueEventActionRunner(queues, queueScope, NoopOnQueueCompletionActionProvider())
+    // A finished queue's power action only becomes PENDING: the frontend shows the original
+    // 30 s countdown and confirms it (power.execute). Never in isolated fixtures.
+    private val queueCompletion = OnQueueEventActionRunner(queues, queueScope, object : OnQueueCompletionActionProvider {
+        override suspend fun getOnQueueEventActions(queueId: Long): List<OnQueueEventAction> {
+            val type = (if (runtime.isolated) null else queuePowerAction(queueId)) ?: return emptyList()
+            return listOf(object : OnQueueEventAction {
+                override suspend fun onQueueCompleted(queueId: Long) = requestPower(queueId, type, "queueFinished")
+                override suspend fun onQueueEndTimeReached(queueId: Long) = requestPower(queueId, type, "queueEndTime")
+            })
+        }
+    })
+    private var pendingPower: PendingPowerAction? = null
+    private var powerSerial = 0L
     // Keep the original MyIcons URI mapping (including its historical property names).
     private val categoryIcons = listOf("icon:pictureFile", "icon:zipFile", "icon:musicFile",
         "icon:folderOpen", "icon:fileOpen", "icon:videoFile")
@@ -174,7 +188,7 @@ class EngineSession(
             "browser.dismiss", "browser.settings", "settings.integration", "frontend.activate", "links.import",
             "system.activity", "download.probe", "download.review", "history.page", "history.delta", "download.windows", "download.parts",
             "download.replace", "download.delete", "settings.folder", "settings.duplicates",
-            "download.reset", "download.move", "download.links", "settings.sort", "category.icon", "settings.notificationSounds",
+            "download.reset", "download.move", "download.links", "settings.sort", "category.icon", "settings.notificationSounds", "queue.powerAction", "power.execute", "power.cancel",
             "queue.startAll", "queue.stopAll", "download.stopAll", "links.review", "browser.probe", "browser.probeBatch")
     }
 
@@ -233,6 +247,31 @@ class EngineSession(
                     preferences.notificationSoundFile("errorNotificationSound")))
             }
             else -> {}
+        }
+    }
+
+    private fun queuePowerAction(queueId: Long): String? = runCatching {
+        extraQueues.getExtraQueueSettings(queueId).document["powerActionTypeOnFinish"]?.jsonPrimitive?.contentOrNull
+    }.getOrNull()?.takeIf { it in powerActionTypes }
+
+    /** Owner thread (queue events). A newer request replaces an unconfirmed one. */
+    private fun requestPower(queueId: Long, type: String, reason: String) {
+        val name = queues.getAll().find { it.id == queueId }?.getQueueModel()?.name ?: return
+        pendingPower = PendingPowerAction(++powerSerial, type, reason, queueId, name)
+        if (!launcher.connected) launcher.request()
+    }
+
+    /** Original DownloadSystem.stopAnything, with active writers drained (bounded). */
+    private suspend fun stopAllDownloads() {
+        // Stop producers before the active jobs so a freed slot cannot refill.
+        manual.clearQueue()
+        queues.getAll().forEach { it.stopAsync() }
+        jobControl.mutate {
+            val jobs = manager.downloadJobs.toList()
+            jobs.filter { it.isDownloadActive.value || manager.getJobStatusOf(it.id) is DownloadJobStatus.IsActive }.forEach { it.pause() }
+            // Bounded: one job that never drains must not block every later command.
+            withTimeoutOrNull(30_000) { jobs.forEach { it.activeDownloadScope?.coroutineContext?.job?.join() } }
+                ?: error("Some downloads are still stopping")
         }
     }
 
@@ -539,6 +578,12 @@ class EngineSession(
                 put("appliedSpeedLimit", settings.globalSpeedLimit.toString())
             })
             put("frontend", buildJsonObject { put("activation", activation ?: JsonNull) })
+            put("powerAction", pendingPower?.let { p ->
+                buildJsonObject {
+                    put("serial", p.serial.toString()); put("type", p.type); put("reason", p.reason)
+                    put("queueId", p.queueId.toString()); put("queueName", p.queueName)
+                }
+            } ?: JsonNull)
             put("downloadWindows", buildJsonObject {
                 put("serial", windowSerial.toString()); put("events", JsonArray(windowEvents.toList()))
             })
@@ -563,6 +608,7 @@ class EngineSession(
                     put("id", q.id.toString()); put("name", model.name); put("active", q.isQueueActive)
                     put("maxConcurrent", model.maxConcurrent); put("stopOnEmpty", model.stopQueueOnEmpty)
                     put("items", JsonArray(model.queueItems.map { JsonPrimitive(it.toString()) }))
+                    put("powerAction", queuePowerAction(q.id)?.let(::JsonPrimitive) ?: JsonNull)
                     put("schedule", json.encodeToJsonElement(ScheduleTimes.serializer(), model.scheduledTimes))
                 }
             }))
@@ -711,16 +757,16 @@ class EngineSession(
                     bridge.apply(preferences.browser())
                 }
                 "queue.startAll" -> queues.getAll().forEach { if (!it.isQueueActive) it.start() }
-                "queue.stopAll", "download.stopAll" -> {
-                    // Stop producers before the active jobs so a freed slot cannot refill.
-                    if (op == "download.stopAll") manual.clearQueue()
-                    queues.getAll().forEach { it.stopAsync() }
-                    if (op == "download.stopAll") jobControl.mutate {
-                        val jobs = manager.downloadJobs.toList()
-                        jobs.filter { it.isDownloadActive.value || manager.getJobStatusOf(it.id) is DownloadJobStatus.IsActive }.forEach { it.pause() }
-                        // Bounded: one job that never drains must not block every later command.
-                        withTimeoutOrNull(30_000) { jobs.forEach { it.activeDownloadScope?.coroutineContext?.job?.join() } }
-                            ?: error("Some downloads are still stopping")
+                "queue.stopAll" -> queues.getAll().forEach { it.stopAsync() }
+                "download.stopAll" -> stopAllDownloads()
+                "power.execute", "power.cancel" -> {
+                    val serial = request["serial"]?.jsonPrimitive?.content?.toLongOrNull() ?: error("Invalid power action")
+                    val pending = pendingPower?.takeIf { it.serial == serial } ?: error("This power action is no longer pending")
+                    pendingPower = null // Answered once; never replayed.
+                    if (op == "power.execute") {
+                        check(!runtime.isolated) { "Power actions are unavailable in isolated mode" }
+                        stopAllDownloads()
+                        check(withContext(Dispatchers.IO) { power.initiate(pending.type) }) { "The system refused the power action" }
                     }
                 }
                 "download.reset", "download.move" -> jobControl.mutate {
@@ -856,6 +902,16 @@ class EngineSession(
                             val concurrent = request["maxConcurrent"]?.jsonPrimitive?.int ?: error("Missing concurrency")
                             require(concurrent in 1..1024) { "Queue concurrency must be 1–1024" }
                             val stop = request["stopOnEmpty"]?.jsonPrimitive?.boolean ?: error("Missing stop policy")
+                            // Optional original powerActionTypeOnFinish: null turns it off.
+                            val powerAction = request["powerAction"]?.let { value ->
+                                if (value is JsonNull) JsonNull
+                                else (value as? JsonPrimitive)?.takeIf { it.isString && it.content in powerActionTypes } ?: error("Unsupported power action")
+                            }
+                            require(powerAction == null || powerAction is JsonNull || !runtime.isolated) { "Power actions are unavailable in isolated mode" }
+                            if (powerAction != null) {
+                                val current = extraQueues.getExtraQueueSettings(queueId).document
+                                extraQueues.setExtraQueueSettings(StoredExtraSettings(JsonObject(current + ("powerActionTypeOnFinish" to powerAction))))
+                            }
                             q.setName(name); q.setMaxConcurrent(concurrent); q.setStopQueueOnEmpty(stop)
                         }
                         "queue.schedule" -> {
@@ -1064,6 +1120,7 @@ class ServiceLifecycle(
     private val profile: Path, private val runtime: RuntimePolicy = RuntimePolicy.isolated(profile),
     private val browserIntegration: Boolean = !runtime.isolated, private val launcher: FrontendLauncher = FrontendLauncher(null),
     private val notifier: () -> DesktopNotifier = { NoDesktopNotifier }, private val activityCommand: List<String>? = null,
+    private val power: PowerExecutor = LogindPowerExecutor,
 ) {
     private var lease: ProfileLease? = null
     private var engine: EngineSession? = null
@@ -1074,7 +1131,7 @@ class ServiceLifecycle(
         var desktop: DesktopNotifier? = null
         try {
             desktop = notifier()
-            return EngineSession(profile, runtime, browserIntegration, launcher, desktop, activityCommand).also { engine = it; it.boot() }
+            return EngineSession(profile, runtime, browserIntegration, launcher, desktop, activityCommand, power).also { engine = it; it.boot() }
         } catch (e: Throwable) {
             try {
                 if (engine == null) desktop?.close() else engine?.stop()

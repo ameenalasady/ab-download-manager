@@ -251,6 +251,8 @@ void ServiceDownloads::readFrames() {
                 if (!ok || queueIds.contains(id) || q["name"].toString().isEmpty()
                     || !q["active"].isBool() || !q["stopOnEmpty"].isBool()
                     || !q["items"].isArray() || q["maxConcurrent"].toInt() < 1 || q["maxConcurrent"].toInt() > 1024) { invalid(); return; }
+                if (m_capabilities.contains("queue.powerAction") && !(q["powerAction"].isNull()
+                    || QStringList{"Shutdown", "Sleep", "Hibernate"}.contains(q["powerAction"].toString()))) { invalid(); return; }
                 QSet<QString> members;
                 for (const auto &item : q["items"].toArray()) {
                     const auto member = item.toString(); member.toLongLong(&ok);
@@ -418,6 +420,17 @@ void ServiceDownloads::readFrames() {
                     if (!i[key].isString() || i[key].toString().size() > 4096) { invalid(); return; }
             integration = i.toVariantMap();
         }
+        QVariantMap powerAction;
+        if (m_capabilities.contains("queue.powerAction") && !snapshot["powerAction"].isNull()) {
+            const auto p = snapshot["powerAction"].toObject();
+            const auto serial = p["serial"].toString();
+            if (!snapshot["powerAction"].isObject() || !numericId(p["serial"]) || serial.toLongLong() <= 0
+                || QString::number(serial.toLongLong()) != serial || !numericId(p["queueId"])
+                || !QStringList{"Shutdown", "Sleep", "Hibernate"}.contains(p["type"].toString())
+                || !QStringList{"queueFinished", "queueEndTime"}.contains(p["reason"].toString())
+                || !p["queueName"].isString() || p["queueName"].toString().isEmpty() || p["queueName"].toString().size() > 120) { invalid(); return; }
+            powerAction = p.toVariantMap();
+        }
         // Present in every service snapshot; optional so older/fake services stay compatible.
         QSet<QString> manualPending;
         if (snapshot.contains("manualPending")) {
@@ -500,10 +513,11 @@ void ServiceDownloads::readFrames() {
         const bool unitsChanged = settings.value("sizeUnit") != m_settings.value("sizeUnit") || settings.value("speedUnit") != m_settings.value("speedUnit");
         const bool sortChanged = settings.value("qtSortColumn") != m_settings.value("qtSortColumn") || settings.value("qtSortDescending") != m_settings.value("qtSortDescending");
         const bool extensionsChanged = queues != m_queues || settings != m_settings || categoriesChanged || runtimeChanged || settingsPolicy != m_settingsPolicy || integration != m_integration
-            || manualPending != m_manualPending || parts != m_parts;
+            || manualPending != m_manualPending || parts != m_parts || powerAction != m_powerAction;
         if (extensionsChanged) {
             m_queues = queues; m_settings = settings; m_categories = categories; m_categoryMembers = categoryMembers; m_runtime = runtime;
             m_settingsPolicy = settingsPolicy; m_integration = integration; m_manualPending = manualPending; m_parts = parts;
+            m_powerAction = powerAction;
             if (m_category.startsWith("category:") && !m_categoryMembers.contains(m_category)) m_category = "all";
         }
         if (rows != m_rows || categoriesChanged || unitsChanged || sortChanged || !m_selectOnSnapshot.isEmpty()) {
@@ -1178,3 +1192,7 @@ bool ServiceDownloads::taskCommand(const QString &operation) {
     return QStringList{"queue.startAll", "queue.stopAll", "download.stopAll"}.contains(operation) && command({{"op", operation}});
 }
 bool ServiceDownloads::shutdownService() { return command({{"op", "service.shutdown"}}); }
+bool ServiceDownloads::answerPowerAction(const QString &serial, bool execute) {
+    if (serial.isEmpty() || m_powerAction.value("serial").toString() != serial) return false;
+    return command({{"op", execute ? "power.execute" : "power.cancel"}, {"serial", serial}});
+}

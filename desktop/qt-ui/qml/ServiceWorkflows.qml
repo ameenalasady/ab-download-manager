@@ -31,6 +31,9 @@ Item {
     readonly property bool windowSettings: service.capabilities.indexOf("download.windows") >= 0
     readonly property bool explicitRuntime: service.runtime && service.runtime.mode === "explicit-runtime"
     readonly property bool soundFiles: explicitRuntime && service.capabilities.indexOf("settings.notificationSounds") >= 0
+    readonly property bool queuePowerActions: explicitRuntime && service.capabilities.indexOf("queue.powerAction") >= 0
+    // Original PowerActionConfig.Type values; null is no action.
+    readonly property var powerActionValues: [null, "Shutdown", "Sleep", "Hibernate"]
     // Original titles of retained-but-inactive settings (DesktopSettingsComponent/CommonSettings).
     readonly property var retainedTitles: ({
         autoStartOnBoot: qsTr("Start On Boot"), useSystemTray: qsTr("Use System Tray"),
@@ -358,6 +361,7 @@ Item {
             const q = queue
             queueName.text = q ? q.name : ""; queueConcurrent.text = q ? String(q.maxConcurrent) : "2"
             stopOnEmpty.checked = q ? q.stopOnEmpty : false
+            queuePowerAction.currentIndex = Math.max(0, root.powerActionValues.indexOf(q && q.powerAction ? q.powerAction : null))
             const s = q ? q.schedule : null
             scheduleStart.checked = s ? s.enabledStartTime : false
             scheduleStop.checked = s ? s.enabledEndTime : false
@@ -431,11 +435,22 @@ Item {
                                 title: qsTr("On Completion")
                                 RowLabel { text: qsTr("Automatic Stop") }
                                 Check { id: stopOnEmpty; Accessible.name: qsTr("Stop queue when empty") }
+                                RowLabel { text: qsTr("Power Action"); visible: root.queuePowerActions }
+                                UiComboBox {
+                                    id: queuePowerAction; objectName: "queuePowerAction"; visible: root.queuePowerActions
+                                    Layout.preferredWidth: root.controlWidth
+                                    model: [qsTr("None"), qsTr("Shut Down"), qsTr("Sleep"), qsTr("Hibernate")]
+                                    Accessible.name: qsTr("Power action when the queue finishes")
+                                }
                             }
                             UiButton {
                                 objectName: "applyQueueSettings"; text: qsTr("Apply General Settings"); icon.name: "dialog-ok-apply"; Layout.alignment: Qt.AlignRight
                                 enabled: !root.service.busy && queuesDialog.queue !== null && queueName.text.trim() !== "" && queueConcurrent.acceptableInput
-                                onClicked: queuesDialog.send("queue.update", {name: queueName.text, maxConcurrent: Number(queueConcurrent.text), stopOnEmpty: stopOnEmpty.checked})
+                                onClicked: {
+                                    const args = {name: queueName.text, maxConcurrent: Number(queueConcurrent.text), stopOnEmpty: stopOnEmpty.checked}
+                                    if (root.queuePowerActions) args.powerAction = root.powerActionValues[queuePowerAction.currentIndex]
+                                    queuesDialog.send("queue.update", args)
+                                }
                             }
                             Section {
                                 title: qsTr("Scheduler")

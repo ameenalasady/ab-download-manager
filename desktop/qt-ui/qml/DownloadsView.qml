@@ -18,7 +18,7 @@ Item {
     readonly property bool removeDialogVisible: removeDialog.visible
     readonly property bool actionsMenuVisible: actionsMenu.visible
     // Every dialog except the browser review, which waits for these to close.
-    readonly property bool mainModalOpen: exitDialog.visible || multipleAddDialog.visible || mutationDialog.visible || addDialog.visible || duplicateDialog.visible || removeDialog.visible || aboutDialog.visible || Boolean(workflows && workflows.modalOpen) || Boolean(categoryWorkflows && categoryWorkflows.modalOpen) || Boolean(detailsLoader.item && detailsLoader.item.modalOpen) || Boolean(httpOptionsLoader.item && httpOptionsLoader.item.modalOpen)
+    readonly property bool mainModalOpen: powerDialog.visible || exitDialog.visible || multipleAddDialog.visible || mutationDialog.visible || addDialog.visible || duplicateDialog.visible || removeDialog.visible || aboutDialog.visible || Boolean(workflows && workflows.modalOpen) || Boolean(categoryWorkflows && categoryWorkflows.modalOpen) || Boolean(detailsLoader.item && detailsLoader.item.modalOpen) || Boolean(httpOptionsLoader.item && httpOptionsLoader.item.modalOpen)
     readonly property bool modalOpen: mainModalOpen || Boolean(browserLoader.item && browserLoader.item.modalOpen)
     PreviewTheme { id: theme }
     NativeWindowStyle { id: material; window: root.Window.window; maximumOpacity: Tokens.materialOpacity }
@@ -250,6 +250,19 @@ Item {
     function openHttpEdit() {
         const row = downloads.downloadDetails(downloads.selectedId)
         if (httpOptionsLoader.item && row.details) (httpOptionsLoader.item as HttpOptions).openOptions(downloads.selectedId, row.details.url, row.details)
+    }
+    // A finished queue's power action: the original 30 s countdown, then confirmation.
+    // Nothing happens unless this countdown (or Now) answers it; Cancel always wins.
+    readonly property var powerAction: explicitRuntime && downloads.connectionState === "ready"
+        && downloads.capabilities.indexOf("queue.powerAction") >= 0
+        && downloads.capabilities.indexOf("power.execute") >= 0 && downloads.capabilities.indexOf("power.cancel") >= 0 ? downloads.powerAction : ({})
+    onPowerActionChanged: {
+        if (powerAction.serial && powerAction.serial !== powerDialog.serial) {
+            powerDialog.serial = powerAction.serial; powerDialog.remaining = 30; powerDialog.answer = ""; powerDialog.responseSent = false
+            powerDialog.open()
+        } else if (!powerAction.serial) {
+            powerDialog.close(); powerDialog.serial = ""; powerDialog.answer = ""
+        }
     }
     // File → Exit and the tray's Exit stop the service and every frontend window. Like the
     // original, confirm only while something is downloading or a queue is running.
@@ -715,6 +728,54 @@ Item {
     MenuSurface {
         id: helpMenu; objectName: "helpMenu"
         QQC2.MenuItem { text: qsTr("&About Download Manager"); icon.name: "help-about"; onTriggered: aboutDialog.open() }
+    }
+    UiDialog {
+        id: powerDialog; objectName: "powerActionDialog"
+        property string serial: ""
+        property int remaining: 30
+        // "", or the answer still to be sent while another command holds the slot.
+        property string answer: ""
+        property bool responseSent: false
+        readonly property string type: root.powerAction.type || ""
+        title: type === "Sleep" ? qsTr("Sleep") : type === "Hibernate" ? qsTr("Hibernate") : qsTr("Shut Down")
+        preferredWidth: Tokens.dialogWidthSmall
+        closePolicy: QQC2.Popup.NoAutoClose
+        onOpened: powerCancel.forceActiveFocus()
+        function respond(execute: bool) {
+            if (responseSent) return
+            answer = execute ? "execute" : "cancel"
+            if (!root.downloads.busy && root.downloads.answerPowerAction(serial, execute)) { responseSent = true; close() }
+        }
+        Timer {
+            interval: 1000; repeat: true; running: powerDialog.visible && !powerDialog.responseSent
+            onTriggered: {
+                if (powerDialog.answer !== "") { powerDialog.respond(powerDialog.answer === "execute"); return }
+                powerDialog.remaining = Math.max(0, powerDialog.remaining - 1)
+                if (powerDialog.remaining === 0) powerDialog.respond(true)
+            }
+        }
+        contentItem: ColumnLayout {
+            spacing: Tokens.contentSpacing
+            Body {
+                Layout.fillWidth: true
+                text: (root.powerAction.reason === "queueEndTime" ? qsTr("Queue “%1” reached its stop time.") : qsTr("Queue “%1” finished.")).arg(root.powerAction.queueName || "")
+            }
+            Body {
+                objectName: "powerActionCountdown"; Layout.fillWidth: true
+                text: (powerDialog.type === "Sleep" ? qsTr("The computer will sleep in %1 s.") : powerDialog.type === "Hibernate"
+                       ? qsTr("The computer will hibernate in %1 s.") : qsTr("The computer will shut down in %1 s.")).arg(powerDialog.remaining)
+            }
+        }
+        footer: DialogFooter {
+            UiButton {
+                objectName: "powerActionNow"; icon.name: "system-shutdown"
+                text: powerDialog.type === "Sleep" ? qsTr("Sleep Now") : powerDialog.type === "Hibernate" ? qsTr("Hibernate Now") : qsTr("Shut Down Now")
+                // Not the default button: Enter must never power off the computer.
+                QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.DestructiveRole
+                onClicked: powerDialog.respond(true)
+            }
+            UiButton { id: powerCancel; objectName: "powerActionCancel"; text: qsTr("Cancel"); icon.name: "dialog-cancel"; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.RejectRole; onClicked: powerDialog.respond(false) }
+        }
     }
     UiDialog {
         id: exitDialog; objectName: "confirmExitDialog"

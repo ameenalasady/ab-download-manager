@@ -9,8 +9,9 @@ import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.*
 
 /** Lossless adapter for the original desktop per-ID extra-settings JSON.
- * Stores are real, not placeholders. Platform action fields survive round trips,
- * but the explicitly disabled completion providers NEVER execute those actions.
+ * Stores are real, not placeholders. Platform action fields survive round trips. Only a
+ * queue's powerActionTypeOnFinish is acted on, and only after the frontend's confirmed
+ * countdown; per-download completion actions are never executed.
  * Unknown fields are retained; this is not permission to import an existing profile.
  */
 class StoredExtraSettings(val document: JsonObject) : IExtraDownloadItemSettings, IExtraQueueSettings {

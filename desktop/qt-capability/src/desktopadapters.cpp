@@ -83,6 +83,12 @@ void DesktopAdapters::synchronize() {
         // Disabling the tray while hidden must never strand the only frontend.
         if (!tray && !m_window->isVisible()) m_window->show();
     }
+    // A pending power action countdown must be seen: bring the list window forward once.
+    const QString powerSerial = explicitRuntime && m_service->connectionState() == "ready"
+        && m_service->capabilities().contains("queue.powerAction")
+        ? m_service->powerAction().value("serial").toString() : QString();
+    if (!powerSerial.isEmpty() && powerSerial != m_powerSerial) activate();
+    m_powerSerial = powerSerial;
     m_import->setEnabled(explicitRuntime && !m_service->busy() && m_service->capabilities().contains("links.import"));
     m_speed->setEnabled(!m_service->busy());
     m_speed->setChecked(m_service->settings().value("useSpeedLimit") != "Disabled");

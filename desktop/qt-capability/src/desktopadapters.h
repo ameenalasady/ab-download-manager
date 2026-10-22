@@ -19,5 +19,6 @@ private:
     ServiceDownloads *m_service;
     QMenu m_menu;
     QSystemTrayIcon m_tray;
+    QString m_powerSerial;
     QAction *m_import, *m_speed, *m_settings, *m_exit;
 };

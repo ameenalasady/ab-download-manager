@@ -54,7 +54,7 @@ public:
     bool browserCapability = false, desktopCapability = false, windowsCapability = false;
     // New negotiated settings/duplicate extensions.
     bool folderCapability = false, duplicateCapability = false, replaceCapability = false;
-    bool actionsCapability = false, sortCapability = false, tasksCapability = false, reviewCapability = false, probeBatchCapability = false, categoryIconCapability = false, soundCapability = false;
+    bool actionsCapability = false, sortCapability = false, tasksCapability = false, reviewCapability = false, probeBatchCapability = false, categoryIconCapability = false, soundCapability = false, powerCapability = false;
     // Sets one review row's browser.probeBatch outcome in the next snapshots.
     void setProbe(int index, const QJsonObject &probe) {
         auto requests = extensionSnapshot["browserRequests"].toArray(); auto request = requests[0].toObject();
@@ -129,6 +129,7 @@ public:
                     if (probeBatchCapability) caps.append("browser.probeBatch");
                     if (categoryIconCapability) caps.append("category.icon");
                     if (soundCapability) caps.append("settings.notificationSounds");
+                    if (powerCapability) for (const auto &op : {"queue.update", "queue.powerAction", "power.execute", "power.cancel"}) caps.append(op);
                     if (tasksCapability) for (const auto &op : {"queue.startAll", "queue.stopAll", "download.stopAll"}) caps.append(op);
                     if (actionsCapability) for (const auto &op : {"download.reset", "download.move", "download.links"}) caps.append(op);
                     if (categoryCapability) for (const auto &op : {"category.create", "category.update", "category.delete", "category.move", "category.assign"}) caps.append(op);
@@ -502,7 +503,7 @@ private slots:
         FakeService service;
         service.sortCapability = service.monitorCapability = service.tasksCapability = service.actionsCapability = service.detailsCapability = true;
         service.reviewCapability = service.browserCapability = service.runtimeCapability = service.desktopCapability = true;
-        service.categoryCapability = service.categoryIconCapability = service.soundCapability = true;
+        service.categoryCapability = service.categoryIconCapability = service.soundCapability = service.powerCapability = true;
         {
             // The original defaults with their stored (historical) icon URIs.
             const QList<QPair<QString, QString>> defaults{{"Compressed", "icon:pictureFile"}, {"Programs", "icon:zipFile"}, {"Videos", "icon:musicFile"},
@@ -512,7 +513,7 @@ private slots:
                 {"acceptedUrlPatterns", QJsonArray{}}, {"items", QJsonArray{}}});
         }
         auto settings = basicSettings(); settings["qtSortColumn"] = "name"; settings["qtSortDescending"] = false;
-        service.extensionSnapshot = {{"queues", QJsonArray{}}, {"manualPending", QJsonArray{"9007199254740995"}}, {"settings", settings}, {"browserRequests", QJsonArray{}},
+        service.extensionSnapshot = {{"queues", QJsonArray{powerQueue()}}, {"powerAction", QJsonValue::Null}, {"manualPending", QJsonArray{"9007199254740995"}}, {"settings", settings}, {"browserRequests", QJsonArray{}},
             {"integration", QJsonObject{{"autoStartOnBoot", false}, {"useSystemTray", false}, {"notificationSound", true}, {"notifications", true},
                 {"successNotificationSound", "/home/user/Sounds/finished.wav"}, {"errorNotificationSound", ""}, {"generalNotificationSound", ""}}},
             {"browserIntegration", QJsonObject{{"state", "disabled"}, {"error", QJsonValue::Null}, {"enabled", false}, {"port", 15151}, {"auth", false}}},
@@ -571,6 +572,15 @@ private slots:
         auto *settingsDialog = root->findChild<QObject *>("serviceSettingsDialog"); QTRY_VERIFY(settingsDialog->property("visible").toBool());
         settingsDialog->setProperty("page", 2); capture("settings-integration");
         QMetaObject::invokeMethod(settingsDialog, "close"); QTRY_VERIFY(!settingsDialog->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(root, "openQueues", Q_ARG(QString, "0")));
+        auto *queues = root->findChild<QObject *>("serviceQueuesDialog"); QVERIFY(queues);
+        QTRY_VERIFY(queues->property("visible").toBool()); capture("queue-power-settings");
+        QMetaObject::invokeMethod(queues, "close"); QTRY_VERIFY(!queues->property("visible").toBool());
+        service.extensionSnapshot["powerAction"] = pendingPower("1");
+        auto *power = root->findChild<QObject *>("powerActionDialog"); QVERIFY(power);
+        QTRY_VERIFY(power->property("visible").toBool()); capture("queue-power-warning");
+        service.extensionSnapshot["powerAction"] = QJsonValue::Null;
+        QTRY_VERIFY(!power->property("visible").toBool());
         auto *about = root->findChild<QObject *>("aboutPreviewDialog"); QVERIFY(about);
         QVERIFY(QMetaObject::invokeMethod(about, "open")); QTRY_VERIFY(about->property("opened").toBool());
         for (int page = 0; page < 3; ++page) {
@@ -2325,6 +2335,163 @@ private slots:
         port->setProperty("text", "70000");
         QVERIFY(!apply->property("enabled").toBool());
     }
+    static QJsonObject powerQueue() {
+        return {{"id", "0"}, {"name", "Main"}, {"active", false}, {"maxConcurrent", 2}, {"stopOnEmpty", true},
+            {"items", QJsonArray{}}, {"powerAction", "Shutdown"}, {"schedule", QJsonObject{{"enabledStartTime", false}, {"enabledEndTime", false},
+                {"startTime", "02:30"}, {"endTime", "07:30"}, {"daysOfWeek", QJsonArray{"MONDAY"}}}}};
+    }
+    static QJsonObject pendingPower(const QString &serial) {
+        return {{"serial", serial}, {"type", "Shutdown"}, {"reason", "queueFinished"}, {"queueId", "0"}, {"queueName", "Main"}};
+    }
+    void queuePowerActionsAreConfiguredAndAnsweredOnce() {
+        FakeService service; service.runtimeCapability = service.powerCapability = true;
+        service.extensionSnapshot = {{"queues", QJsonArray{powerQueue()}}, {"settings", basicSettings()}, {"powerAction", QJsonValue::Null},
+            {"runtime", QJsonObject{{"mode", "explicit-runtime"}, {"destination", "/fixture/downloads"},
+                {"destinationRoots", QJsonArray{"/fixture/downloads"}}, {"redirects", true}, {"proxy", "direct"}}}};
+        ServiceDownloads model(service.descriptor); QTRY_COMPARE(model.rowCount(), 1);
+        QCOMPARE(model.connectionState(), "ready"); QCOMPARE(model.queues().size(), 1);
+        QQuickView view; view.setResizeMode(QQuickView::SizeRootObjectToView);
+        view.setInitialProperties({{"downloads", QVariant::fromValue(&model)}});
+        view.setSource(QUrl("qrc:/qt-ui/qml/DownloadsView.qml")); view.resize(1000, 700); view.show();
+        QCOMPARE(view.status(), QQuickView::Ready); QVERIFY(QTest::qWaitForWindowExposed(&view));
+        auto *root = view.rootObject();
+        QVERIFY(QMetaObject::invokeMethod(root, "openQueues", Q_ARG(QString, "0")));
+        auto *queues = root->findChild<QObject *>("serviceQueuesDialog");
+        auto *combo = root->findChild<QObject *>("queuePowerAction");
+        auto *apply = root->findChild<QObject *>("applyQueueSettings");
+        QVERIFY(queues && combo && apply); QTRY_VERIFY(combo->property("visible").toBool());
+        QCOMPARE(combo->property("currentIndex").toInt(), 1);
+        for (int index : {2, 3, 1, 0}) {
+            QTRY_VERIFY(!model.busy()); combo->setProperty("currentIndex", index);
+            const int before = service.commands;
+            QVERIFY(QMetaObject::invokeMethod(apply, "click"));
+            QTRY_COMPARE(service.commands, before + 1);
+            QCOMPARE(service.lastCommand["op"].toString(), "queue.update");
+            QCOMPARE(service.lastCommand["queueId"].toString(), "0");
+            QVERIFY(service.lastCommand.contains("powerAction"));
+            const QJsonValue expected = index == 0 ? QJsonValue(QJsonValue::Null) : QJsonValue(QStringList{"", "Shutdown", "Sleep", "Hibernate"}[index]);
+            QCOMPARE(service.lastCommand["powerAction"], expected);
+        }
+        QTRY_VERIFY(!model.busy());
+        QVERIFY(QMetaObject::invokeMethod(queues, "close")); QTRY_VERIFY(!queues->property("visible").toBool());
+        auto *dialog = root->findChild<QObject *>("powerActionDialog");
+        auto *cancel = root->findChild<QObject *>("powerActionCancel");
+        auto *now = root->findChild<QObject *>("powerActionNow");
+        QVERIFY(dialog && cancel && now);
+        // A cleared service snapshot closes an unanswered dialog without any command.
+        const int before = service.commands;
+        service.extensionSnapshot["powerAction"] = pendingPower("1");
+        QTRY_VERIFY(dialog->property("opened").toBool());
+        QVERIFY(root->property("mainModalOpen").toBool());
+        QCOMPARE(dialog->property("remaining").toInt(), 30);
+        QVERIFY(!now->property("highlighted").toBool());
+        service.extensionSnapshot["powerAction"] = QJsonValue::Null;
+        QTRY_VERIFY(!dialog->property("visible").toBool()); QCOMPARE(service.commands, before);
+        // Cancel answers the serial; an unchanged snapshot must not reopen the dialog.
+        service.extensionSnapshot["powerAction"] = pendingPower("2");
+        QTRY_VERIFY(dialog->property("opened").toBool());
+        QVERIFY(QMetaObject::invokeMethod(cancel, "click"));
+        QTRY_COMPARE(service.commands, before + 1);
+        QCOMPARE(service.lastCommand["op"].toString(), "power.cancel");
+        QCOMPARE(service.lastCommand["serial"].toString(), "2");
+        QTRY_VERIFY(!model.busy()); QTest::qWait(350);
+        QVERIFY(!dialog->property("visible").toBool());
+        QVERIFY(!model.answerPowerAction("999", true));
+        // Now and the countdown both send power.execute exactly once.
+        for (const auto &serial : {QString("3"), QString("4")}) {
+            service.extensionSnapshot["powerAction"] = pendingPower(serial);
+            QTRY_VERIFY(dialog->property("opened").toBool());
+            const int commands = service.commands;
+            if (serial == "3") {
+                QVERIFY(QMetaObject::invokeMethod(now, "click"));
+                QVERIFY(QMetaObject::invokeMethod(now, "clicked")); // Even a second activation is ignored.
+            } else dialog->setProperty("remaining", 1); // Exercise the real timer without a 30 s sleep.
+            QTRY_COMPARE(service.commands, commands + 1);
+            QCOMPARE(service.lastCommand["op"].toString(), "power.execute");
+            QCOMPARE(service.lastCommand["serial"].toString(), serial);
+            QTRY_VERIFY(!model.busy()); QTest::qWait(1100);
+            QCOMPARE(service.commands, commands + 1); QVERIFY(!dialog->property("visible").toBool());
+        }
+        // A busy command slot postpones the answer; Cancel overrides a queued execution.
+        service.extensionSnapshot["powerAction"] = pendingPower("5");
+        QTRY_VERIFY(dialog->property("opened").toBool());
+        service.holdSnapshots = true; const int snapshots = service.snapshots;
+        QTRY_VERIFY(service.snapshots > snapshots);
+        QVERIFY(model.queueCommand("queue.update", "0", {{"name", "Main"}, {"maxConcurrent", 2}, {"stopOnEmpty", true}}));
+        QVERIFY(model.busy());
+        const int commands = service.commands;
+        QVERIFY(QMetaObject::invokeMethod(now, "click"));
+        QVERIFY(QMetaObject::invokeMethod(cancel, "click"));
+        QCOMPARE(service.commands, commands);
+        service.holdSnapshots = false; service.releaseHeld();
+        QTRY_COMPARE(service.commands, commands + 2);
+        QCOMPARE(service.lastCommand["op"].toString(), "power.cancel");
+        QCOMPARE(service.lastCommand["serial"].toString(), "5");
+        QTRY_VERIFY(!model.busy()); QTRY_VERIFY(!dialog->property("visible").toBool());
+        service.extensionSnapshot["powerAction"] = QJsonValue::Null; QTRY_VERIFY(model.powerAction().isEmpty());
+        view.close(); view.setSource(QUrl()); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    }
+    void queuePowerActionsRespectRuntimeAndCapabilities_data() {
+        QTest::addColumn<bool>("explicitRuntime"); QTest::addColumn<bool>("capability");
+        QTest::newRow("supported") << true << true;
+        QTest::newRow("isolated") << false << true;
+        QTest::newRow("older-service") << true << false;
+    }
+    void queuePowerActionsRespectRuntimeAndCapabilities() {
+        QFETCH(bool, explicitRuntime); QFETCH(bool, capability);
+        FakeService service; service.runtimeCapability = true; service.powerCapability = capability;
+        service.extensionSnapshot = {{"queues", QJsonArray{powerQueue()}}, {"settings", basicSettings()}, {"powerAction", pendingPower("1")},
+            {"runtime", QJsonObject{{"mode", explicitRuntime ? "explicit-runtime" : "isolated"}, {"destination", "/fixture/downloads"},
+                {"destinationRoots", QJsonArray{"/fixture/downloads"}}, {"redirects", false}, {"proxy", "direct"}}}};
+        ServiceDownloads model(service.descriptor); QTRY_COMPARE(model.rowCount(), 1);
+        QQuickView view; view.setResizeMode(QQuickView::SizeRootObjectToView);
+        view.setInitialProperties({{"downloads", QVariant::fromValue(&model)}});
+        view.setSource(QUrl("qrc:/qt-ui/qml/DownloadsView.qml")); view.resize(1000, 700); view.show();
+        QCOMPARE(view.status(), QQuickView::Ready); QVERIFY(QTest::qWaitForWindowExposed(&view));
+        auto *root = view.rootObject(); auto *dialog = root->findChild<QObject *>("powerActionDialog"); QVERIFY(dialog);
+        const bool supported = explicitRuntime && capability;
+        // Includes a request already present when the view is constructed.
+        QTRY_COMPARE(dialog->property("visible").toBool(), supported);
+        if (supported) { service.extensionSnapshot["powerAction"] = QJsonValue::Null; QTRY_VERIFY(!dialog->property("visible").toBool()); }
+        QVERIFY(QMetaObject::invokeMethod(root, "openQueues", Q_ARG(QString, "0")));
+        auto *queues = root->findChild<QObject *>("serviceQueuesDialog"); QVERIFY(queues);
+        QTRY_VERIFY(queues->property("opened").toBool());
+        auto *combo = root->findChild<QObject *>("queuePowerAction"); QVERIFY(combo);
+        QCOMPARE(combo->property("visible").toBool(), supported);
+        QCOMPARE(service.commands, 0);
+        view.close(); view.setSource(QUrl()); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    }
+    void malformedPowerActionsAreRejected_data() {
+        QTest::addColumn<QString>("field"); QTest::addColumn<QJsonValue>("value");
+        QTest::newRow("queue-type") << QString("queue") << QJsonValue("Restart");
+        QTest::newRow("queue-number") << QString("queue") << QJsonValue(1);
+        QTest::newRow("queue-object") << QString("queue") << QJsonValue(QJsonObject{});
+        QTest::newRow("queue-missing") << QString("queue") << QJsonValue(QJsonValue::Undefined);
+        QTest::newRow("pending-array") << QString("pending") << QJsonValue(QJsonArray{});
+        QTest::newRow("pending-missing") << QString("pending") << QJsonValue(QJsonValue::Undefined);
+        QTest::newRow("pending-type") << QString("type") << QJsonValue("Restart");
+        QTest::newRow("pending-reason") << QString("reason") << QJsonValue("downloadFinished");
+        QTest::newRow("serial-number") << QString("serial") << QJsonValue(1);
+        QTest::newRow("serial-negative") << QString("serial") << QJsonValue("-1");
+        QTest::newRow("serial-zero") << QString("serial") << QJsonValue("0");
+        QTest::newRow("serial-overflow") << QString("serial") << QJsonValue("9223372036854775808");
+        QTest::newRow("serial-noncanonical") << QString("serial") << QJsonValue("01");
+        QTest::newRow("queue-id") << QString("queueId") << QJsonValue(false);
+        QTest::newRow("empty-name") << QString("queueName") << QJsonValue("");
+        QTest::newRow("long-name") << QString("queueName") << QJsonValue(QString(121, 'x'));
+    }
+    void malformedPowerActionsAreRejected() {
+        QFETCH(QString, field); QFETCH(QJsonValue, value);
+        FakeService service; service.powerCapability = true;
+        auto queue = powerQueue(); auto pending = pendingPower("1");
+        if (field == "queue") queue["powerAction"] = value;
+        else if (field != "pending") pending[field] = value;
+        service.extensionSnapshot = {{"queues", QJsonArray{queue}}, {"settings", basicSettings()}, {"powerAction", field == "pending" ? value : QJsonValue(pending)}};
+        ServiceDownloads model(service.descriptor);
+        QTRY_VERIFY(model.errorMessage().contains("Invalid service response"));
+        QCOMPARE(model.connectionState(), "disconnected"); QVERIFY(model.powerAction().isEmpty());
+        QCOMPARE(service.commands, 0);
+    }
     void notificationSoundFilesAreEditedOnTheIntegrationPage() {
         FakeService service; service.desktopCapability = service.runtimeCapability = service.soundCapability = true;
         service.extensionSnapshot = {{"queues", QJsonArray{}}, {"settings", basicSettings()},
@@ -2838,7 +3005,8 @@ int main(int argc, char **argv) {
     QStringList cases, failures;
     for (int i = meta.methodOffset(); i < meta.methodCount(); ++i) {
         const auto method = meta.method(i); const auto name = method.name();
-        if (method.methodType() != QMetaMethod::Slot || method.parameterCount() || method.returnMetaType().id() != QMetaType::Void
+        // QtTest invokes each _data provider with its test; it is not a standalone case.
+        if (method.methodType() != QMetaMethod::Slot || method.parameterCount() || method.returnMetaType().id() != QMetaType::Void || name.endsWith("_data")
             || name == "initTestCase" || name == "cleanupTestCase" || name == "init" || name == "cleanup") continue;
         cases.append(QString::fromLatin1(name));
     }
