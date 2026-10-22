@@ -256,6 +256,10 @@ Item {
         actionsMenu.x = p.x; actionsMenu.y = p.y; actionsMenu.open()
     }
     readonly property var menuNames: ["File", "Tasks", "Tools", "Help"]
+    function hasAnyCapability(names: var): bool { return live && names.some(c => downloads.capabilities.indexOf(c) >= 0) }
+    readonly property bool tasksMenuAvailable: hasAnyCapability(["queue.startAll", "queue.stopAll", "download.stopAll"])
+    readonly property bool toolsMenuAvailable: hasAnyCapability(["queue.create", "category.create", "settings.update"])
+    readonly property var menuAvailable: [true, tasksMenuAvailable, toolsMenuAvailable, true]
     function openMenu(name: string) {
         const index = Math.max(0, menuNames.indexOf(name))
         const menu = [fileMenu, tasksMenu, toolsMenu, helpMenu][index]
@@ -292,8 +296,7 @@ Item {
                 model: [qsTr("&File"), qsTr("&Tasks"), qsTr("T&ools"), qsTr("&Help")]
                 delegate: QQC2.ToolButton {
                     required property string modelData; required property int index
-                    visible: index === 1 ? root.live && ["queue.startAll", "queue.stopAll", "download.stopAll"].some(c => root.downloads.capabilities.indexOf(c) >= 0)
-                        : index === 2 ? root.live && ["queue.create", "category.create", "settings.update"].some(c => root.downloads.capabilities.indexOf(c) >= 0) : true
+                    visible: root.menuAvailable[index]
                     text: modelData; Accessible.name: modelData.replace("&", ""); Accessible.role: Accessible.ButtonMenu
                     onClicked: root.openMenu(root.menuNames[index])
                 }

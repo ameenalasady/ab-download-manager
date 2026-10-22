@@ -64,6 +64,8 @@ void DownloadsViewTest::loadsAndResizes()
     QCOMPARE(view.status(), QQuickView::Ready);
     QVERIFY(view.rootObject());
     QCOMPARE(child(view, "aboutPreviewDialog")->property("title").toString(), "About Download Manager");
+    QVERIFY(!view.rootObject()->property("tasksMenuAvailable").toBool());
+    QVERIFY(!view.rootObject()->property("toolsMenuAvailable").toBool());
     for (const char *name : {"settingsToolbarButton", "showDownloadDetails", "editDownloadOptions", "copyDownloadLink", "addMultipleDownloads"})
         QVERIFY2(!child(view, name)->property("visible").toBool(), name);
     for (auto *object : view.rootObject()->findChildren<QObject *>()) {

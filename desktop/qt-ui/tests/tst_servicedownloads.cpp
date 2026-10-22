@@ -290,6 +290,8 @@ private slots:
         view.setInitialProperties({{"downloads", QVariant::fromValue(&model)}});
         view.setSource(QUrl("qrc:/qt-ui/qml/DownloadsView.qml")); view.show();
         QCOMPARE(view.status(), QQuickView::Ready);
+        QVERIFY(view.rootObject()->property("tasksMenuAvailable").toBool());
+        QVERIFY(!view.rootObject()->property("toolsMenuAvailable").toBool());
         QVERIFY(QMetaObject::invokeMethod(view.rootObject(), "openMenu", Q_ARG(QString, "Tasks")));
         auto *menu = view.rootObject()->findChild<QObject *>("tasksMenu"); QVERIFY(menu); QTRY_VERIFY(menu->property("visible").toBool());
         const int hold = qBound(0, qEnvironmentVariableIntValue("QT_TASKS_GALLERY_HOLD_MS"), 10000); if (hold) QTest::qWait(hold);
