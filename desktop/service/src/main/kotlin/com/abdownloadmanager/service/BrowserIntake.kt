@@ -151,7 +151,8 @@ class BrowserIntake(private val maxItems: Int = 100, journalFile: java.nio.file.
         publish(pending - id)
     }
 
-    fun snapshot() = JsonArray(pending.values.map { request ->
+    /** [probe]: optional per-item Check Sizes state, added as `probe`. */
+    fun snapshot(probe: (BrowserItem) -> JsonObject? = { null }) = JsonArray(pending.values.map { request ->
         buildJsonObject {
             put("id", request.id); put("receivedAt", request.receivedAt.toString()); put("source", request.source)
             put("outcomeUnknown", request.outcomeUnknown || !healthy)
@@ -159,6 +160,7 @@ class BrowserIntake(private val maxItems: Int = 100, journalFile: java.nio.file.
                 buildJsonObject {
                     put("url", item.url); put("name", item.name); put("hasHeaders", item.hasHeaders)
                     put("downloadPage", item.downloadPage?.let(::JsonPrimitive) ?: JsonNull)
+                    probe(item)?.let { put("probe", it) }
                 }
             }))
         }

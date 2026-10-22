@@ -47,10 +47,11 @@ Item {
     Connections {
         target: root.service
         function onSelectionChanged() { if (root.currentReview && !root.service.busy) root.currentReview.submitting = false }
-        function onBrowserMetadataReady(requestId: string, index: int, size: string, sizeLabel: string) {
+        function onBrowserMetadataReady(requestId: string, index: int, size: string, sizeLabel: string, state: string) {
             const window = root.currentReview
             if (!window || window.requestId !== requestId || !window.items[index]) return
-            window.items[index].size = size; window.items[index].sizeLabel = sizeLabel; window.nameRevision++
+            window.items[index].size = size; window.items[index].sizeLabel = sizeLabel; window.items[index].probeState = state
+            window.nameRevision++
         }
         function onBrowserRequestDismissed(requestId: string) {
             if (root.currentReview && root.currentReview.requestId === requestId) root.currentReview.close()
@@ -210,6 +211,8 @@ Item {
             : requestSource === "clipboard" ? qsTr("Review Download") : qsTr("Download from Browser")
         readonly property int checkedCount: items.filter(i => i.checked).length
         readonly property bool multiple: items.length > 1
+        // A selected row's size check is still running in the service.
+        readonly property bool probing: { nameRevision; return items.some(i => i.checked && i.probeState === "pending") }
         readonly property var filteredItems: {
             const query = reviewSearch.text.trim().toLowerCase()
             return items.filter(i => !query || i.name.toLowerCase().indexOf(query) >= 0 || i.url.toLowerCase().indexOf(query) >= 0)
@@ -228,7 +231,8 @@ Item {
             root.service.clearError()
             requestId = request.id; requestSource = request.source || "browser"
             outcomeUnknown = request.outcomeUnknown === true
-            items = request.items.map((item, index) => ({index: index, url: item.url, name: item.name, hasHeaders: item.hasHeaders, checked: true, size: "-1", sizeLabel: "—"}))
+            items = request.items.map((item, index) => ({index: index, url: item.url, name: item.name, hasHeaders: item.hasHeaders, checked: true,
+                size: item.size || "-1", sizeLabel: item.sizeLabel || "—", probeState: item.probeState || ""}))
             reviewSearch.text = ""
             categoryChoices = [{id: "auto", name: qsTr("Automatic")}, {id: "none", name: qsTr("No Category")}]
                 .concat((root.service.categories || []).map(c => ({id: c.id, name: c.name})))
@@ -505,8 +509,8 @@ Item {
               leading: [
                 UiButton {
                   objectName: "probeBrowserRequestSizes"; flat: true; text: qsTr("Check Sizes")
-                  visible: dialog.multiple && root.service.capabilities.indexOf("browser.probe") >= 0
-                  enabled: !root.service.busy && !dialog.submitting && !dialog.outcomeUnknown && dialog.checkedCount > 0
+                  visible: dialog.multiple && ["browser.probeBatch", "browser.probe"].some(c => root.service.capabilities.indexOf(c) >= 0)
+                  enabled: !root.service.busy && !dialog.submitting && !dialog.outcomeUnknown && dialog.checkedCount > 0 && !dialog.probing
                   onClicked: root.service.probeBrowserItems(dialog.requestId, dialog.items.filter(i => i.checked).map(i => i.index))
                 },
                 UiButton {

@@ -29,6 +29,7 @@ import ir.amirab.downloader.queue.*
 import ir.amirab.downloader.monitor.*
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import java.util.concurrent.Executors
 import kotlinx.coroutines.*
 import kotlinx.serialization.json.*
@@ -87,6 +88,13 @@ class EngineSession(
     // Fallible journal validation must precede thread-owning components.
     private val intake = BrowserIntake(journalFile = data.resolve("config/browser-review.json").toPath())
     private val addGate = kotlinx.coroutines.sync.Mutex()
+    // Explicit Check Sizes results for pending review items, keyed by item identity (kept
+    // across partial acceptance, not restarts). Probes run off the owner thread, at most
+    // four at once, so a batch never holds the frontend's single command slot.
+    private val probes = java.util.concurrent.ConcurrentHashMap<BrowserItem, ReviewProbe>()
+    private val probeJobs = java.util.concurrent.ConcurrentHashMap<BrowserItem, Job>()
+    private val probeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val probePermits = kotlinx.coroutines.sync.Semaphore(4)
     // Queue collections and their scheduler/listener/autosaver run on ONE owner thread.
     private val context = Executors.newSingleThreadExecutor { r -> Thread(r, "service-owner") }.asCoroutineDispatcher()
     private val queueScope = CoroutineScope(SupervisorJob() + context)
@@ -160,7 +168,7 @@ class EngineSession(
             "system.activity", "download.probe", "download.review", "history.page", "history.delta", "download.windows", "download.parts",
             "download.replace", "download.delete", "settings.folder", "settings.duplicates",
             "download.reset", "download.move", "download.links", "settings.sort",
-            "queue.startAll", "queue.stopAll", "download.stopAll", "links.review", "browser.probe")
+            "queue.startAll", "queue.stopAll", "download.stopAll", "links.review", "browser.probe", "browser.probeBatch")
     }
 
     /** A frontend polled; browser requests then wait for it instead of launching one.
@@ -506,7 +514,12 @@ class EngineSession(
             put("downloadParts", partSnapshot(partsFor))
             put("settingsPolicy", preferences.policySnapshot())
             put("browserIntegration", bridge.snapshot())
-            put("browserRequests", intake.snapshot())
+            // Forget results (and cancel probes) of items no longer awaiting review.
+            val reviewing = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<BrowserItem, Boolean>())
+                .apply { intake.requests.forEach { addAll(it.items) } }
+            probeJobs.keys.filter { it !in reviewing }.forEach { probeJobs.remove(it)?.cancel() }
+            probes.keys.retainAll(reviewing)
+            put("browserRequests", intake.snapshot { probes[it]?.json() })
             put("integration", buildJsonObject {
                 preferences.integration().forEach { (k, v) -> put(k, v) }
                 put("notifications", notifier.available)
@@ -570,6 +583,34 @@ class EngineSession(
                     put("suggestedName", BrowserLinks.fileName(info.fileName, url))
                     // Do not return captured request/response headers, cookies, redirects,
                     // credentials, ETag or last-modified raw values.
+                }
+                "browser.probeBatch" -> {
+                    // Same bounded metadata read as browser.probe, but answered at once; results
+                    // appear per item in later snapshots. Already-running items are skipped.
+                    val requestId = request["requestId"]?.jsonPrimitive?.content ?: error("Missing review ID")
+                    val pending = intake.get(requestId)
+                    val indices = (request["indices"] ?: error("Missing review indices")).jsonArray.map { it.jsonPrimitive.int }
+                    require(indices.isNotEmpty() && indices.toSet().size == indices.size && indices.all { it in pending.items.indices }) { "Invalid review selection" }
+                    // Validate everything before starting anything.
+                    val drafts = indices.map { pending.items[it] }.filter { probes[it]?.state != "pending" }.map { item ->
+                        runtime.validateUrl(item.url)
+                        item to HttpDownloadItem(link = item.url, id = -1, folder = destination().path, name = "probe")
+                            .also { applyHttpOptions(it, item.options(JsonObject(emptyMap()))) }
+                    }
+                    for ((item, draft) in drafts) {
+                        probes[item] = ReviewProbe("pending")
+                        probeJobs[item] = probeScope.launch {
+                            val result = try {
+                                probePermits.withPermit { withTimeout(8000) { http.head(draft, 0, 255) } }
+                                    .let { ReviewProbe("done", it.totalLength ?: -1, it.statusCode, it.requiresAuth) }
+                            } catch (_: TimeoutCancellationException) { ReviewProbe("failed") }
+                            catch (e: CancellationException) { throw e }
+                            catch (_: Exception) { ReviewProbe("failed") }
+                            probes.replace(item, result) // Not re-added once the item left review.
+                            probeJobs.remove(item, coroutineContext.job)
+                        }
+                    }
+                    put("requestId", requestId); put("queued", drafts.size)
                 }
                 "download.review" -> {
                     val url = request["url"]?.jsonPrimitive?.content ?: error("Missing URL")
@@ -934,6 +975,8 @@ class EngineSession(
         bridge.close()
         notifier.onActivated = null
         activity.close()
+        // Review probes do not touch the engine; join them before closing the HTTP client.
+        probeScope.coroutineContext.job.cancelAndJoin()
         withContext(context) {
             // Disable/cancel and join EVERY queue producer before pausing transfer jobs.
             // Final queue persistence runs after autosavers have joined, with lease still held.
@@ -964,6 +1007,15 @@ class EngineSession(
         }
         context.close()
         notifier.close()
+    }
+}
+
+/** One review item's Check Sizes outcome. Never carries headers, URLs or response values
+ * beyond the size, status code and whether authentication is required. */
+class ReviewProbe(val state: String, val size: Long = -1, val statusCode: Int = 0, val requiresAuth: Boolean = false) {
+    fun json() = buildJsonObject {
+        put("state", state)
+        if (state == "done") { put("size", size.toString()); put("statusCode", statusCode); put("requiresAuth", requiresAuth) }
     }
 }
 

@@ -53,7 +53,13 @@ public:
     bool browserCapability = false, desktopCapability = false, windowsCapability = false;
     // New negotiated settings/duplicate extensions.
     bool folderCapability = false, duplicateCapability = false, replaceCapability = false;
-    bool actionsCapability = false, sortCapability = false, tasksCapability = false, reviewCapability = false;
+    bool actionsCapability = false, sortCapability = false, tasksCapability = false, reviewCapability = false, probeBatchCapability = false;
+    // Sets one review row's browser.probeBatch outcome in the next snapshots.
+    void setProbe(int index, const QJsonObject &probe) {
+        auto requests = extensionSnapshot["browserRequests"].toArray(); auto request = requests[0].toObject();
+        auto items = request["items"].toArray(); auto item = items[index].toObject(); item["probe"] = probe; items[index] = item;
+        request["items"] = items; requests[0] = request; extensionSnapshot["browserRequests"] = requests;
+    }
     QJsonArray reviewItems;
     // Serial command-batch probes: the full log, a 1-based index that is refused, a
     // mismatched commandId (unexpected reply), and how many snapshots were served.
@@ -119,6 +125,7 @@ public:
                     if (replaceCapability) caps.append("download.replace");
                     if (sortCapability) caps.append("settings.sort");
                     if (reviewCapability) { caps.append("links.review"); caps.append("browser.probe"); }
+                    if (probeBatchCapability) caps.append("browser.probeBatch");
                     if (tasksCapability) for (const auto &op : {"queue.startAll", "queue.stopAll", "download.stopAll"}) caps.append(op);
                     if (actionsCapability) for (const auto &op : {"download.reset", "download.move", "download.links"}) caps.append(op);
                     if (categoryCapability) for (const auto &op : {"category.create", "category.update", "category.delete", "category.move", "category.assign"}) caps.append(op);
@@ -167,6 +174,10 @@ public:
                     if (reviewCapability && request["op"] == "links.review") {
                         extensionSnapshot["browserRequests"] = QJsonArray{QJsonObject{{"id", "manual-review"}, {"receivedAt", "1"}, {"source", "clipboard"}, {"outcomeUnknown", false}, {"items", reviewItems}}};
                         reply["result"] = QJsonObject{{"ok", true}, {"requestId", "manual-review"}};
+                    }
+                    if (probeBatchCapability && request["op"] == "browser.probeBatch") {
+                        for (const auto &index : request["indices"].toArray()) setProbe(index.toInt(), QJsonObject{{"state", "pending"}});
+                        reply["result"] = QJsonObject{{"ok", true}, {"requestId", request["requestId"]}, {"queued", request["indices"].toArray().size()}};
                     }
                     if (reviewCapability && request["op"] == "browser.probe")
                         reply["result"] = QJsonObject{{"ok", true}, {"requestId", request["requestId"]}, {"index", request["index"]}, {"statusCode", 206}, {"size", "3145728"}};
@@ -282,6 +293,52 @@ private slots:
             view.close(); view.setSource(QUrl()); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         }
     }
+    void checkSizesRunsInTheServiceWithoutHoldingTheCommandSlot() {
+        FakeService service; service.reviewCapability = service.probeBatchCapability = service.browserCapability = service.runtimeCapability = true;
+        for (const auto &name : {"alpha.zip", "beta.zip", "gamma.zip"}) service.reviewItems.append(QJsonObject{
+            {"url", "https://example.invalid/" + QString(name)}, {"name", name}, {"hasHeaders", false}, {"downloadPage", QJsonValue::Null}});
+        service.extensionSnapshot = {{"queues", QJsonArray{}}, {"settings", basicSettings()}, {"browserRequests", QJsonArray{}},
+            {"browserIntegration", QJsonObject{{"state", "disabled"}, {"error", QJsonValue::Null}, {"enabled", false}, {"port", 15151}, {"auth", false}}},
+            {"runtime", QJsonObject{{"mode", "explicit-runtime"}, {"destination", "/downloads"}, {"destinationRoots", QJsonArray{"/downloads"}}, {"redirects", true}, {"proxy", "direct"}}}};
+        ServiceDownloads model(service.descriptor); QTRY_COMPARE(model.connectionState(), "ready");
+        QQuickView view; view.setResizeMode(QQuickView::SizeRootObjectToView); view.resize(1000, 700);
+        view.setInitialProperties({{"downloads", QVariant::fromValue(&model)}});
+        view.setSource(QUrl("qrc:/qt-ui/qml/DownloadsView.qml")); view.show(); QCOMPARE(view.status(), QQuickView::Ready);
+        QVERIFY(QMetaObject::invokeMethod(view.rootObject(), "openMultipleAdd"));
+        view.rootObject()->findChild<QObject *>("multipleAddLinks")->setProperty("text", "https://example.invalid/alpha.zip\nhttps://example.invalid/beta.zip\nhttps://example.invalid/gamma.zip");
+        QVERIFY(QMetaObject::invokeMethod(view.rootObject()->findChild<QObject *>("reviewMultipleLinks"), "clicked"));
+        QObject *review = nullptr;
+        QTRY_VERIFY((review = view.rootObject()->findChild<QObject *>("browserRequestDialog")) && review->property("visible").toBool());
+        auto *list = qobject_cast<QQuickItem *>(review->findChild<QObject *>("browserRequestItems")); QVERIFY(list);
+        QTRY_VERIFY(!model.busy());
+        auto *probe = review->findChild<QObject *>("probeBrowserRequestSizes"); QVERIFY(probe);
+        QTRY_VERIFY(probe->property("enabled").toBool());
+        QVERIFY(QMetaObject::invokeMethod(probe, "clicked"));
+        QTRY_COMPARE(service.lastCommand["op"].toString(), "browser.probeBatch");
+        QCOMPARE(service.lastCommand["indices"].toArray(), (QJsonArray{0, 1, 2}));
+        // Probes are running in the service, yet the frontend is free for other commands.
+        QTRY_VERIFY(!model.busy());
+        QObject *size = nullptr;
+        QTRY_VERIFY((size = visualChild(list, "browserRequestSize-1")) && size->property("text").toString() == "Checking…");
+        QVERIFY(!probe->property("enabled").toBool());
+        QVERIFY(model.pauseDownload("9007199254740993"));
+        QTRY_COMPARE(service.lastCommand["op"].toString(), "pause");
+        QTRY_VERIFY(!model.busy());
+        service.setProbe(0, {{"state", "done"}, {"size", "3145728"}, {"statusCode", 206}, {"requiresAuth", false}});
+        service.setProbe(1, {{"state", "done"}, {"size", "100"}, {"statusCode", 401}, {"requiresAuth", true}});
+        service.setProbe(2, {{"state", "failed"}});
+        QTRY_COMPARE(visualChild(list, "browserRequestSize-0")->property("text").toString(), "3 MiB");
+        QTRY_COMPARE(visualChild(list, "browserRequestSize-1")->property("text").toString(), "Login required");
+        QTRY_COMPARE(visualChild(list, "browserRequestSize-2")->property("text").toString(), "Unavailable");
+        QTRY_VERIFY(probe->property("enabled").toBool());
+        int probes = 0;
+        for (const auto &command : std::as_const(service.commandLog)) probes += command["op"].toString().startsWith("browser.probe");
+        QCOMPARE(probes, 1);
+        // Malformed probe results are rejected like any other snapshot field.
+        service.setProbe(0, {{"state", "done"}, {"size", "-7"}, {"statusCode", 206}, {"requiresAuth", false}});
+        QTRY_COMPARE(model.errorMessage(), "Invalid service response. Connection closed.");
+        view.close(); view.setSource(QUrl()); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    }
     void tasksMenuDispatchesGlobalCommandsWithoutSelection() {
         FakeService service; service.tasksCapability = true;
         ServiceDownloads model(service.descriptor); QTRY_COMPARE(model.rowCount(), 1);
@@ -365,6 +422,15 @@ private slots:
         QObject *review = nullptr;
         QTRY_VERIFY((review = root->findChild<QObject *>("browserRequestDialog")) && review->property("visible").toBool());
         capture("multiple-review");
+        // Check Sizes in progress: one row checked, one failed, one still running.
+        service.probeBatchCapability = true; service.restart("gallery-epoch");
+        QTRY_VERIFY(model.capabilities().contains("browser.probeBatch")); QTRY_VERIFY(!model.busy());
+        QVERIFY(QMetaObject::invokeMethod(review->findChild<QObject *>("probeBrowserRequestSizes"), "clicked"));
+        QTRY_COMPARE(service.lastCommand["op"].toString(), "browser.probeBatch");
+        service.setProbe(0, {{"state", "done"}, {"size", "73400320"}, {"statusCode", 206}, {"requiresAuth", false}});
+        service.setProbe(2, {{"state", "failed"}});
+        QTRY_COMPARE(visualChild(qobject_cast<QQuickItem *>(review->findChild<QObject *>("browserRequestItems")), "browserRequestSize-2")->property("text").toString(), "Unavailable");
+        capture("multiple-sizes");
         view.close(); QTest::qWait(200);
         view.setSource(QUrl()); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete); QTest::qWait(100);
         // Preview mode hides most per-download groups; no separators may double up.

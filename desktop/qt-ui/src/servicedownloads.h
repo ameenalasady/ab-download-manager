@@ -167,7 +167,8 @@ signals:
     // Never emitted for rejection, disconnect/unknown outcome, or an epoch change.
     void browserRequestAccepted(const QString &requestId, const QStringList &ids, bool start);
     void browserRequestDismissed(const QString &requestId);
-    void browserMetadataReady(const QString &requestId, int index, const QString &size, const QString &sizeLabel);
+    // Check Sizes outcome of one review row. state: "pending", "done" or "failed".
+    void browserMetadataReady(const QString &requestId, int index, const QString &size, const QString &sizeLabel, const QString &state);
     void serviceStopped();
 private:
     void connectService();
@@ -188,6 +189,8 @@ private:
     QString m_descriptor, m_token, m_epoch, m_clientId, m_pending, m_state = "disconnected";
     QString m_category = "all", m_search, m_selected, m_anchor, m_error, m_commandOperation, m_selectOnSnapshot;
     QString m_probeRequest; int m_probeIndex = -1; // In-flight browser.probe, for its failure reply.
+    QHash<QString, QString> m_probeSeen; // Review row -> last emitted browser.probeBatch outcome.
+    QPair<QString, QString> probeSize(bool requiresAuth, int status, qint64 size) const;
     QSet<QString> m_selection;
     QList<QJsonObject> m_batch;
     QString m_commandTarget, m_errorTarget, m_windowEpoch;

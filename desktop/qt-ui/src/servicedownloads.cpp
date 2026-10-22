@@ -372,14 +372,29 @@ void ServiceDownloads::readFrames() {
                 if ((!r["outcomeUnknown"].isUndefined() && !r["outcomeUnknown"].isBool())
                     || id.isEmpty() || id.size() > 64 || requestIds.contains(id) || !r["items"].isArray() || items.isEmpty()
                     || (total += items.size()) > 100) { invalid(); return; }
+                QVariantList itemMaps;
                 for (const auto &entry : items) {
                     const auto item = entry.toObject();
                     if (!item["url"].isString() || item["url"].toString().isEmpty() || item["url"].toString().size() > 2048
                         || !item["name"].isString() || item["name"].toString().isEmpty() || item["name"].toString().size() > 180
                         || !item["hasHeaders"].isBool()
                         || !(item["downloadPage"].isNull() || (item["downloadPage"].isString() && item["downloadPage"].toString().size() <= 2048))) { invalid(); return; }
+                    QVariantMap map = item.toVariantMap();
+                    map.remove("probe");
+                    if (item.contains("probe")) {
+                        // browser.probeBatch outcome; only display values reach QML.
+                        const auto p = item["probe"].toObject(); const auto state = p["state"].toString();
+                        bool sizeOk = false; const qint64 size = p["size"].toString().toLongLong(&sizeOk);
+                        if (!item["probe"].isObject() || !QStringList{"pending", "done", "failed"}.contains(state)
+                            || (state == "done" && (!sizeOk || size < -1 || !p["statusCode"].isDouble() || !p["requiresAuth"].isBool()))) { invalid(); return; }
+                        const auto shown = state == "done" ? probeSize(p["requiresAuth"].toBool(), p["statusCode"].toInt(), size)
+                            : qMakePair(QStringLiteral("-1"), state == "pending" ? tr("Checking…") : tr("Unavailable"));
+                        map["probeState"] = state; map["size"] = shown.first; map["sizeLabel"] = shown.second;
+                    }
+                    itemMaps.append(map);
                 }
-                requestIds.insert(id); browserRequests.append(r.toVariantMap());
+                auto request = r.toVariantMap(); request["items"] = itemMaps;
+                requestIds.insert(id); browserRequests.append(request);
             }
         }
         QVariantMap browserIntegration;
@@ -505,7 +520,24 @@ void ServiceDownloads::readFrames() {
             const auto requestId = m_dismissedRequest; m_dismissedRequest.clear(); emit browserRequestDismissed(requestId);
         }
         // Last: a browser review opened from this signal must see this snapshot's runtime/categories.
-        if (browserUpdated) { m_browserRequests = browserRequests; m_browserIntegration = browserIntegration; emit browserChanged(); }
+        if (browserUpdated) {
+            m_browserRequests = browserRequests; m_browserIntegration = browserIntegration; emit browserChanged();
+            // Report each review row's Check Sizes progress once per change.
+            QHash<QString, QString> seen;
+            for (const auto &value : std::as_const(m_browserRequests)) {
+                const auto request = value.toMap(); const auto items = request["items"].toList();
+                for (int index = 0; index < items.size(); ++index) {
+                    const auto item = items[index].toMap();
+                    if (!item.contains("probeState")) continue;
+                    const QString key = request["id"].toString() + '\n' + QString::number(index) + '\n' + item["url"].toString();
+                    const QString outcome = item["probeState"].toString() + '\n' + item["sizeLabel"].toString();
+                    seen.insert(key, outcome);
+                    if (m_probeSeen.value(key) != outcome)
+                        emit browserMetadataReady(request["id"].toString(), index, item["size"].toString(), item["sizeLabel"].toString(), item["probeState"].toString());
+                }
+            }
+            m_probeSeen = seen;
+        }
         if (!activation.isEmpty() && m_activationKey != m_epoch + ":" + activation["serial"].toString()) {
             m_activationKey = m_epoch + ":" + activation["serial"].toString();
             emit activationRequested(activation["token"].toString(), activation["action"].toString(), activation["downloadId"].toString());
@@ -524,7 +556,7 @@ void ServiceDownloads::readFrames() {
         const auto result = reply["result"].toObject();
         if (m_commandOperation == "browser.probe" && !result["ok"].toBool()) {
             // One unreachable link is that row's answer, not a reason to skip the rest.
-            emit browserMetadataReady(m_probeRequest, m_probeIndex, QStringLiteral("-1"), tr("Unavailable"));
+            emit browserMetadataReady(m_probeRequest, m_probeIndex, QStringLiteral("-1"), tr("Unavailable"), QStringLiteral("failed"));
         } else if (!result["ok"].toBool()) {
             fail(result["error"].toString(tr("Command failed")), m_commandTarget);
             if (!m_batch.isEmpty()) dropBatch(tr("The remaining %n action(s) were not sent.", nullptr, int(m_batch.size())));
@@ -549,11 +581,8 @@ void ServiceDownloads::readFrames() {
             bool ok = false; const auto size = result["size"].toString().toLongLong(&ok);
             const int index = result["index"].toInt(-1); const QString requestId = result["requestId"].toString();
             if (!ok || size < -1 || index < 0 || index >= 100 || requestId.isEmpty() || requestId.size() > 64) { invalid(); return; }
-            // A 404/403 page's Content-Length is not the download's size.
-            const int status = result["statusCode"].toInt();
-            if (result["requiresAuth"].toBool()) emit browserMetadataReady(requestId, index, QStringLiteral("-1"), tr("Login required"));
-            else if (status < 200 || status >= 300) emit browserMetadataReady(requestId, index, QStringLiteral("-1"), tr("Unavailable"));
-            else emit browserMetadataReady(requestId, index, QString::number(size), sizeText(size, sizeUnit()));
+            const auto shown = probeSize(result["requiresAuth"].toBool(), result["statusCode"].toInt(), size);
+            emit browserMetadataReady(requestId, index, shown.first, shown.second, QStringLiteral("done"));
         }
         if (m_commandOperation == "browser.dismiss" && result["ok"].toBool()) m_dismissedRequest = m_browserCommandId;
         m_browserCommandId.clear();
@@ -1121,14 +1150,24 @@ bool ServiceDownloads::reviewLinks(const QString &text) {
     if (text.size() > 256 * 1024) { fail(tr("Link text is too large.")); return false; }
     return command({{"op", "links.review"}, {"text", text}});
 }
+QPair<QString, QString> ServiceDownloads::probeSize(bool requiresAuth, int status, qint64 size) const {
+    // A 404/403 page's Content-Length is not the download's size.
+    if (requiresAuth) return {QStringLiteral("-1"), tr("Login required")};
+    if (status < 200 || status >= 300) return {QStringLiteral("-1"), tr("Unavailable")};
+    return {QString::number(size), sizeText(size, sizeUnit())};
+}
 bool ServiceDownloads::probeBrowserItems(const QString &requestId, const QVariantList &indices) {
-    if (!m_capabilities.contains("browser.probe") || indices.isEmpty() || indices.size() > 100) return false;
-    QList<QJsonObject> commands; QSet<int> seen;
+    const bool batch = m_capabilities.contains("browser.probeBatch");
+    if ((!batch && !m_capabilities.contains("browser.probe")) || indices.isEmpty() || indices.size() > 100) return false;
+    QList<QJsonObject> commands; QSet<int> seen; QJsonArray all;
     for (const auto &value : indices) {
         bool ok = false; const int index = value.toInt(&ok);
         if (!ok || index < 0 || index >= 100 || seen.contains(index)) return false;
-        seen.insert(index); commands.append({{"op", "browser.probe"}, {"requestId", requestId}, {"index", index}});
+        seen.insert(index); all.append(index); commands.append({{"op", "browser.probe"}, {"requestId", requestId}, {"index", index}});
     }
+    // One immediate command; results arrive in snapshots without holding the command slot.
+    if (batch) return command({{"op", "browser.probeBatch"}, {"requestId", requestId}, {"indices", all}});
+    // Older services: one bounded probe at a time through the command slot.
     return commandBatch(commands);
 }
 bool ServiceDownloads::taskCommand(const QString &operation) {
