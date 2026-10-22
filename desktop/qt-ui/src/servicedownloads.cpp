@@ -681,9 +681,14 @@ void ServiceDownloads::rebuild() {
     const QString column = sortColumn(); const bool descending = sortDescending();
     std::sort(m_visible.begin(), m_visible.end(), [this, &column, descending](int a, int b) {
         const auto &left = m_rows[a], &right = m_rows[b]; int comparison = 0;
-        if (column == "name" || column == "state") {
-            const auto key = column == "name" ? "name" : "state";
-            comparison = QString::compare(left[key].toString(), right[key].toString(), Qt::CaseInsensitive);
+        if (column == "name") {
+            comparison = QString::compare(left["name"].toString(), right["name"].toString(), Qt::CaseInsensitive);
+        } else if (column == "state") {
+            // Ascending reads like the work list: active first, finished last. Internal
+            // state names are not display text, so never compare them alphabetically.
+            static const QStringList order{"downloading", "queued", "paused", "failed", "completed"};
+            const auto rank = [](const QJsonObject &row) { const auto i = order.indexOf(row["state"].toString()); return i < 0 ? order.size() : i; };
+            comparison = rank(left) - rank(right);
         } else {
             auto number = [&column](const QJsonObject &row) {
                 if ((column == "speed" || column == "remainingTime") && row["state"] != "downloading") return qint64(-1);
