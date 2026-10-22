@@ -305,14 +305,18 @@ void DownloadsViewTest::buttonsKeepKeyboardFocusWithoutNativeTextRectangle()
         return current && (current->objectName() == QLatin1String("buttonPrimaryFrame")
             || current->property("hasFocus") == QVariant(false));
     };
-    // A primary (highlighted) button paints its own accent frame with no native focus
-    // paint; switching emphasis off restores the native frame with the hint still off.
+    // Emphasis never replaces the deferred native delegate; toggling it cannot
+    // leave a hidden or dangling background on popup/default changes.
+    auto *native = qvariant_cast<QQuickItem *>(button->property("background"));
+    auto *primary = button->findChild<QQuickItem *>("buttonPrimaryFrame"); QVERIFY(primary);
     button->setProperty("highlighted", true);
-    QTRY_COMPARE(qvariant_cast<QQuickItem *>(button->property("background"))->objectName(), QStringLiteral("buttonPrimaryFrame"));
+    QTRY_VERIFY(primary->isVisible());
+    QCOMPARE(qvariant_cast<QQuickItem *>(button->property("background")), native);
     QVERIFY(noNativeFocusPaint());
     button->setProperty("highlighted", false);
-    QTRY_VERIFY(qvariant_cast<QQuickItem *>(button->property("background"))->objectName() != QStringLiteral("buttonPrimaryFrame"));
-    QTRY_VERIFY(qvariant_cast<QQuickItem *>(button->property("background"))->isVisible());
+    QTRY_VERIFY(!primary->isVisible());
+    QCOMPARE(qvariant_cast<QQuickItem *>(button->property("background")), native);
+    QTRY_VERIFY(native->isVisible());
     button->forceActiveFocus(Qt::TabFocusReason);
     QTRY_VERIFY(button->hasActiveFocus());
     QTRY_VERIFY(button->property("visualFocus").toBool());
@@ -320,7 +324,7 @@ void DownloadsViewTest::buttonsKeepKeyboardFocusWithoutNativeTextRectangle()
     QCOMPARE(outline->size(), button->size());
     QVERIFY(noNativeFocusPaint());
     button->setProperty("highlighted", true);
-    QTRY_COMPARE(qvariant_cast<QQuickItem *>(button->property("background"))->objectName(), QStringLiteral("buttonPrimaryFrame"));
+    QTRY_VERIFY(primary->isVisible());
     QCOMPARE(outline->size(), button->size());
     auto *accessible = QAccessible::queryAccessibleInterface(button);
     QVERIFY(accessible && !accessible->text(QAccessible::Name).isEmpty());

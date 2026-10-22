@@ -47,12 +47,19 @@ Item {
     Connections {
         target: root.service
         function onSelectionChanged() { if (root.currentReview && !root.service.busy) root.currentReview.submitting = false }
+        function onBrowserMetadataReady(requestId: string, index: int, size: string, sizeLabel: string) {
+            const window = root.currentReview
+            if (!window || window.requestId !== requestId || !window.items[index]) return
+            window.items[index].size = size; window.items[index].sizeLabel = sizeLabel; window.nameRevision++
+        }
         function onBrowserRequestDismissed(requestId: string) {
             if (root.currentReview && root.currentReview.requestId === requestId) root.currentReview.close()
         }
         function onBrowserRequestAccepted(requestId: string, ids: var, start: bool) {
             const window = root.currentReview
             if (!window || window.requestId !== requestId || window.downloadId !== "") return
+            // Unselected links remain reviewable, but never reopen automatically after Add.
+            if (root.postponed.indexOf(requestId) < 0) root.postponed = root.postponed.concat([requestId])
             if (start && (root.service.integration || {}).showDownloadProgressDialog !== false)
                 root.progressAccepted(window, ids)
             if (window.downloadId === "") window.close()
@@ -199,9 +206,15 @@ Item {
         property var items: []
         property var categoryChoices: []
         title: downloadId !== "" ? (progressContent ? progressContent.windowTitle : qsTr("Download"))
+            : requestSource === "manual" ? qsTr("Add Multiple Downloads")
             : requestSource === "clipboard" ? qsTr("Download from Clipboard")
             : items.length === 1 ? qsTr("Download from Browser") : qsTr("Download %1 Links from Browser").arg(items.length)
         readonly property int checkedCount: items.filter(i => i.checked).length
+        readonly property bool multiple: items.length > 1
+        readonly property var filteredItems: {
+            const query = reviewSearch.text.trim().toLowerCase()
+            return items.filter(i => !query || i.name.toLowerCase().indexOf(query) >= 0 || i.url.toLowerCase().indexOf(query) >= 0)
+        }
         function setAll(checked: bool) { items = items.map(i => Object.assign({}, i, {checked: checked})) }
         function fileIcon(name: string): string {
             const ext = name.split(".").pop().toLowerCase()
@@ -216,7 +229,8 @@ Item {
             root.service.clearError()
             requestId = request.id; requestSource = request.source || "browser"
             outcomeUnknown = request.outcomeUnknown === true
-            items = request.items.map((item, index) => ({index: index, url: item.url, name: item.name, hasHeaders: item.hasHeaders, checked: true}))
+            items = request.items.map((item, index) => ({index: index, url: item.url, name: item.name, hasHeaders: item.hasHeaders, checked: true, size: "-1", sizeLabel: "—"}))
+            reviewSearch.text = ""
             categoryChoices = [{id: "auto", name: qsTr("Automatic")}, {id: "none", name: qsTr("No Category")}]
                 .concat((root.service.categories || []).map(c => ({id: c.id, name: c.name})))
             category.currentIndex = root.service.settings.useCategoryByDefault === false ? 1 : 0
@@ -310,26 +324,46 @@ Item {
                 TextBlock {
                     objectName: "browserRequestSelection"; colors: theme; tone: "secondary"; wrapMode: Text.NoWrap
                     text: qsTr("%1 of %2 selected").arg(dialog.checkedCount).arg(dialog.items.length)
+                        + (reviewSearch.text.trim() ? qsTr(" · %1 shown").arg(dialog.filteredItems.length) : "")
                 }
                 UiButton {
                     flat: true; text: dialog.checkedCount === dialog.items.length ? qsTr("Select None") : qsTr("Select All")
                     onClicked: dialog.setAll(dialog.checkedCount !== dialog.items.length)
+                }
+                Kirigami.SearchField {
+                    id: reviewSearch; objectName: "browserRequestSearch"; Layout.fillWidth: true
+                    placeholderText: qsTr("Search links…"); maximumLength: 256
+                    Accessible.name: qsTr("Search links"); focusSequences: []
                 }
             }
             // One framed View-colored list with contiguous rows, like Dolphin's details view.
             // Shows up to five rows before scrolling, measured from the rows themselves.
             SurfaceFrame {
                 id: linkFrame; colors: theme
-                readonly property real rowExtent: list.count > 0 ? list.contentHeight / list.count : 0
+                readonly property real rowExtent: list.count > 0 ? Math.max(0, list.contentHeight - (dialog.multiple ? Tokens.rowHeight : 0)) / list.count : Tokens.rowHeightTall
                 Layout.fillWidth: true; Layout.fillHeight: true
-                Layout.preferredHeight: Math.min(list.contentHeight, 5 * rowExtent) + 2 * inset
-                Layout.minimumHeight: Math.min(list.contentHeight, rowExtent) + 2 * inset
+                Layout.preferredHeight: (dialog.multiple ? Tokens.rowHeight : 0) + Math.min(list.count * rowExtent, 5 * rowExtent) + 2 * inset
+                Layout.minimumHeight: (dialog.multiple ? Tokens.rowHeight : 0) + rowExtent + 2 * inset
                 QQC2.ScrollView {
                     anchors.fill: parent; anchors.margins: Tokens.separatorWidth
                     anchors.topMargin: linkFrame.inset; anchors.bottomMargin: linkFrame.inset
-                    clip: true; contentWidth: availableWidth
+                    clip: true; contentWidth: dialog.multiple ? Math.max(availableWidth, Tokens.reviewTableMinimumWidth) : availableWidth
                     ListView {
-                        id: list; objectName: "browserRequestItems"; model: dialog.items; spacing: 0; boundsBehavior: Flickable.StopAtBounds
+                        id: list; objectName: "browserRequestItems"; model: dialog.filteredItems; spacing: 0; boundsBehavior: Flickable.StopAtBounds
+                        headerPositioning: ListView.OverlayHeader
+                        header: Rectangle {
+                            z: 2; width: list.width; height: dialog.multiple ? Tokens.rowHeight : 0; visible: dialog.multiple
+                            color: theme.surface
+                            RowLayout {
+                                anchors.fill: parent; anchors.leftMargin: Tokens.spacingM; anchors.rightMargin: Tokens.spacingM; spacing: Tokens.spacingM
+                                Item { Layout.preferredWidth: Tokens.rowHeight + Tokens.iconMedium + Tokens.spacingM }
+                                QQC2.Label { Layout.preferredWidth: Tokens.reviewNameWidth; Layout.maximumWidth: Tokens.reviewNameWidth; text: qsTr("Name"); font.weight: Font.DemiBold; color: theme.secondary }
+                                QQC2.Label { Layout.preferredWidth: Tokens.reviewSizeWidth; Layout.maximumWidth: Tokens.reviewSizeWidth; text: qsTr("Size"); font.weight: Font.DemiBold; color: theme.secondary }
+                                QQC2.Label { Layout.fillWidth: true; text: qsTr("Link"); font.weight: Font.DemiBold; color: theme.secondary }
+                                Item { visible: dialog.items.some(i => i.hasHeaders); Layout.preferredWidth: Tokens.iconSmall }
+                            }
+                            Kirigami.Separator { anchors.bottom: parent.bottom; width: parent.width }
+                        }
                         Accessible.role: Accessible.List; Accessible.name: qsTr("Links")
                         delegate: Rectangle {
                             id: entry
@@ -343,30 +377,35 @@ Item {
                                 anchors.topMargin: Tokens.spacingS; anchors.bottomMargin: Tokens.spacingS
                                 spacing: Tokens.spacingM
                                 QQC2.CheckBox {
+                                    objectName: "browserRequestChecked-" + entry.modelData.index
                                     checked: entry.modelData.checked
-                                    visible: dialog.items.length > 1
+                                    visible: dialog.multiple; Layout.preferredWidth: Tokens.rowHeight
                                     Accessible.name: qsTr("Download %1").arg(entry.modelData.name)
-                                    onToggled: { const next = dialog.items.slice(); next[entry.index] = Object.assign({}, next[entry.index], {checked: checked}); dialog.items = next }
+                                    onToggled: { const next = dialog.items.slice(); next[entry.modelData.index] = Object.assign({}, next[entry.modelData.index], {checked: checked}); dialog.items = next }
                                 }
                                 Kirigami.Icon {
                                     implicitWidth: Tokens.iconMedium; implicitHeight: implicitWidth
                                     source: dialog.fileIcon(entry.modelData.name); Accessible.ignored: true
                                 }
                                 ColumnLayout {
-                                    Layout.fillWidth: true; spacing: Tokens.spacingXS
+                                    Layout.fillWidth: !dialog.multiple; spacing: Tokens.spacingXS
+                                    Layout.preferredWidth: dialog.multiple ? Tokens.reviewNameWidth : -1
+                                    Layout.maximumWidth: dialog.multiple ? Tokens.reviewNameWidth : Infinity
                                     FormField {
+                                        objectName: "browserRequestName-" + entry.modelData.index
                                         Layout.fillWidth: true; text: entry.modelData.name; maximumLength: 180
                                         Accessible.name: qsTr("File name")
                                         // Edit in place without rebuilding the model (keeps focus/cursor).
-                                        onTextEdited: { dialog.items[entry.index].name = text; dialog.nameRevision++ }
+                                        onTextEdited: { dialog.items[entry.modelData.index].name = text; dialog.nameRevision++ }
                                     }
                                     QQC2.Label {
                                         Layout.fillWidth: true; elide: Text.ElideMiddle; textFormat: Text.PlainText; color: theme.secondary
                                         font: Tokens.smallFont
+                                        visible: !dialog.multiple
                                         text: entry.modelData.url; Accessible.name: qsTr("Link: %1").arg(entry.modelData.url)
                                     }
                                     RowLayout {
-                                        readonly property var info: dialog.existing[entry.index] || null
+                                        readonly property var info: dialog.existing[entry.modelData.index] || null
                                         objectName: "browserRequestItemExisting"
                                         Layout.fillWidth: true; spacing: Tokens.spacingXS
                                         // A single link gets the fuller banner below instead.
@@ -378,6 +417,20 @@ Item {
                                             text: parent.info && parent.info.match ? qsTr("Already in your downloads") : qsTr("A file with this name already exists")
                                         }
                                     }
+                                }
+                                QQC2.Label {
+                                    objectName: "browserRequestSize-" + entry.modelData.index
+                                    visible: dialog.multiple; Layout.preferredWidth: Tokens.reviewSizeWidth; Layout.maximumWidth: Tokens.reviewSizeWidth
+                                    text: { dialog.nameRevision; return dialog.items[entry.modelData.index].sizeLabel }
+                                    textFormat: Text.PlainText
+                                    elide: Text.ElideRight; color: theme.secondary
+                                }
+                                QQC2.Label {
+                                    visible: dialog.multiple; Layout.fillWidth: true
+                                    text: entry.modelData.url; textFormat: Text.PlainText; elide: Text.ElideMiddle; color: theme.secondary
+                                    Accessible.name: qsTr("Link: %1").arg(entry.modelData.url)
+                                    HoverHandler { id: linkHover }
+                                    QQC2.ToolTip.visible: linkHover.hovered; QQC2.ToolTip.delay: Tokens.toolTipDelay; QQC2.ToolTip.text: text
                                 }
                                 // Fixed slot whenever any link has credentials, so name fields align.
                                 Item {
@@ -397,6 +450,7 @@ Item {
                     }
                 }
             }
+            TextBlock { colors: theme; tone: "secondary"; visible: dialog.multiple && dialog.filteredItems.length === 0; text: qsTr("No matching links") }
             // Single-link review: show warning if link already exists
             Kirigami.InlineMessage {
                 objectName: "browserRequestExisting"
@@ -449,12 +503,20 @@ Item {
             WindowFooter {
               id: reviewActions
               anchors { left: parent.left; right: parent.right; top: parent.top }
-              leading: UiButton {
+              leading: [
+                UiButton {
+                  objectName: "probeBrowserRequestSizes"; flat: true; text: qsTr("Check Sizes")
+                  visible: dialog.multiple && root.service.capabilities.indexOf("browser.probe") >= 0
+                  enabled: !root.service.busy && !dialog.submitting && !dialog.outcomeUnknown && dialog.checkedCount > 0
+                  onClicked: root.service.probeBrowserItems(dialog.requestId, dialog.items.filter(i => i.checked).map(i => i.index))
+                },
+                UiButton {
                   objectName: "dismissBrowserRequest"; flat: true
                   text: qsTr("Discard"); icon.name: "edit-delete-remove"; enabled: !root.service.busy && !dialog.submitting
                   QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.DestructiveRole
                   onClicked: { if (root.service.dismissBrowserRequest(dialog.requestId)) dialog.submitting = true }
-              }
+                }
+              ]
             UiButton {
                 objectName: "acceptBrowserRequest"; text: qsTr("Download"); icon.name: "download"; highlighted: true
                 enabled: !root.service.busy && !dialog.submitting && !dialog.outcomeUnknown && dialog.checkedCount > 0; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.AcceptRole

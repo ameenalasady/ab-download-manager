@@ -159,7 +159,7 @@ class EngineSession(
             "system.activity", "download.probe", "download.review", "history.page", "history.delta", "download.windows", "download.parts",
             "download.replace", "download.delete", "settings.folder", "settings.duplicates",
             "download.reset", "download.move", "download.links", "settings.sort",
-            "queue.startAll", "queue.stopAll", "download.stopAll")
+            "queue.startAll", "queue.stopAll", "download.stopAll", "links.review", "browser.probe")
     }
 
     /** A frontend polled; browser requests then wait for it instead of launching one.
@@ -551,13 +551,18 @@ class EngineSession(
         val op = request["op"]?.jsonPrimitive?.content ?: error("Missing operation")
         val result = buildJsonObject {
             when (op) {
-                "download.probe" -> {
-                    // Explicit network read using the existing engine's bounded range probe.
-                    // Never constructs a job, persists metadata, reserves an ID or resumes.
-                    val url = request["url"]?.jsonPrimitive?.content ?: error("Missing URL")
+                "download.probe", "browser.probe" -> {
+                    // Explicit bounded engine metadata read; captured credentials stay service-side.
+                    val reviewItem = if (op == "browser.probe") {
+                        val requestId = request["requestId"]?.jsonPrimitive?.content ?: error("Missing review ID")
+                        val index = request["index"]?.jsonPrimitive?.int ?: error("Missing review index")
+                        val item = intake.get(requestId).items.getOrNull(index) ?: error("Review item no longer exists")
+                        put("requestId", requestId); put("index", index); item
+                    } else null
+                    val url = reviewItem?.url ?: request["url"]?.jsonPrimitive?.content ?: error("Missing URL")
                     runtime.validateUrl(url)
                     val draft = HttpDownloadItem(link = url, id = -1, folder = destination().path, name = "probe")
-                    applyHttpOptions(draft, request)
+                    applyHttpOptions(draft, reviewItem?.options(JsonObject(emptyMap())) ?: request)
                     val info = withTimeout(8000) { http.head(draft, 0, 255) }
                     put("statusCode", info.statusCode); put("requiresAuth", info.requiresAuth)
                     put("size", (info.totalLength ?: -1).toString()); put("resumeSupport", info.resumeSupport)
@@ -633,12 +638,12 @@ class EngineSession(
                     ids.firstOrNull()?.let { put("id", it.toString()) }
                 }
                 "browser.dismiss" -> intake.dismiss(request["requestId"]?.jsonPrimitive?.content ?: error("Missing browser request ID"))
-                "links.import" -> {
+                "links.import", "links.review" -> {
                     // The original "New Download from Clipboard": reviewed like a browser request.
                     val text = request["text"]?.jsonPrimitive?.content ?: error("Missing text")
                     val (items, ignored) = ClipboardLinks.items(text, runtime)
-                    require(items.isNotEmpty()) { if (ignored > 0) "The clipboard links are not supported HTTP(S) links" else "No download links found in the clipboard" }
-                    put("requestId", intake.offerItems(items, System.currentTimeMillis(), "clipboard").id)
+                    require(items.isNotEmpty()) { if (ignored > 0) "No supported HTTP(S) links found" else "No download links found" }
+                    put("requestId", intake.offerItems(items, System.currentTimeMillis(), if (op == "links.review") "manual" else "clipboard").id)
                     put("ignored", ignored)
                 }
                 "frontend.activate" -> {

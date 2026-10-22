@@ -22,6 +22,13 @@ static QByteArray encode(const QJsonObject &object) {
     qToBigEndian<quint32>(bytes.size(), result.data()); result += bytes; return result;
 }
 
+static QQuickItem *visualChild(QQuickItem *root, const QString &name) {
+    if (!root) return nullptr;
+    if (root->objectName() == name) return root;
+    for (auto *child : root->childItems()) if (auto *found = visualChild(child, name)) return found;
+    return nullptr;
+}
+
 class FakeService : public QObject {
 public:
     // The native launcher's private TMPDIR can exceed sockaddr_un.sun_path.
@@ -40,7 +47,8 @@ public:
     bool browserCapability = false, desktopCapability = false, windowsCapability = false;
     // New negotiated settings/duplicate extensions.
     bool folderCapability = false, duplicateCapability = false, replaceCapability = false;
-    bool actionsCapability = false, sortCapability = false, tasksCapability = false;
+    bool actionsCapability = false, sortCapability = false, tasksCapability = false, reviewCapability = false;
+    QJsonArray reviewItems;
     // Serial command-batch probes: the full log, a 1-based index that is refused, a
     // mismatched commandId (unexpected reply), and how many snapshots were served.
     QList<QJsonObject> commandLog;
@@ -104,6 +112,7 @@ public:
                     if (duplicateCapability) caps.append("settings.duplicates");
                     if (replaceCapability) caps.append("download.replace");
                     if (sortCapability) caps.append("settings.sort");
+                    if (reviewCapability) { caps.append("links.review"); caps.append("browser.probe"); }
                     if (tasksCapability) for (const auto &op : {"queue.startAll", "queue.stopAll", "download.stopAll"}) caps.append(op);
                     if (actionsCapability) for (const auto &op : {"download.reset", "download.move", "download.links"}) caps.append(op);
                     if (categoryCapability) for (const auto &op : {"category.create", "category.update", "category.delete", "category.move", "category.assign"}) caps.append(op);
@@ -149,6 +158,12 @@ public:
                     reply["commandId"] = replyCommandId.isEmpty() ? request["commandId"] : replyCommandId;
                     reply["result"] = refused ? QJsonObject{{"ok", false}, {"error", "Fixture command refusal"}}
                         : (commandResult.isEmpty() ? QJsonObject{{"ok", true}} : commandResult);
+                    if (reviewCapability && request["op"] == "links.review") {
+                        extensionSnapshot["browserRequests"] = QJsonArray{QJsonObject{{"id", "manual-review"}, {"receivedAt", "1"}, {"source", "manual"}, {"outcomeUnknown", false}, {"items", reviewItems}}};
+                        reply["result"] = QJsonObject{{"ok", true}, {"requestId", "manual-review"}};
+                    }
+                    if (reviewCapability && request["op"] == "browser.probe")
+                        reply["result"] = QJsonObject{{"ok", true}, {"requestId", request["requestId"]}, {"index", request["index"]}, {"size", "3145728"}};
                     if (fulfillBrowserAccept && request["op"] == "browser.accept" && reply["result"].toObject()["ok"].toBool()) {
                         QJsonArray ids;
                         for (const auto &value : request["items"].toArray()) {
@@ -176,6 +191,57 @@ private slots:
         QGuiApplication::setDesktopFileName(QStringLiteral("org.abdownloadmanager.QtCapability.ServiceTest-%1").arg(QCoreApplication::applicationPid()));
         QQuickStyle::setStyle("org.kde.desktop"); QQuickWindow::setDefaultAlphaBuffer(true);
     }
+    void multipleAddReusesSearchableReviewWithStableIndicesAndMetadata() {
+        FakeService service; service.reviewCapability = service.browserCapability = service.runtimeCapability = service.fulfillBrowserAccept = true;
+        service.rows = {};
+        for (const auto &name : {"alpha.zip", "beta.zip", "gamma.zip"}) service.reviewItems.append(QJsonObject{
+            {"url", "https://example.invalid/" + QString(name)}, {"name", name}, {"hasHeaders", false}, {"downloadPage", QJsonValue::Null}});
+        service.extensionSnapshot = {{"queues", QJsonArray{}}, {"settings", basicSettings()}, {"browserRequests", QJsonArray{}},
+            {"browserIntegration", QJsonObject{{"state", "disabled"}, {"error", QJsonValue::Null}, {"enabled", false}, {"port", 15151}, {"auth", false}}},
+            {"runtime", QJsonObject{{"mode", "explicit-runtime"}, {"destination", "/downloads"}, {"destinationRoots", QJsonArray{"/downloads"}}, {"redirects", true}, {"proxy", "direct"}}}};
+        ServiceDownloads model(service.descriptor); QTRY_COMPARE(model.connectionState(), "ready");
+        QQuickView view; view.setResizeMode(QQuickView::SizeRootObjectToView); view.resize(1000, 700);
+        view.setInitialProperties({{"downloads", QVariant::fromValue(&model)}});
+        view.setSource(QUrl("qrc:/qt-ui/qml/DownloadsView.qml")); view.show(); QCOMPARE(view.status(), QQuickView::Ready);
+        QVERIFY(QMetaObject::invokeMethod(view.rootObject(), "openMultipleAdd"));
+        auto *entry = view.rootObject()->findChild<QObject *>("multipleAddLinks"); QVERIFY(entry);
+        entry->setProperty("text", "https://example.invalid/alpha.zip\nhttps://example.invalid/beta.zip\nhttps://example.invalid/gamma.zip");
+        const int hold = qBound(0, qEnvironmentVariableIntValue("QT_MULTIPLE_GALLERY_HOLD_MS"), 10000); if (hold) QTest::qWait(hold);
+        auto *reviewButton = view.rootObject()->findChild<QObject *>("reviewMultipleLinks"); QVERIFY(reviewButton);
+        QVERIFY(QMetaObject::invokeMethod(reviewButton, "clicked"));
+        QObject *review = nullptr;
+        QTRY_VERIFY((review = view.rootObject()->findChild<QObject *>("browserRequestDialog")) && review->property("visible").toBool());
+        QCOMPARE(service.commandLog.first()["op"].toString(), "links.review"); QCOMPARE(service.commandLog.size(), 1);
+        QCOMPARE(review->property("title").toString(), "Add Multiple Downloads");
+        const auto capture = qEnvironmentVariable("QT_ADAPTER_CAPTURE_DIR");
+        if (!capture.isEmpty()) {
+            QVERIFY(reviewWindow(qobject_cast<QQuickWindow *>(review), capture + "/review-narrow.png", QSize(400, 520)));
+            QVERIFY(reviewWindow(qobject_cast<QQuickWindow *>(review), capture + "/review-client.png", QSize(720, 520)));
+        }
+        if (hold) { view.hide(); QTest::qWait(hold); }
+        auto *search = review->findChild<QObject *>("browserRequestSearch"); QVERIFY(search); search->setProperty("text", "beta");
+        auto *list = review->findChild<QObject *>("browserRequestItems"); QVERIFY(list); QTRY_COMPARE(list->property("count").toInt(), 1);
+        QVERIFY(QMetaObject::invokeMethod(review, "setAll", Q_ARG(bool, false)));
+        QObject *check = nullptr; QTRY_VERIFY((check = visualChild(qobject_cast<QQuickItem *>(list), "browserRequestChecked-1")));
+        check->setProperty("checked", true); QVERIFY(QMetaObject::invokeMethod(check, "toggled"));
+        QTRY_COMPARE(review->property("checkedCount").toInt(), 1);
+        auto *name = visualChild(qobject_cast<QQuickItem *>(list), "browserRequestName-1"); QVERIFY(name);
+        name->setProperty("text", "renamed-beta.zip"); QVERIFY(QMetaObject::invokeMethod(name, "textEdited"));
+        QTRY_VERIFY(!model.busy());
+        auto *probe = review->findChild<QObject *>("probeBrowserRequestSizes"); QVERIFY(probe); QVERIFY(QMetaObject::invokeMethod(probe, "clicked"));
+        QTRY_COMPARE(service.lastCommand["op"].toString(), "browser.probe"); QCOMPARE(service.lastCommand["index"].toInt(), 1);
+        auto *size = visualChild(qobject_cast<QQuickItem *>(list), "browserRequestSize-1"); QVERIFY(size); QTRY_COMPARE(size->property("text").toString(), "3 MiB");
+        auto *location = review->findChild<QObject *>("browserRequestLocation"); QVERIFY(location); location->setProperty("text", "/downloads/nested");
+        auto *category = review->findChild<QObject *>("browserRequestCategory"); QVERIFY(category); category->setProperty("currentIndex", 1);
+        QTRY_VERIFY(!model.busy()); if (hold) QTest::qWait(hold);
+        auto *accept = review->findChild<QObject *>("pauseBrowserRequest"); QVERIFY(accept); QVERIFY(QMetaObject::invokeMethod(accept, "clicked"));
+        QTRY_COMPARE(service.lastCommand["op"].toString(), "browser.accept");
+        const auto chosen = service.lastCommand["items"].toArray(); QCOMPARE(chosen.size(), 1); QCOMPARE(chosen[0].toObject()["index"].toInt(), 1);
+        QCOMPARE(chosen[0].toObject()["name"].toString(), "renamed-beta.zip"); QCOMPARE(service.lastCommand["folder"].toString(), "/downloads/nested");
+        QCOMPARE(service.lastCommand["categoryId"].toString(), "none"); QVERIFY(!service.lastCommand["start"].toBool());
+        QTRY_COMPARE(model.rowCount(), 1); view.close(); QTest::qWait(300);
+        view.setSource(QUrl()); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete); QTest::qWait(100);
+    }
     void tasksMenuDispatchesGlobalCommandsWithoutSelection() {
         FakeService service; service.tasksCapability = true;
         ServiceDownloads model(service.descriptor); QTRY_COMPARE(model.rowCount(), 1);
@@ -193,6 +259,7 @@ private slots:
             QVERIFY(service.lastCommand["id"].toString().isEmpty()); QVERIFY(service.lastCommand["queueId"].toString().isEmpty());
         }
         QMetaObject::invokeMethod(menu, "close"); QTest::qWait(200); view.close(); QTest::qWait(100);
+        view.setSource(QUrl()); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete); QTest::qWait(100);
     }
     void sortingAndAggregateStatusPreserveStableSelection() {
         FakeService service; service.sortCapability = service.monitorCapability = true;
@@ -226,6 +293,7 @@ private slots:
         model.setSearch("Zeta"); QCOMPARE(model.selectionCount(), 1); QCOMPARE(model.statistics()["selectedBytes"].toString(), "1000");
         QCOMPARE(model.statistics()["queuedCount"].toInt(), 1); // Global, not filtered.
         view.close(); QTest::qWait(100);
+        view.setSource(QUrl()); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete); QTest::qWait(100);
     }
     void capturedDownloadActionsAndLinks() {
         FakeService service; service.detailsCapability = service.actionsCapability = true;
@@ -265,6 +333,7 @@ private slots:
         service.rows[0] = row; QTRY_VERIFY(!model.errorMessage().isEmpty());
         QCOMPARE(model.downloadPageUrl(id), QUrl("https://example.invalid/page#section"));
         QMetaObject::invokeMethod(dialog, "close"); QTest::qWait(300); view.close(); QTest::qWait(100);
+        view.setSource(QUrl()); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete); QTest::qWait(100);
     }
     void snapshotCommandsAndReconnect() {
         FakeService service;

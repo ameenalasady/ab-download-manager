@@ -17,7 +17,7 @@ Item {
     readonly property bool removeDialogVisible: removeDialog.visible
     readonly property bool actionsMenuVisible: actionsMenu.visible
     // Every dialog except the browser review, which waits for these to close.
-    readonly property bool mainModalOpen: mutationDialog.visible || addDialog.visible || duplicateDialog.visible || removeDialog.visible || aboutDialog.visible || Boolean(workflows && workflows.modalOpen) || Boolean(categoryWorkflows && categoryWorkflows.modalOpen) || Boolean(detailsLoader.item && detailsLoader.item.modalOpen) || Boolean(httpOptionsLoader.item && httpOptionsLoader.item.modalOpen)
+    readonly property bool mainModalOpen: multipleAddDialog.visible || mutationDialog.visible || addDialog.visible || duplicateDialog.visible || removeDialog.visible || aboutDialog.visible || Boolean(workflows && workflows.modalOpen) || Boolean(categoryWorkflows && categoryWorkflows.modalOpen) || Boolean(detailsLoader.item && detailsLoader.item.modalOpen) || Boolean(httpOptionsLoader.item && httpOptionsLoader.item.modalOpen)
     readonly property bool modalOpen: mainModalOpen || Boolean(browserLoader.item && browserLoader.item.modalOpen)
     PreviewTheme { id: theme }
     NativeWindowStyle { id: material; window: root.Window.window; maximumOpacity: Tokens.materialOpacity }
@@ -114,6 +114,10 @@ Item {
         nameInput.text = live ? "" : "archive.zip"
         addDialog.categoryChoices = [{id: "auto", name: qsTr("Automatic")}, {id: "none", name: qsTr("No Category")}].concat(live ? downloads.categories.map(c => ({id: c.id, name: c.name})) : [])
         addCategory.currentIndex = 0; addDialog.open(); sourceInput.forceActiveFocus()
+    }
+    function openMultipleAdd() {
+        if (!live || downloads.capabilities.indexOf("links.review") < 0) return
+        downloads.clearError(); multipleLinks.text = ""; multipleAddDialog.open(); multipleLinks.forceActiveFocus()
     }
     function openMutation(operation: string) {
         if (!live || !singleSelection || !downloads.canMutateDownload(downloads.selectedId, operation)) return
@@ -608,6 +612,7 @@ Item {
     MenuSurface {
         id: fileMenu; objectName: "fileMenu"
         QQC2.MenuItem { text: qsTr("&New Download…"); icon.name: "list-add"; onTriggered: root.openAddDialog() }
+        QQC2.MenuItem { objectName: "addMultipleDownloads"; text: qsTr("Add &Multiple Downloads…"); icon.name: "list-add"; visible: root.live && root.downloads.capabilities.indexOf("links.review") >= 0; enabled: !root.downloads.busy; onTriggered: root.openMultipleAdd() }
         QQC2.MenuItem {
             objectName: "importClipboardLinks"; text: qsTr("New Download from &Clipboard…"); icon.name: "edit-paste"
             visible: root.live && root.downloads.capabilities.indexOf("links.import") >= 0
@@ -674,6 +679,25 @@ Item {
     MenuSurface {
         id: helpMenu; objectName: "helpMenu"
         QQC2.MenuItem { text: qsTr("&About Download Manager Preview"); icon.name: "help-about"; onTriggered: aboutDialog.open() }
+    }
+    UiDialog {
+        id: multipleAddDialog; objectName: "multipleAddDialog"
+        title: qsTr("Add Multiple Downloads"); preferredWidth: Tokens.dialogWidthMedium
+        preferredHeight: Tokens.dialogHeightMedium
+        onOpened: multipleReview.highlighted = true
+        contentItem: QQC2.ScrollView {
+            clip: true; contentWidth: availableWidth
+            QQC2.TextArea { id: multipleLinks; objectName: "multipleAddLinks"; placeholderText: qsTr("Download links"); textFormat: TextEdit.PlainText; wrapMode: TextEdit.Wrap; selectByMouse: true; Accessible.name: qsTr("Download links") }
+        }
+        footer: DialogFooter {
+            UiButton {
+                id: multipleReview; objectName: "reviewMultipleLinks"; text: qsTr("Review"); icon.name: "view-list-details"; highlighted: true
+                enabled: root.live && !root.downloads.busy && multipleLinks.text.trim() !== "" && multipleLinks.text.length <= 256 * 1024
+                QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.AcceptRole
+                onClicked: { if (root.downloads.reviewLinks(multipleLinks.text)) multipleAddDialog.close() }
+            }
+            UiButton { text: qsTr("Cancel"); icon.name: "dialog-cancel"; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.RejectRole; onClicked: multipleAddDialog.close() }
+        }
     }
     UiDialog {
         id: mutationDialog; objectName: "downloadMutationDialog"

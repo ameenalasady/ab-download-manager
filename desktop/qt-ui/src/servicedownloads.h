@@ -65,6 +65,8 @@ public:
     void setFrontendActive(bool active) { m_frontendActive = active; }
     Q_INVOKABLE bool updateIntegration(const QVariantMap &settings);
     Q_INVOKABLE bool importLinks(const QString &text);
+    Q_INVOKABLE bool reviewLinks(const QString &text);
+    Q_INVOKABLE bool probeBrowserItems(const QString &requestId, const QVariantList &indices);
     Q_INVOKABLE void importFromClipboard() { emit clipboardImportRequested(); }
     Q_INVOKABLE bool shutdownService();
     Q_INVOKABLE bool taskCommand(const QString &operation);
@@ -165,6 +167,7 @@ signals:
     // Never emitted for rejection, disconnect/unknown outcome, or an epoch change.
     void browserRequestAccepted(const QString &requestId, const QStringList &ids, bool start);
     void browserRequestDismissed(const QString &requestId);
+    void browserMetadataReady(const QString &requestId, int index, const QString &size, const QString &sizeLabel);
     void serviceStopped();
 private:
     void connectService();

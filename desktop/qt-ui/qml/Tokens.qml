@@ -72,6 +72,9 @@ QtObject {
     readonly property int completionWindowWidth: 440
     readonly property int downloadWindowHeight: 760 // progress + eight part rows before scrolling
     readonly property int reviewWindowWidth: 720
+    readonly property int reviewTableMinimumWidth: 680
+    readonly property int reviewNameWidth: 220
+    readonly property int reviewSizeWidth: 90
     readonly property int reviewWindowHeight: 580
     readonly property int visiblePartRows: 8
     readonly property int partBytesWidth: 85

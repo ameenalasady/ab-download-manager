@@ -542,6 +542,12 @@ void ServiceDownloads::readFrames() {
             }
             m_acceptedRequest = m_browserCommandId; m_acceptedIds = accepted; m_acceptedStart = m_browserCommandStart;
         }
+        if (m_commandOperation == "browser.probe" && result["ok"].toBool()) {
+            bool ok = false; const auto size = result["size"].toString().toLongLong(&ok);
+            const int index = result["index"].toInt(-1); const QString requestId = result["requestId"].toString();
+            if (!ok || size < -1 || index < 0 || index >= 100 || requestId.isEmpty() || requestId.size() > 64) { invalid(); return; }
+            emit browserMetadataReady(requestId, index, QString::number(size), sizeText(size, sizeUnit()));
+        }
         if (m_commandOperation == "browser.dismiss" && result["ok"].toBool()) m_dismissedRequest = m_browserCommandId;
         m_browserCommandId.clear();
         const bool stopped = m_commandOperation == "service.shutdown" && result["ok"].toBool();
@@ -1097,6 +1103,20 @@ bool ServiceDownloads::updateIntegration(const QVariantMap &settings) {
 bool ServiceDownloads::importLinks(const QString &text) {
     if (text.size() > 256 * 1024) { fail(tr("Clipboard text is too large.")); return false; }
     return command({{"op", "links.import"}, {"text", text}});
+}
+bool ServiceDownloads::reviewLinks(const QString &text) {
+    if (text.size() > 256 * 1024) { fail(tr("Link text is too large.")); return false; }
+    return command({{"op", "links.review"}, {"text", text}});
+}
+bool ServiceDownloads::probeBrowserItems(const QString &requestId, const QVariantList &indices) {
+    if (!m_capabilities.contains("browser.probe") || indices.isEmpty() || indices.size() > 100) return false;
+    QList<QJsonObject> commands; QSet<int> seen;
+    for (const auto &value : indices) {
+        bool ok = false; const int index = value.toInt(&ok);
+        if (!ok || index < 0 || index >= 100 || seen.contains(index)) return false;
+        seen.insert(index); commands.append({{"op", "browser.probe"}, {"requestId", requestId}, {"index", index}});
+    }
+    return commandBatch(commands);
 }
 bool ServiceDownloads::taskCommand(const QString &operation) {
     return QStringList{"queue.startAll", "queue.stopAll", "download.stopAll"}.contains(operation) && command({{"op", operation}});
