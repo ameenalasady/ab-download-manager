@@ -637,13 +637,16 @@ Item {
         }
         QQC2.MenuItem { text: qsTr("&Resume"); icon.name: "media-playback-start"; enabled: root.downloads.canResume; onTriggered: root.downloads.resumeSelected() }
         QQC2.MenuItem { text: qsTr("&Pause"); icon.name: "media-playback-pause"; enabled: root.downloads.canPause; onTriggered: root.downloads.pauseSelected() }
-        QQC2.MenuSeparator {}
+        // Its group (open/reveal/window/properties) exists only with a live service.
+        QQC2.MenuSeparator { visible: root.live }
         QQC2.MenuItem { objectName: "openCompletedDownload"; text: qsTr("&Open File"); icon.name: "document-open"; visible: root.live && root.singleSelection && root.downloads.downloadState(root.downloads.selectedId).state === "completed"; enabled: root.currentFileUrl.toString() !== ""; onTriggered: DesktopOpener.openFile(root.currentFileUrl, root.Window.window) }
         QQC2.MenuItem { objectName: "revealDownload"; text: qsTr("Show in &Folder"); icon.name: "folder-open"; visible: root.live && root.singleSelection; enabled: root.currentFolderUrl.toString() !== ""; onTriggered: DesktopOpener.showInFolder(root.currentFileUrl.toString() !== "" ? root.currentFileUrl : root.currentFolderUrl, root.Window.window) }
         QQC2.MenuItem { objectName: "showDownloadWindow"; text: qsTr("Show in Separate &Window"); icon.name: "window-new"; visible: root.live; enabled: root.singleSelection; onTriggered: root.openDownloadWindow() }
         QQC2.MenuItem { objectName: "showDownloadDetails"; text: qsTr("Propert&ies…"); icon.name: "document-properties"; visible: root.live && root.downloads.capabilities.indexOf("download.details") >= 0; enabled: root.singleSelection; onTriggered: root.openDetails() }
+        QQC2.MenuSeparator { visible: root.live && root.downloads.capabilities.indexOf("download.links") >= 0 }
         QQC2.MenuItem { objectName: "copyDownloadLink"; text: qsTr("Copy &Link"); icon.name: "edit-copy"; visible: root.live && root.downloads.capabilities.indexOf("download.links") >= 0; enabled: root.downloads.selectionCount > 0; onTriggered: root.downloads.copyDownloadLinks() }
         QQC2.MenuItem { objectName: "openDownloadPage"; text: qsTr("Open Download Pa&ge"); icon.name: "internet-web-browser"; visible: root.live && root.singleSelection && root.downloads.downloadPageUrl(root.downloads.selectedId).toString() !== ""; onTriggered: DesktopOpener.openWebPage(root.downloads.downloadPageUrl(root.downloads.selectedId), root.Window.window) }
+        QQC2.MenuSeparator { visible: root.live && ["download.move", "download.reset", "download.edit", "queue.add", "category.assign"].some(c => root.downloads.capabilities.indexOf(c) >= 0) }
         QQC2.MenuItem { objectName: "moveRenameDownload"; text: qsTr("Move / Re&name…"); icon.name: "edit-rename"; visible: root.live && root.downloads.capabilities.indexOf("download.move") >= 0; enabled: root.singleSelection && root.downloads.canMutateDownload(root.downloads.selectedId, "download.move"); onTriggered: root.openMutation("download.move") }
         QQC2.MenuItem { objectName: "resetDownload"; text: qsTr("Re&set Progress…"); icon.name: "view-refresh"; visible: root.live && root.downloads.capabilities.indexOf("download.reset") >= 0; enabled: root.singleSelection && root.downloads.canMutateDownload(root.downloads.selectedId, "download.reset"); onTriggered: root.openMutation("download.reset") }
         QQC2.MenuItem { objectName: "editDownloadOptions"; text: qsTr("&Edit Connection Options…"); icon.name: "configure"; visible: root.live && root.downloads.capabilities.indexOf("download.edit") >= 0; enabled: root.singleSelection && root.downloads.canResume; onTriggered: root.openHttpEdit() }
@@ -672,6 +675,7 @@ Item {
                 onObjectRemoved: (index, object) => categoryActionMenu.removeItem(object)
             }
         }
+        QQC2.MenuSeparator {}
         QQC2.MenuItem { text: qsTr("Select &All"); icon.name: "edit-select-all"; enabled: root.downloads.visibleCount > 0; onTriggered: root.downloads.selectAll() }
         QQC2.MenuSeparator {}
         QQC2.MenuItem { text: root.live ? qsTr("Re&move from List, Keep Files…") : qsTr("Re&move…"); icon.name: "list-remove"; visible: !root.live || root.downloads.capabilities.indexOf("download.forget") >= 0; enabled: root.live ? root.downloads.canRemove : root.downloads.selectedId !== ""; onTriggered: root.openRemoveDialog() }
@@ -717,7 +721,8 @@ Item {
         onOpened: mutationConfirm.highlighted = true
         contentItem: ColumnLayout {
             spacing: Tokens.contentSpacing
-            Body { text: mutationDialog.targetName; Layout.fillWidth: true }
+            // Move/Rename already shows the name in its editable field.
+            Body { visible: !mutationDialog.moving; text: mutationDialog.targetName; Layout.fillWidth: true }
             Body { visible: !mutationDialog.moving; text: qsTr("Downloaded progress will be discarded without starting the download."); Layout.fillWidth: true }
             FormGrid {
                 visible: mutationDialog.moving; Layout.fillWidth: true

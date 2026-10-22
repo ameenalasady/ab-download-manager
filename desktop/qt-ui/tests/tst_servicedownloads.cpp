@@ -1,6 +1,7 @@
 #include "servicedownloads.h"
 #include "previewdownloads.h"
 #include <QAbstractItemModelTester>
+#include <QDir>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -262,6 +263,79 @@ private slots:
         }
         QMetaObject::invokeMethod(menu, "close"); QTest::qWait(200); view.close(); QTest::qWait(100);
         view.setSource(QUrl()); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete); QTest::qWait(100);
+    }
+    // Offscreen visual review of the parity UI: every visible window (main view, menus and
+    // dialogs opened as popup windows) is saved as PNG. Skipped unless a directory is given.
+    void parityGallery() {
+        const QString dir = qEnvironmentVariable("QT_PARITY_CAPTURE_DIR");
+        if (dir.isEmpty()) QSKIP("Set QT_PARITY_CAPTURE_DIR to render the parity gallery");
+        QVERIFY(QDir().mkpath(dir));
+        FakeService service;
+        service.sortCapability = service.monitorCapability = service.tasksCapability = service.actionsCapability = service.detailsCapability = true;
+        service.reviewCapability = service.browserCapability = service.runtimeCapability = true;
+        auto settings = basicSettings(); settings["qtSortColumn"] = "name"; settings["qtSortDescending"] = false;
+        service.extensionSnapshot = {{"queues", QJsonArray{}}, {"manualPending", QJsonArray{"9007199254740995"}}, {"settings", settings}, {"browserRequests", QJsonArray{}},
+            {"browserIntegration", QJsonObject{{"state", "disabled"}, {"error", QJsonValue::Null}, {"enabled", false}, {"port", 15151}, {"auth", false}}},
+            {"runtime", QJsonObject{{"mode", "explicit-runtime"}, {"destination", "/downloads"}, {"destinationRoots", QJsonArray{"/downloads"}}, {"redirects", true}, {"proxy", "direct"}}}};
+        const auto details = [](const QString &name) { return QJsonObject{{"url", "https://example.invalid/" + name}, {"folder", "/downloads"},
+            {"downloadPage", "https://example.invalid/page"}, {"error", QJsonValue::Null}}; };
+        service.rows = QJsonArray{
+            QJsonObject{{"id", "9007199254740993"}, {"name", "ubuntu-26.04-desktop-amd64.iso"}, {"size", "6200000000"}, {"downloaded", "2100000000"}, {"state", "downloading"}, {"speed", "8400000"}, {"remainingTime", "487"}, {"dateAdded", "100"}, {"details", details("ubuntu.iso")}},
+            QJsonObject{{"id", "9007199254740994"}, {"name", "lecture-notes.pdf"}, {"size", "3400000"}, {"downloaded", "1200000"}, {"state", "paused"}, {"speed", "0"}, {"remainingTime", "-1"}, {"dateAdded", "200"}, {"details", details("lecture-notes.pdf")}},
+            QJsonObject{{"id", "9007199254740995"}, {"name", "dataset.tar.zst"}, {"size", "-1"}, {"downloaded", "0"}, {"state", "queued"}, {"speed", "0"}, {"remainingTime", "-1"}, {"dateAdded", "300"}, {"details", details("dataset.tar.zst")}},
+            QJsonObject{{"id", "9007199254740996"}, {"name", "photos-2026.zip"}, {"size", "880000000"}, {"downloaded", "880000000"}, {"state", "completed"}, {"speed", "0"}, {"remainingTime", "-1"}, {"dateAdded", "50"}, {"details", details("photos-2026.zip")}}};
+        for (const auto &name : {"alpha.zip", "beta-release-notes.txt", "gamma.iso"}) service.reviewItems.append(QJsonObject{
+            {"url", "https://mirror.example.invalid/files/" + QString(name)}, {"name", name}, {"hasHeaders", false}, {"downloadPage", QJsonValue::Null}});
+        ServiceDownloads model(service.descriptor); QTRY_COMPARE(model.rowCount(), 4);
+        model.select("9007199254740994");
+        QQuickView view; view.setResizeMode(QQuickView::SizeRootObjectToView); view.resize(1120, 700);
+        view.setInitialProperties({{"downloads", QVariant::fromValue(&model)}});
+        view.setSource(QUrl("qrc:/qt-ui/qml/DownloadsView.qml")); view.setTitle("AB Download Manager"); view.show();
+        QCOMPARE(view.status(), QQuickView::Ready); QVERIFY(QTest::qWaitForWindowExposed(&view));
+        int shot = 0;
+        const auto capture = [&](const QString &name) {
+            QTest::qWait(500); int n = 0;
+            for (auto *window : QGuiApplication::topLevelWindows()) {
+                auto *quick = qobject_cast<QQuickWindow *>(window);
+                if (!quick || !quick->isVisible() || quick->width() < 2) continue;
+                const QString file = QStringLiteral("%1/%2-%3-%4.png").arg(dir).arg(shot, 2, 10, QLatin1Char('0')).arg(name).arg(n++);
+                QVERIFY2(quick->grabWindow().save(file), qPrintable(file));
+            }
+            ++shot;
+        };
+        const auto root = view.rootObject();
+        QTest::mouseMove(&view, QPoint(900, 500)); // The offscreen cursor starts over the File button.
+        capture("main");
+        QVERIFY(QMetaObject::invokeMethod(root, "openActionsMenu")); capture("actions-menu");
+        QMetaObject::invokeMethod(root->findChild<QObject *>("exampleActionsMenu"), "close"); QTest::qWait(200);
+        QVERIFY(QMetaObject::invokeMethod(root, "openMenu", Q_ARG(QString, "File"))); capture("file-menu");
+        QMetaObject::invokeMethod(root->findChild<QObject *>("fileMenu"), "close"); QTest::qWait(200);
+        QVERIFY(QMetaObject::invokeMethod(root, "openMenu", Q_ARG(QString, "Tasks"))); capture("tasks-menu");
+        QMetaObject::invokeMethod(root->findChild<QObject *>("tasksMenu"), "close"); QTest::qWait(200);
+        auto *mutation = root->findChild<QObject *>("downloadMutationDialog"); QVERIFY(mutation);
+        QVERIFY(QMetaObject::invokeMethod(root, "openMutation", Q_ARG(QString, "download.move"))); QTRY_VERIFY(mutation->property("visible").toBool()); capture("move");
+        QMetaObject::invokeMethod(mutation, "close"); QTRY_VERIFY(!mutation->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(root, "openMutation", Q_ARG(QString, "download.reset"))); QTRY_VERIFY(mutation->property("visible").toBool()); capture("reset");
+        QMetaObject::invokeMethod(mutation, "close"); QTRY_VERIFY(!mutation->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(root, "openMultipleAdd"));
+        root->findChild<QObject *>("multipleAddLinks")->setProperty("text", "https://mirror.example.invalid/files/alpha.zip\nhttps://mirror.example.invalid/files/beta-release-notes.txt\nhttps://mirror.example.invalid/files/gamma.iso");
+        capture("multiple-entry");
+        QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject *>("reviewMultipleLinks"), "clicked"));
+        QObject *review = nullptr;
+        QTRY_VERIFY((review = root->findChild<QObject *>("browserRequestDialog")) && review->property("visible").toBool());
+        capture("multiple-review");
+        view.close(); QTest::qWait(200);
+        view.setSource(QUrl()); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete); QTest::qWait(100);
+        // Preview mode hides most per-download groups; no separators may double up.
+        PreviewDownloads preview;
+        QQuickView previewView; previewView.setResizeMode(QQuickView::SizeRootObjectToView); previewView.resize(1120, 700);
+        previewView.setInitialProperties({{"downloads", QVariant::fromValue(&preview)}});
+        previewView.setSource(QUrl("qrc:/qt-ui/qml/DownloadsView.qml")); previewView.show();
+        QCOMPARE(previewView.status(), QQuickView::Ready); QVERIFY(QTest::qWaitForWindowExposed(&previewView));
+        QTest::mouseMove(&previewView, QPoint(900, 500));
+        QVERIFY(QMetaObject::invokeMethod(previewView.rootObject(), "openActionsMenu")); capture("preview-actions-menu");
+        previewView.close(); QTest::qWait(200);
+        previewView.setSource(QUrl()); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete); QTest::qWait(100);
     }
     void sortingAndAggregateStatusPreserveStableSelection() {
         FakeService service; service.sortCapability = service.monitorCapability = true;
