@@ -1291,7 +1291,10 @@ private slots:
         QTRY_COMPARE(service.commandLog.size(), 3);
         QTRY_VERIFY(model.errorMessage().isEmpty());
         QTRY_COMPARE(stateOf(model, ids[0]), "paused");
-        QCOMPARE(stateOf(model, ids[2]), "paused");
+        // ids[0] was already paused before the retry. The successful reply clears
+        // the error before its final snapshot arrives; wait for the changed row,
+        // not a cached row that makes the preceding QTRY succeed immediately.
+        QTRY_COMPARE(stateOf(model, ids[2]), "paused");
     }
     void unexpectedCommandReplyDropsTheBatchAndNeverClaimsSuccess() {
         FakeService service;
