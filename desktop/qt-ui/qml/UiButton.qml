@@ -28,6 +28,10 @@ QQC2.Button {
         } else if (!primary && custom && nativeBackground) {
             topInset = 0; bottomInset = 0; leftInset = 0; rightInset = 0
             background = nativeBackground; contentItem = nativeContent
+            // Qt hides replaced items explicitly; restoring their pointer alone leaves
+            // the native button invisible after DialogButtonBox clears its default.
+            nativeBackground.visible = true
+            if (nativeContent) nativeContent.visible = true
         }
     }
     // Size like the native button with the same label, so neighbours line up.

@@ -21,6 +21,7 @@ import ir.amirab.downloader.connection.*
 import ir.amirab.downloader.connection.proxy.*
 import ir.amirab.downloader.db.*
 import ir.amirab.downloader.downloaditem.*
+import ir.amirab.downloader.destination.IncompleteFileUtil
 import ir.amirab.downloader.downloaditem.contexts.ResumedBy
 import ir.amirab.downloader.downloaditem.http.*
 import ir.amirab.downloader.utils.*
@@ -156,7 +157,8 @@ class EngineSession(
             "settings.display", "settings.policy", "browser.integration", "browser.intake", "browser.add", "browser.accept",
             "browser.dismiss", "browser.settings", "settings.integration", "frontend.activate", "links.import",
             "system.activity", "download.probe", "download.review", "history.page", "history.delta", "download.windows", "download.parts",
-            "download.replace", "download.delete", "settings.folder", "settings.duplicates")
+            "download.replace", "download.delete", "settings.folder", "settings.duplicates",
+            "download.reset", "download.move", "download.links")
     }
 
     /** A frontend polled; browser requests then wait for it instead of launching one.
@@ -467,6 +469,12 @@ class EngineSession(
                 put("dateAdded", item.dateAdded.toString())
                 put("details", buildJsonObject {
                     put("url", item.link); put("folder", item.folder)
+                    put("downloadPage", item.downloadPage?.takeIf { page ->
+                        runCatching { val uri = java.net.URI(page)
+                            page.length <= 2048 && page.none(Char::isISOControl) && uri.scheme in listOf("http", "https") &&
+                                !uri.host.isNullOrBlank() && uri.userInfo == null
+                        }.getOrDefault(false)
+                    } ?: "")
                     val httpItem = item as HttpDownloadItem
                     put("connections", httpItem.preferredConnectionCount?.let(::JsonPrimitive) ?: JsonNull)
                     put("speedLimit", httpItem.speedLimit.toString())
@@ -641,6 +649,40 @@ class EngineSession(
                 "browser.settings" -> {
                     preferences.updateBrowser(request["settings"]?.jsonObject ?: error("Missing settings"))
                     bridge.apply(preferences.browser())
+                }
+                "download.reset", "download.move" -> {
+                    val id = request["id"]?.jsonPrimitive?.content?.toLongOrNull() ?: error("Invalid stable ID")
+                    val item = list.getById(id) as? HttpDownloadItem ?: error("Download no longer exists")
+                    require(item.status != DownloadStatus.Downloading && manager.getJobStatusOf(id) !is DownloadJobStatus.IsActive &&
+                        manager.downloadJobs.none { it.id == id && it.isDownloadActive.value }) { "Pause download first" }
+                    require(queues.getAll().none { it.isQueueActive && id in it.getQueueModel().queueItems }) { "Stop containing queues first" }
+                    runtime.validateFolder(Path.of(item.folder))
+                    val draft = item.copy()
+                    if (op == "download.move") {
+                        draft.name = request["name"]?.jsonPrimitive?.content ?: error("Missing file name")
+                        draft.folder = request["folder"]?.jsonPrimitive?.content ?: error("Missing folder")
+                        require(draft.name.length in 1..180 && draft.name != "." && draft.name != ".." &&
+                            draft.name.none { it == '/' || it == '\\' || it.isISOControl() }) { "Invalid file name" }
+                        runtime.validateFolder(Path.of(draft.folder))
+                        val target = File(draft.folder, draft.name)
+                        runtime.validateDestination(target.toPath())
+                        if (draft.folder == item.folder && draft.name == item.name) { put("id", id.toString()); return@buildJsonObject }
+                        require(manager.getDownloadList().none { it.id != id && it.folder == draft.folder && it.name == draft.name }) { "Another download uses that destination" }
+                        // The original mover replaces files: reject BOTH destination names before calling it.
+                        for (file in listOf(target, IncompleteFileUtil.addIncompleteIndicator(target, id))) {
+                            runtime.validateDestination(file.toPath())
+                            require(!java.nio.file.Files.exists(file.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)) { "Destination already exists" }
+                        }
+                    }
+                    manual.removeFromQueue(id)
+                    manager.downloadJobs.find { it.id == id }?.activeDownloadScope?.coroutineContext?.job?.join()
+                    try {
+                        if (op == "download.reset") facade.reset(id)
+                        else manager.updateDownloadItem(id, null) { (it as HttpDownloadItem).applyFrom(draft) }
+                    } catch (e: CancellationException) { throw e }
+                    catch (e: Exception) { throw DownloadMutationPartiallyApplied(id, op, e) }
+                    finally { ownedJobs.addAll(manager.downloadJobs.filter { !it.scope.coroutineContext.job.isCompleted }) }
+                    put("id", id.toString())
                 }
                 "download.edit" -> {
                     val id = request["id"]?.jsonPrimitive?.content?.toLongOrNull() ?: error("Invalid stable ID")
@@ -902,6 +944,9 @@ class EngineSession(
 
 class QueueDeletePartiallyApplied(val queueId: Long, cause: Exception) : IllegalStateException(
     "Queue deletion may be partially applied, including extra settings. Inspect refreshed queues before explicitly retrying; no automatic retry was requested.", cause)
+
+class DownloadMutationPartiallyApplied(val downloadId: Long, operation: String, cause: Exception) : IllegalStateException(
+    "$operation may be partially applied; inspect the download and its files before retrying", cause)
 
 class DownloadEditPartiallyApplied(val downloadId: Long, cause: Exception) : IllegalStateException(
     "Source/options edit may be partially applied. Inspect refreshed details before explicitly retrying; no automatic resume was requested.", cause)

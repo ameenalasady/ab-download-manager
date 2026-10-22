@@ -1,6 +1,8 @@
 #include "servicedownloads.h"
 #include "previewdownloads.h"
 #include <QDir>
+#include <QGuiApplication>
+#include <QClipboard>
 #include <QFile>
 #include <QDateTime>
 #include <QFileInfo>
@@ -219,6 +221,13 @@ void ServiceDownloads::readFrames() {
                     if ((!reason["throwableMessage"].isNull() && !reason["throwableMessage"].isString())
                         || reason["throwableMessage"].toString().size() > 8192) { invalid(); return; }
                 }
+            }
+            if (m_capabilities.contains("download.links")) {
+                const auto page = row["details"].toObject()["downloadPage"];
+                if (!page.isString() || page.toString().size() > 2048) { invalid(); return; }
+                const QUrl url(page.toString(), QUrl::StrictMode);
+                if (!page.toString().isEmpty() && (!url.isValid() || !QStringList{"http", "https"}.contains(url.scheme())
+                    || url.host().isEmpty() || !url.userInfo().isEmpty())) { invalid(); return; }
             }
             if (m_capabilities.contains("download.http-options")) {
                 const auto details = row["details"].toObject(); bool speedOk = false;
@@ -913,6 +922,43 @@ bool ServiceDownloads::assignCategory(const QString &categoryId, const QStringLi
 bool ServiceDownloads::addExample(const QString &url, const QString &name) { return addDownload(url, name, false); }
 bool ServiceDownloads::addDownload(const QString &url, const QString &name, bool start) {
     return addCategorizedDownload(url, name, start, "auto");
+}
+bool ServiceDownloads::canMutateDownload(const QString &id, const QString &operation) const {
+    if (busy() || !QStringList{"download.reset", "download.move"}.contains(operation) || !m_capabilities.contains(operation)) return false;
+    for (const auto &row : m_rows) if (row["id"].toString() == id) {
+        if (row["state"] == "downloading") return false;
+        for (const auto &value : m_queues) {
+            const auto queue = value.toMap();
+            if (queue["active"].toBool() && queue["items"].toList().contains(id)) return false;
+        }
+        return true;
+    }
+    return false;
+}
+bool ServiceDownloads::resetDownload(const QString &id) {
+    return canMutateDownload(id, "download.reset") && command({{"op", "download.reset"}, {"id", id}});
+}
+bool ServiceDownloads::moveDownload(const QString &id, const QString &name, const QString &folder) {
+    if (!canMutateDownload(id, "download.move")) return false;
+    return command({{"op", "download.move"}, {"id", id}, {"name", name.trimmed()}, {"folder", folder.trimmed()}});
+}
+bool ServiceDownloads::copyDownloadLinks() {
+    if (!m_capabilities.contains("download.links")) return false;
+    QStringList links;
+    for (const auto &id : selectedIds()) {
+        const auto link = downloadDetails(id).value("details").toMap().value("url").toString();
+        const QUrl url(link, QUrl::StrictMode);
+        if (url.isValid() && QStringList{"http", "https"}.contains(url.scheme()) && !url.host().isEmpty() && url.userInfo().isEmpty()) links.append(link);
+    }
+    if (links.isEmpty()) return false;
+    QGuiApplication::clipboard()->setText(links.join('\n'));
+    return true;
+}
+QUrl ServiceDownloads::downloadPageUrl(const QString &id) const {
+    if (!m_capabilities.contains("download.links")) return {};
+    const auto page = downloadDetails(id).value("details").toMap().value("downloadPage").toString();
+    const QUrl url(page, QUrl::StrictMode);
+    return url.isValid() && QStringList{"http", "https"}.contains(url.scheme()) && !url.host().isEmpty() && url.userInfo().isEmpty() ? url : QUrl();
 }
 bool ServiceDownloads::editDownload(const QString &id, const QVariantMap &options) {
     const auto row = downloadDetails(id);

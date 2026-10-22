@@ -14,6 +14,7 @@
 #include <QtTest>
 #include <memory>
 #include <QSignalSpy>
+#include <QClipboard>
 
 static QByteArray encode(const QJsonObject &object) {
     const auto bytes = QJsonDocument(object).toJson(QJsonDocument::Compact);
@@ -39,6 +40,7 @@ public:
     bool browserCapability = false, desktopCapability = false, windowsCapability = false;
     // New negotiated settings/duplicate extensions.
     bool folderCapability = false, duplicateCapability = false, replaceCapability = false;
+    bool actionsCapability = false;
     // Serial command-batch probes: the full log, a 1-based index that is refused, a
     // mismatched commandId (unexpected reply), and how many snapshots were served.
     QList<QJsonObject> commandLog;
@@ -101,6 +103,7 @@ public:
                     if (folderCapability) caps.append("settings.folder");
                     if (duplicateCapability) caps.append("settings.duplicates");
                     if (replaceCapability) caps.append("download.replace");
+                    if (actionsCapability) for (const auto &op : {"download.reset", "download.move", "download.links"}) caps.append(op);
                     if (categoryCapability) for (const auto &op : {"category.create", "category.update", "category.delete", "category.move", "category.assign"}) caps.append(op);
                     reply["capabilities"] = caps;
                 } else if (type == "snapshot") {
@@ -162,6 +165,45 @@ class ServiceDownloadsTest : public QObject {
     Q_OBJECT
 private slots:
     void initTestCase() { QQuickStyle::setStyle("org.kde.desktop"); QQuickWindow::setDefaultAlphaBuffer(true); }
+    void capturedDownloadActionsAndLinks() {
+        FakeService service; service.detailsCapability = service.actionsCapability = true;
+        auto row = service.rows[0].toObject(); const auto id = row["id"].toString();
+        row["state"] = "paused";
+        row["details"] = QJsonObject{{"url", "http://127.0.0.1:12345/source"}, {"folder", "/tmp"}, {"downloadPage", "https://example.invalid/page#section"}, {"error", QJsonValue::Null}};
+        service.rows[0] = row;
+        ServiceDownloads model(service.descriptor); QTRY_COMPARE(model.rowCount(), 1); model.select(id);
+        QVERIFY(model.copyDownloadLinks()); QCOMPARE(QGuiApplication::clipboard()->text(), "http://127.0.0.1:12345/source");
+        QCOMPARE(model.downloadPageUrl(id), QUrl("https://example.invalid/page#section"));
+        QQuickView view; view.setResizeMode(QQuickView::SizeRootObjectToView);
+        view.setInitialProperties({{"downloads", QVariant::fromValue(&model)}});
+        view.setSource(QUrl("qrc:/qt-ui/qml/DownloadsView.qml")); view.resize(1000, 700); view.show();
+        QCOMPARE(view.status(), QQuickView::Ready);
+        QVERIFY(QMetaObject::invokeMethod(view.rootObject(), "openMutation", Q_ARG(QString, "download.move")));
+        auto *dialog = view.rootObject()->findChild<QObject *>("downloadMutationDialog"); QVERIFY(dialog);
+        QTRY_VERIFY(dialog->property("visible").toBool());
+        view.rootObject()->findChild<QObject *>("moveDownloadName")->setProperty("text", "renamed.bin");
+        model.select(""); // A confirmation acts on the captured ID, never the later selection.
+        const int hold = qBound(0, qEnvironmentVariableIntValue("QT_ACTIONS_GALLERY_HOLD_MS"), 10000);
+        auto *confirm = view.rootObject()->findChild<QObject *>("confirmDownloadMutation"); QVERIFY(confirm);
+        QTRY_VERIFY(confirm->property("highlighted").toBool());
+        QTRY_VERIFY(qvariant_cast<QQuickItem *>(confirm->property("background"))->isVisible());
+        if (hold) QTest::qWait(hold);
+        QVERIFY(QMetaObject::invokeMethod(confirm, "clicked"));
+        QTRY_COMPARE(service.lastCommand["op"].toString(), "download.move"); QCOMPARE(service.lastCommand["id"].toString(), id);
+        QCOMPARE(service.lastCommand["name"].toString(), "renamed.bin");
+        QTRY_VERIFY(!model.busy()); model.select(id);
+        QVERIFY(QMetaObject::invokeMethod(view.rootObject(), "openMutation", Q_ARG(QString, "download.reset")));
+        QTRY_VERIFY(dialog->property("visible").toBool()); if (hold) QTest::qWait(hold);
+        QVERIFY(QMetaObject::invokeMethod(confirm, "clicked")); QTRY_COMPARE(service.lastCommand["op"].toString(), "download.reset");
+        QTRY_VERIFY(!model.busy());
+        row["state"] = "downloading"; service.rows[0] = row;
+        QTRY_VERIFY(!model.canMutateDownload(id, "download.reset")); QVERIFY(!model.resetDownload(id));
+        // Invalid page extension never replaces the coherent snapshot or launches a handler.
+        auto details = row["details"].toObject(); details["downloadPage"] = "file:///tmp/not-a-page"; row["details"] = details;
+        service.rows[0] = row; QTRY_VERIFY(!model.errorMessage().isEmpty());
+        QCOMPARE(model.downloadPageUrl(id), QUrl("https://example.invalid/page#section"));
+        QMetaObject::invokeMethod(dialog, "close"); QTest::qWait(300); view.close(); QTest::qWait(100);
+    }
     void snapshotCommandsAndReconnect() {
         FakeService service;
         ServiceDownloads model(service.descriptor);

@@ -312,6 +312,7 @@ void DownloadsViewTest::buttonsKeepKeyboardFocusWithoutNativeTextRectangle()
     QVERIFY(noNativeFocusPaint());
     button->setProperty("highlighted", false);
     QTRY_VERIFY(qvariant_cast<QQuickItem *>(button->property("background"))->objectName() != QStringLiteral("buttonPrimaryFrame"));
+    QTRY_VERIFY(qvariant_cast<QQuickItem *>(button->property("background"))->isVisible());
     button->forceActiveFocus(Qt::TabFocusReason);
     QTRY_VERIFY(button->hasActiveFocus());
     QTRY_VERIFY(button->property("visualFocus").toBool());

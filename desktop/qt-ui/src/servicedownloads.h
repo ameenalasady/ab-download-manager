@@ -49,6 +49,11 @@ public:
     QVariantMap runtime() const { return m_runtime; }
     Q_INVOKABLE bool addConfiguredDownload(const QString &url, const QString &name, bool start, const QString &categoryId, const QVariantMap &options);
     Q_INVOKABLE bool editDownload(const QString &id, const QVariantMap &options);
+    Q_INVOKABLE bool canMutateDownload(const QString &id, const QString &operation) const;
+    Q_INVOKABLE bool resetDownload(const QString &id);
+    Q_INVOKABLE bool moveDownload(const QString &id, const QString &name, const QString &folder);
+    Q_INVOKABLE bool copyDownloadLinks();
+    Q_INVOKABLE QUrl downloadPageUrl(const QString &id) const;
     QVariantList queues() const { return m_queues; }
     QVariantList categories() const { return m_categories; }
     QVariantMap settings() const { return m_settings; }

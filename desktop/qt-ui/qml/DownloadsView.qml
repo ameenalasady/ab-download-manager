@@ -17,7 +17,7 @@ Item {
     readonly property bool removeDialogVisible: removeDialog.visible
     readonly property bool actionsMenuVisible: actionsMenu.visible
     // Every dialog except the browser review, which waits for these to close.
-    readonly property bool mainModalOpen: addDialog.visible || duplicateDialog.visible || removeDialog.visible || aboutDialog.visible || Boolean(workflows && workflows.modalOpen) || Boolean(categoryWorkflows && categoryWorkflows.modalOpen) || Boolean(detailsLoader.item && detailsLoader.item.modalOpen) || Boolean(httpOptionsLoader.item && httpOptionsLoader.item.modalOpen)
+    readonly property bool mainModalOpen: mutationDialog.visible || addDialog.visible || duplicateDialog.visible || removeDialog.visible || aboutDialog.visible || Boolean(workflows && workflows.modalOpen) || Boolean(categoryWorkflows && categoryWorkflows.modalOpen) || Boolean(detailsLoader.item && detailsLoader.item.modalOpen) || Boolean(httpOptionsLoader.item && httpOptionsLoader.item.modalOpen)
     readonly property bool modalOpen: mainModalOpen || Boolean(browserLoader.item && browserLoader.item.modalOpen)
     PreviewTheme { id: theme }
     NativeWindowStyle { id: material; window: root.Window.window; maximumOpacity: Tokens.materialOpacity }
@@ -110,6 +110,14 @@ Item {
         nameInput.text = live ? "" : "archive.zip"
         addDialog.categoryChoices = [{id: "auto", name: qsTr("Automatic")}, {id: "none", name: qsTr("No Category")}].concat(live ? downloads.categories.map(c => ({id: c.id, name: c.name})) : [])
         addCategory.currentIndex = 0; addDialog.open(); sourceInput.forceActiveFocus()
+    }
+    function openMutation(operation: string) {
+        if (!live || !singleSelection || !downloads.canMutateDownload(downloads.selectedId, operation)) return
+        mutationDialog.operation = operation; mutationDialog.targetId = downloads.selectedId
+        const row = downloads.downloadDetails(mutationDialog.targetId)
+        mutationDialog.targetName = row.name; moveName.text = row.name; moveFolder.text = row.details.folder
+        mutationDialog.open()
+        if (operation === "download.move") moveName.forceActiveFocus()
     }
     function openRemoveDialog() {
         if (!downloads.selectedId || (live && !downloads.canRemove)) return
@@ -338,6 +346,7 @@ Item {
                         text: root.live ? qsTr("Remove from list, keep files…") : qsTr("Remove example…"); icon.name: "list-remove"
                         enabled: root.live ? root.downloads.canRemove : root.downloads.selectedId !== ""; onClicked: root.openRemoveDialog()
                     }
+                    ActionButton { objectName: "copyLinkToolbarButton"; text: qsTr("Copy Link"); icon.name: "edit-copy"; visible: root.live && root.downloads.capabilities.indexOf("download.links") >= 0; enabled: root.downloads.selectionCount > 0; onClicked: root.downloads.copyDownloadLinks() }
                     ActionButton { id: actionsButton; objectName: "exampleActionsButton"; text: qsTr("More download actions"); icon.name: "overflow-menu"; onClicked: root.openActionsMenu() }
                     ActionButton { objectName: "settingsToolbarButton"; text: qsTr("Settings"); icon.name: "configure"; enabled: root.live && root.downloads.capabilities.indexOf("settings.update") >= 0; onClicked: root.openSettings() }
                     Item { Layout.fillWidth: true }
@@ -591,6 +600,10 @@ Item {
         QQC2.MenuItem { objectName: "revealDownload"; text: qsTr("Show in &Folder"); icon.name: "folder-open"; visible: root.live && root.singleSelection; enabled: root.currentFolderUrl.toString() !== ""; onTriggered: DesktopOpener.showInFolder(root.currentFileUrl.toString() !== "" ? root.currentFileUrl : root.currentFolderUrl, root.Window.window) }
         QQC2.MenuItem { objectName: "showDownloadWindow"; text: qsTr("Show in Separate &Window"); icon.name: "window-new"; enabled: root.live && root.singleSelection; onTriggered: root.openDownloadWindow() }
         QQC2.MenuItem { objectName: "showDownloadDetails"; text: qsTr("P&roperties…"); icon.name: "document-properties"; enabled: root.live && root.singleSelection && root.downloads.capabilities.indexOf("download.details") >= 0; onTriggered: root.openDetails() }
+        QQC2.MenuItem { objectName: "copyDownloadLink"; text: qsTr("Copy &Link"); icon.name: "edit-copy"; visible: root.live && root.downloads.capabilities.indexOf("download.links") >= 0; enabled: root.downloads.selectionCount > 0; onTriggered: root.downloads.copyDownloadLinks() }
+        QQC2.MenuItem { objectName: "openDownloadPage"; text: qsTr("Open Download &Page"); icon.name: "internet-web-browser"; visible: root.live && root.singleSelection && root.downloads.downloadPageUrl(root.downloads.selectedId).toString() !== ""; onTriggered: Qt.openUrlExternally(root.downloads.downloadPageUrl(root.downloads.selectedId)) }
+        QQC2.MenuItem { objectName: "moveRenameDownload"; text: qsTr("&Move / Rename…"); icon.name: "edit-rename"; visible: root.live && root.downloads.capabilities.indexOf("download.move") >= 0; enabled: root.singleSelection && root.downloads.canMutateDownload(root.downloads.selectedId, "download.move"); onTriggered: root.openMutation("download.move") }
+        QQC2.MenuItem { objectName: "resetDownload"; text: qsTr("&Reset Progress…"); icon.name: "view-refresh"; visible: root.live && root.downloads.capabilities.indexOf("download.reset") >= 0; enabled: root.singleSelection && root.downloads.canMutateDownload(root.downloads.selectedId, "download.reset"); onTriggered: root.openMutation("download.reset") }
         QQC2.MenuItem { objectName: "editDownloadOptions"; text: qsTr("&Edit Connection Options…"); icon.name: "configure"; enabled: root.live && root.singleSelection && root.downloads.canResume && root.downloads.capabilities.indexOf("download.edit") >= 0; onTriggered: root.openHttpEdit() }
         MenuSurface {
             id: queueActionMenu; title: qsTr("Add to &Queue"); icon.name: "view-list-details"
@@ -631,6 +644,40 @@ Item {
     MenuSurface {
         id: helpMenu; objectName: "helpMenu"
         QQC2.MenuItem { text: qsTr("&About Download Manager Preview"); icon.name: "help-about"; onTriggered: aboutDialog.open() }
+    }
+    UiDialog {
+        id: mutationDialog; objectName: "downloadMutationDialog"
+        property string operation: "download.reset"
+        property string targetId: ""
+        property string targetName: ""
+        readonly property bool moving: operation === "download.move"
+        title: moving ? qsTr("Move / Rename Download") : qsTr("Reset Download Progress?")
+        preferredWidth: Tokens.dialogWidthMedium
+        onOpened: mutationConfirm.highlighted = true
+        contentItem: ColumnLayout {
+            spacing: Tokens.contentSpacing
+            Body { text: mutationDialog.targetName; Layout.fillWidth: true }
+            Body { visible: !mutationDialog.moving; text: qsTr("Downloaded progress will be discarded without starting the download."); Layout.fillWidth: true }
+            FormGrid {
+                visible: mutationDialog.moving; Layout.fillWidth: true
+                FormLabel { text: qsTr("Name:") }
+                FormField { id: moveName; objectName: "moveDownloadName"; Layout.fillWidth: true; maximumLength: 180; Accessible.name: qsTr("File name") }
+                FormLabel { text: qsTr("Location:") }
+                FormField { id: moveFolder; objectName: "moveDownloadFolder"; Layout.fillWidth: true; readOnly: !root.explicitRuntime; Accessible.name: qsTr("Download location") }
+            }
+        }
+        footer: DialogFooter {
+            UiButton {
+                id: mutationConfirm; objectName: "confirmDownloadMutation"; text: mutationDialog.moving ? qsTr("Move / Rename") : qsTr("Reset")
+                icon.name: mutationDialog.moving ? "edit-rename" : "view-refresh"
+                highlighted: true; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.AcceptRole
+                enabled: root.live && root.downloads.canMutateDownload(mutationDialog.targetId, mutationDialog.operation) && (!mutationDialog.moving || (moveName.text.trim() !== "" && moveFolder.text.trim() !== ""))
+                onClicked: {
+                    if (mutationDialog.moving ? root.downloads.moveDownload(mutationDialog.targetId, moveName.text, moveFolder.text) : root.downloads.resetDownload(mutationDialog.targetId)) mutationDialog.close()
+                }
+            }
+            UiButton { text: qsTr("Cancel"); QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.RejectRole; onClicked: mutationDialog.close() }
+        }
     }
     UiDialog {
         id: aboutDialog; objectName: "aboutPreviewDialog"

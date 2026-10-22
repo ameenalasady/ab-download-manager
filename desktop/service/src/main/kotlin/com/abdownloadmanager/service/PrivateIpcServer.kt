@@ -150,6 +150,7 @@ class PrivateIpcServer(private val profile: Path, private val engine: EngineSess
                 e is DownloadAddedButCategoryFailed -> "add-partially-applied"
                 e is DownloadForgetPartiallyApplied || e is DownloadDeletePartiallyApplied -> "remove-partially-applied"
                 e is DownloadEditPartiallyApplied -> "edit-partially-applied"
+                e is DownloadMutationPartiallyApplied -> "download-mutation-partially-applied"
                 e is QueueDeletePartiallyApplied -> "queue-delete-partially-applied"
                 e is BrowserAddPartiallyApplied -> "browser-add-partially-applied"
                 e is DownloadReplacePartiallyApplied -> "replace-partially-applied"
@@ -160,6 +161,7 @@ class PrivateIpcServer(private val profile: Path, private val engine: EngineSess
             if (e is DownloadForgetPartiallyApplied) put("id", e.downloadId.toString())
             if (e is DownloadDeletePartiallyApplied) put("id", e.downloadId.toString())
             if (e is DownloadEditPartiallyApplied) put("id", e.downloadId.toString())
+            if (e is DownloadMutationPartiallyApplied) put("id", e.downloadId.toString())
             if (e is DownloadReplacePartiallyApplied) put("id", e.downloadId.toString())
             if (e is QueueDeletePartiallyApplied) put("queueId", e.queueId.toString())
             put("error", e.message?.take(240) ?: "Command failed") } }
