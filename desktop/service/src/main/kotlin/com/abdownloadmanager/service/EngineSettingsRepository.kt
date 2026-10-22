@@ -45,10 +45,13 @@ class EngineSettingsRepository(
     }
     private val writable = defaults.keys
     private val browserKeys = setOf("apiEnabled", "apiPort", "apiAuthEnabled", "apiAuthKey")
+    private val notificationSoundKeys = listOf("successNotificationSound", "errorNotificationSound", "generalNotificationSound")
     private val integrationDefaults = buildJsonObject {
         put("autoStartOnBoot", true); put("useSystemTray", true); put("notificationSound", true)
         // DefaultAppSettings: both true. The frontend opens these windows; the service never does.
         put("showDownloadProgressDialog", true); put("showDownloadCompletionDialog", true)
+        // Original custom sound files: "" is the default sound, otherwise an absolute path.
+        for (key in notificationSoundKeys) put(key, "")
     }
 
     /** Strict validation of one value; throws with a user-facing message. */
@@ -76,6 +79,12 @@ class EngineSettingsRepository(
         }
         "qtDuplicateAction" -> {
             require(p.isString && p.content in setOf("ask", "numbered", "existing")) { "Unsupported duplicate action" }; JsonPrimitive(p.content)
+        }
+        in notificationSoundKeys -> {
+            // Stored values are only checked for shape; existence is checked when written and played.
+            require(p.isString && (p.content.isEmpty() || (p.content.length <= 4096 && p.content.none(Char::isISOControl)
+                && java.nio.file.Path.of(p.content).isAbsolute))) { "Invalid notification sound" }
+            JsonPrimitive(p.content)
         }
         else -> { require(!p.isString && p.booleanOrNull != null) { "$key must be boolean" }; JsonPrimitive(p.boolean) }
     }
@@ -188,9 +197,17 @@ class EngineSettingsRepository(
         require(patch.isNotEmpty() && patch.keys.all { it in integrationDefaults }) { "Unsupported integration setting" }
         write(patch.mapValues { (key, element) ->
             require(element is JsonPrimitive) { "Invalid $key" }
-            value(key, element)
+            value(key, element).also {
+                // Like the original picker: an existing WAV file, or empty for the default sound.
+                if (key in notificationSoundKeys && it.content.isNotEmpty()) require(it.content.endsWith(".wav", ignoreCase = true)
+                    && java.nio.file.Files.isRegularFile(java.nio.file.Path.of(it.content))) { "Notification sound must be an existing .wav file" }
+            }
         })
     }
+
+    /** Configured sound file for a notice, or null for the default sound (also when it no longer exists). */
+    fun notificationSoundFile(key: String): String? = integration()[key]?.jsonPrimitive?.content
+        ?.takeIf { it.isNotEmpty() && java.nio.file.Files.isRegularFile(java.nio.file.Path.of(it)) }
 
     /** Original BaseAppRepository.shouldUseSpeedLimit, with an explicit activity adapter. */
     fun speedLimitActive(): Boolean = when (snapshot().getValue("useSpeedLimit").jsonPrimitive.content) {

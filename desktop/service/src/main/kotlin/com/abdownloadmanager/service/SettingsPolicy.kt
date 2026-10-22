@@ -48,8 +48,9 @@ object OriginalAppSettings {
         // Original onNewDownloadEvent: windows for user-started downloads, opened by the frontend.
         "showDownloadProgressDialog" to SettingPolicy.Integration, "showDownloadCompletionDialog" to SettingPolicy.Integration,
         "autoStartOnBoot" to SettingPolicy.Integration, "notificationSound" to SettingPolicy.Integration,
-        "generalNotificationSound" to SettingPolicy.Platform, "errorNotificationSound" to SettingPolicy.Platform,
-        "successNotificationSound" to SettingPolicy.Platform, "apiEnabled" to SettingPolicy.Browser,
+        // Passed as the notification's sound-file hint (honored by Plasma 6.4+).
+        "generalNotificationSound" to SettingPolicy.Integration, "errorNotificationSound" to SettingPolicy.Integration,
+        "successNotificationSound" to SettingPolicy.Integration, "apiEnabled" to SettingPolicy.Browser,
         "apiPort" to SettingPolicy.Browser, "apiAuthKey" to SettingPolicy.Browser,
         "apiAuthEnabled" to SettingPolicy.Browser, "useSystemTray" to SettingPolicy.Integration,
         // Both remove records/files automatically in the original; never run here.

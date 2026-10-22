@@ -132,6 +132,50 @@ class DesktopAdaptersTest {
         } finally { lifecycle.stop(); server.stop(0); root.toFile().deleteRecursively() }
     }
 
+    @Test fun customNotificationSoundsAreValidatedAndPassedWithTheirNotices() = runBlocking {
+        val root = Files.createTempDirectory("abdm-notice-sound-test-")
+        val notices = Notices()
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/") { e ->
+            e.responseHeaders.add("Content-Length", "4")
+            e.sendResponseHeaders(200, if (e.requestMethod == "HEAD") -1 else 4)
+            if (e.requestMethod != "HEAD") e.responseBody.use { it.write(byteArrayOf(1, 2, 3, 4)) }
+            e.close()
+        }
+        server.start()
+        val lifecycle = ServiceLifecycle(root, notifier = { notices })
+        try {
+            val engine = lifecycle.start()
+            assertTrue("settings.notificationSounds" in EngineSession.capabilities)
+            suspend fun integration() = engine.snapshot().getValue("integration").jsonObject
+            assertEquals("", integration().getValue("successNotificationSound").jsonPrimitive.content)
+            val wav = root.resolve("done.wav").also { Files.write(it, byteArrayOf(0x52, 0x49, 0x46, 0x46)) }
+            val ogg = root.resolve("done.ogg").also { Files.write(it, byteArrayOf(1)) }
+            suspend fun set(key: String, value: String) = engine.command(buildJsonObject {
+                put("op", "settings.integration"); put("settings", buildJsonObject { put(key, value) })
+            })
+            val settingsFile = root.resolve("app-data/config/appSettings.json")
+            for (bad in listOf("done.wav", root.resolve("missing.wav").toString(), ogg.toString(), root.toString(), "/tmp/x\u0007.wav"))
+                assertFails { set("successNotificationSound", bad) }
+            assertFalse(Files.exists(settingsFile) && Files.readString(settingsFile).contains("NotificationSound"))
+            set("successNotificationSound", wav.toString())
+            assertEquals(wav.toString(), integration().getValue("successNotificationSound").jsonPrimitive.content)
+            assertEquals(wav.toString(), Json.parseToJsonElement(Files.readString(settingsFile)).jsonObject.getValue("successNotificationSound").jsonPrimitive.content)
+            val link = "http://127.0.0.1:${server.address.port}/fixture.bin"
+            engine.command(buildJsonObject { put("op", "add"); put("url", link); put("name", "one.bin"); put("start", true) })
+            withTimeout(15_000) { while (notices.sent.isEmpty()) delay(20) }
+            assertEquals(wav.toString(), notices.sent.single().soundFile)
+            assertTrue(notices.sent.single().sound)
+            // A file that disappeared falls back to the default sound; clearing restores it too.
+            Files.delete(wav)
+            engine.command(buildJsonObject { put("op", "add"); put("url", link); put("name", "two.bin"); put("start", true) })
+            withTimeout(15_000) { while (notices.sent.size < 2) delay(20) }
+            assertNull(notices.sent[1].soundFile)
+            set("successNotificationSound", "")
+            assertEquals("", integration().getValue("successNotificationSound").jsonPrimitive.content)
+        } finally { lifecycle.stop(); server.stop(0); root.toFile().deleteRecursively() }
+    }
+
     @Test fun downloadWindowHintsFollowUserStartsOnlyAreBoundedAndSettingsAreExecutable() = runBlocking {
         val root = Files.createTempDirectory("abdm-window-events-test-")
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)

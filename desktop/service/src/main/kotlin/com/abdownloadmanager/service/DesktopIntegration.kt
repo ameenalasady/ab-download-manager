@@ -17,7 +17,7 @@ import java.util.concurrent.TimeUnit
  * ("show" or "review"); [downloadId] selects that download when the window opens.
  */
 data class DesktopNotice(val key: String, val title: String, val body: String, val error: Boolean,
-                         val sound: Boolean, val action: String, val downloadId: Long? = null)
+                         val sound: Boolean, val action: String, val downloadId: Long? = null, val soundFile: String? = null)
 
 /** Native equivalent of the original's in-app notification popup plus beep. */
 interface DesktopNotifier : AutoCloseable {
@@ -104,8 +104,10 @@ class FreedesktopNotifier(
                     "desktop-entry" to Variant(desktopEntry),
                     "urgency" to Variant(if (notice.error) 2.toByte() else 1.toByte()),
                 )
-                // Freedesktop sound-naming spec names, the closest match to the original beeps.
-                if (notice.sound) hints["sound-name"] = Variant(if (notice.error) "dialog-error" else "complete-download")
+                // The user's own sound file, else freedesktop sound-naming spec names, the closest
+                // match to the original beeps.
+                if (notice.sound && notice.soundFile != null) hints["sound-file"] = Variant(notice.soundFile)
+                else if (notice.sound) hints["sound-name"] = Variant(if (notice.error) "dialog-error" else "complete-download")
                 else hints["suppress-sound"] = Variant(true)
                 val id = target.Notify("AB Download Manager", replaced[notice.key] ?: UInt32(0), "",
                     notice.title.take(512), plain(notice.body), listOf("default", "Open"), hints, -1)

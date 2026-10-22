@@ -49,6 +49,14 @@ class DesktopNotificationBusTest {
             withTimeout(10_000) { while (activated.isEmpty()) delay(20) }
             assertEquals(notice, activated.single().first)
             assertEquals("fresh-token", activated.single().second)
+            // A configured sound file replaces the themed sound name.
+            notifier.notify(DesktopNotice("file", "t", "b", false, true, "show", 1, soundFile = "/fixture/done.wav"))
+            notifier.notify(DesktopNotice("themed", "t", "b", true, true, "show", 1))
+            withTimeout(10_000) { while (notices.size < 3) delay(20) }
+            @Suppress("UNCHECKED_CAST") val fileHints = notices[1][3] as Map<String, Variant<*>>
+            @Suppress("UNCHECKED_CAST") val themedHints = notices[2][3] as Map<String, Variant<*>>
+            assertEquals("/fixture/done.wav", fileHints.getValue("sound-file").value); assertFalse("sound-name" in fileHints)
+            assertEquals("dialog-error", themedHints.getValue("sound-name").value); assertFalse("sound-file" in themedHints)
         } finally { notifier.close(); connection.close() }
     }
 }

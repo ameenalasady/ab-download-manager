@@ -174,7 +174,7 @@ class EngineSession(
             "browser.dismiss", "browser.settings", "settings.integration", "frontend.activate", "links.import",
             "system.activity", "download.probe", "download.review", "history.page", "history.delta", "download.windows", "download.parts",
             "download.replace", "download.delete", "settings.folder", "settings.duplicates",
-            "download.reset", "download.move", "download.links", "settings.sort", "category.icon",
+            "download.reset", "download.move", "download.links", "settings.sort", "category.icon", "settings.notificationSounds",
             "queue.startAll", "queue.stopAll", "download.stopAll", "links.review", "browser.probe", "browser.probeBatch")
     }
 
@@ -223,12 +223,14 @@ class EngineSession(
             is DownloadManagerEvents.OnJobStarting -> windowEvent("started", item.id)
             is DownloadManagerEvents.OnJobCompleted -> {
                 windowEvent("completed", item.id)
-                notifier.notify(DesktopNotice("download:${item.id}", item.name, "Finished", false, sound, "show", item.id))
+                notifier.notify(DesktopNotice("download:${item.id}", item.name, "Finished", false, sound, "show", item.id,
+                    preferences.notificationSoundFile("successNotificationSound")))
             }
             // A normal pause cancels without a mapped reason: no error window or notice.
             is DownloadManagerEvents.OnJobCanceled -> errorRegistry.getReason(event.e)?.let { reason ->
                 windowEvent("failed", item.id)
-                notifier.notify(DesktopNotice("download:${item.id}", item.name, reason.title, true, sound, "show", item.id))
+                notifier.notify(DesktopNotice("download:${item.id}", item.name, reason.title, true, sound, "show", item.id,
+                    preferences.notificationSoundFile("errorNotificationSound")))
             }
             else -> {}
         }
@@ -259,7 +261,8 @@ class EngineSession(
             // focus-stealing prevention). Clicking the notification provides one.
             if (launcher.connected && !launcher.active) notifier.notify(DesktopNotice("browser-request",
                 "Download request from browser", pending.items.joinToString(", ") { it.name }.take(240),
-                false, preferences.integration().getValue("notificationSound").jsonPrimitive.boolean, "review"))
+                false, preferences.integration().getValue("notificationSound").jsonPrimitive.boolean, "review",
+                soundFile = preferences.notificationSoundFile("generalNotificationSound")))
             pending.id
         }
     }

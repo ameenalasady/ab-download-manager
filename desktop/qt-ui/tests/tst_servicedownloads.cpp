@@ -54,7 +54,7 @@ public:
     bool browserCapability = false, desktopCapability = false, windowsCapability = false;
     // New negotiated settings/duplicate extensions.
     bool folderCapability = false, duplicateCapability = false, replaceCapability = false;
-    bool actionsCapability = false, sortCapability = false, tasksCapability = false, reviewCapability = false, probeBatchCapability = false, categoryIconCapability = false;
+    bool actionsCapability = false, sortCapability = false, tasksCapability = false, reviewCapability = false, probeBatchCapability = false, categoryIconCapability = false, soundCapability = false;
     // Sets one review row's browser.probeBatch outcome in the next snapshots.
     void setProbe(int index, const QJsonObject &probe) {
         auto requests = extensionSnapshot["browserRequests"].toArray(); auto request = requests[0].toObject();
@@ -128,6 +128,7 @@ public:
                     if (reviewCapability) { caps.append("links.review"); caps.append("browser.probe"); }
                     if (probeBatchCapability) caps.append("browser.probeBatch");
                     if (categoryIconCapability) caps.append("category.icon");
+                    if (soundCapability) caps.append("settings.notificationSounds");
                     if (tasksCapability) for (const auto &op : {"queue.startAll", "queue.stopAll", "download.stopAll"}) caps.append(op);
                     if (actionsCapability) for (const auto &op : {"download.reset", "download.move", "download.links"}) caps.append(op);
                     if (categoryCapability) for (const auto &op : {"category.create", "category.update", "category.delete", "category.move", "category.assign"}) caps.append(op);
@@ -501,7 +502,7 @@ private slots:
         FakeService service;
         service.sortCapability = service.monitorCapability = service.tasksCapability = service.actionsCapability = service.detailsCapability = true;
         service.reviewCapability = service.browserCapability = service.runtimeCapability = service.desktopCapability = true;
-        service.categoryCapability = service.categoryIconCapability = true;
+        service.categoryCapability = service.categoryIconCapability = service.soundCapability = true;
         {
             // The original defaults with their stored (historical) icon URIs.
             const QList<QPair<QString, QString>> defaults{{"Compressed", "icon:pictureFile"}, {"Programs", "icon:zipFile"}, {"Videos", "icon:musicFile"},
@@ -512,7 +513,8 @@ private slots:
         }
         auto settings = basicSettings(); settings["qtSortColumn"] = "name"; settings["qtSortDescending"] = false;
         service.extensionSnapshot = {{"queues", QJsonArray{}}, {"manualPending", QJsonArray{"9007199254740995"}}, {"settings", settings}, {"browserRequests", QJsonArray{}},
-            {"integration", QJsonObject{{"autoStartOnBoot", false}, {"useSystemTray", false}, {"notificationSound", false}, {"notifications", true}}},
+            {"integration", QJsonObject{{"autoStartOnBoot", false}, {"useSystemTray", false}, {"notificationSound", true}, {"notifications", true},
+                {"successNotificationSound", "/home/user/Sounds/finished.wav"}, {"errorNotificationSound", ""}, {"generalNotificationSound", ""}}},
             {"browserIntegration", QJsonObject{{"state", "disabled"}, {"error", QJsonValue::Null}, {"enabled", false}, {"port", 15151}, {"auth", false}}},
             {"runtime", QJsonObject{{"mode", "explicit-runtime"}, {"destination", "/downloads"}, {"destinationRoots", QJsonArray{"/downloads"}}, {"redirects", true}, {"proxy", "direct"}}}};
         const auto details = [](const QString &name) { return QJsonObject{{"url", "https://example.invalid/" + name}, {"folder", "/downloads"},
@@ -565,6 +567,10 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(iconPopup, "open")); QTRY_VERIFY(iconPopup->property("opened").toBool()); capture("category-icons");
         QMetaObject::invokeMethod(iconPopup, "close"); QTRY_VERIFY(!iconPopup->property("visible").toBool());
         QMetaObject::invokeMethod(categories, "close"); QTRY_VERIFY(!categories->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(root, "openSettings"));
+        auto *settingsDialog = root->findChild<QObject *>("serviceSettingsDialog"); QTRY_VERIFY(settingsDialog->property("visible").toBool());
+        settingsDialog->setProperty("page", 2); capture("settings-integration");
+        QMetaObject::invokeMethod(settingsDialog, "close"); QTRY_VERIFY(!settingsDialog->property("visible").toBool());
         auto *about = root->findChild<QObject *>("aboutPreviewDialog"); QVERIFY(about);
         QVERIFY(QMetaObject::invokeMethod(about, "open")); QTRY_VERIFY(about->property("opened").toBool());
         for (int page = 0; page < 3; ++page) {
@@ -2318,6 +2324,48 @@ private slots:
         QCOMPARE(patch["apiPort"].toInt(), 15152); QVERIFY(patch["apiAuthEnabled"].toBool()); QVERIFY(!patch.contains("apiAuthKey"));
         port->setProperty("text", "70000");
         QVERIFY(!apply->property("enabled").toBool());
+    }
+    void notificationSoundFilesAreEditedOnTheIntegrationPage() {
+        FakeService service; service.desktopCapability = service.runtimeCapability = service.soundCapability = true;
+        service.extensionSnapshot = {{"queues", QJsonArray{}}, {"settings", basicSettings()},
+            {"runtime", QJsonObject{{"mode", "explicit-runtime"}, {"destination", "/fixture/downloads"},
+                {"destinationRoots", QJsonArray{"/fixture/downloads"}}, {"redirects", true}, {"proxy", "direct"}}},
+            {"integration", QJsonObject{{"autoStartOnBoot", false}, {"useSystemTray", true}, {"notificationSound", true}, {"notifications", true},
+                {"successNotificationSound", "/home/user/done.wav"}, {"errorNotificationSound", ""}, {"generalNotificationSound", ""}}},
+            {"frontend", QJsonObject{{"activation", QJsonValue::Null}}}};
+        ServiceDownloads model(service.descriptor); QTRY_COMPARE(model.rowCount(), 1);
+        QCOMPARE(model.integration().value("successNotificationSound").toString(), "/home/user/done.wav");
+        QQuickView view; view.setResizeMode(QQuickView::SizeRootObjectToView);
+        view.setInitialProperties({{"downloads", QVariant::fromValue(&model)}});
+        view.setSource(QUrl("qrc:/qt-ui/qml/DownloadsView.qml")); view.resize(1000, 700); view.show();
+        QCOMPARE(view.status(), QQuickView::Ready);
+        QVERIFY(QMetaObject::invokeMethod(view.rootObject(), "openSettings"));
+        auto *dialog = view.rootObject()->findChild<QObject *>("serviceSettingsDialog"); QVERIFY(dialog);
+        dialog->setProperty("page", 2);
+        auto *success = view.rootObject()->findChild<QObject *>("settingsSuccessSound");
+        auto *error = view.rootObject()->findChild<QObject *>("settingsErrorSound");
+        auto *general = view.rootObject()->findChild<QObject *>("settingsGeneralSound");
+        auto *apply = view.rootObject()->findChild<QObject *>("applyDesktopIntegration");
+        QVERIFY(success && error && general && apply);
+        QTRY_VERIFY(success->property("visible").toBool());
+        QCOMPARE(success->property("text").toString(), "/home/user/done.wav");
+        QCOMPARE(error->property("placeholderText").toString(), "Default");
+        error->setProperty("text", "  /home/user/oops.wav ");
+        QVERIFY(QMetaObject::invokeMethod(apply, "click"));
+        QTRY_COMPARE(service.lastCommand["op"].toString(), "settings.integration");
+        const auto patch = service.lastCommand["settings"].toObject();
+        QCOMPARE(patch["successNotificationSound"].toString(), "/home/user/done.wav");
+        QCOMPARE(patch["errorNotificationSound"].toString(), "/home/user/oops.wav");
+        QCOMPARE(patch["generalNotificationSound"].toString(), "");
+        QTRY_VERIFY(!model.busy());
+        // The fields follow the Notification Sound switch.
+        view.rootObject()->findChild<QObject *>("settingsNotificationSound")->setProperty("checked", false);
+        QTRY_VERIFY(!success->property("enabled").toBool());
+        // A non-text sound value is rejected like any other malformed field.
+        auto integration = service.extensionSnapshot["integration"].toObject(); integration["errorNotificationSound"] = 5;
+        service.extensionSnapshot["integration"] = integration;
+        QTRY_VERIFY(model.errorMessage().contains("Invalid service response"));
+        view.close(); view.setSource(QUrl()); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     }
     void desktopIntegrationActivationFocusAndExplicitClipboardCommands() {
         FakeService service; service.desktopCapability = true; service.runtimeCapability = true; service.browserCapability = true;

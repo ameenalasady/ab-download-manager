@@ -413,6 +413,9 @@ void ServiceDownloads::readFrames() {
             if (m_capabilities.contains("download.windows"))
                 for (const auto &key : {"showDownloadProgressDialog", "showDownloadCompletionDialog"})
                     if (!i[key].isBool()) { invalid(); return; }
+            if (m_capabilities.contains("settings.notificationSounds"))
+                for (const auto &key : {"successNotificationSound", "errorNotificationSound", "generalNotificationSound"})
+                    if (!i[key].isString() || i[key].toString().size() > 4096) { invalid(); return; }
             integration = i.toVariantMap();
         }
         // Present in every service snapshot; optional so older/fake services stay compatible.

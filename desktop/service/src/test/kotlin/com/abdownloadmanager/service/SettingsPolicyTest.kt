@@ -85,10 +85,11 @@ class SettingsPolicyTest {
             assertEquals(BrowserSettings(true, 15151, null), settings.browser())
             assertEquals(buildJsonObject { put("enabled", true); put("port", 15151); put("auth", false) }, settings.browserSnapshot())
             assertTrue(view.getValue("trackDeletedFilesOnDisk").getValue("value").jsonPrimitive.boolean)
-            for (secret in listOf("generalNotificationSound")) {
-                assertTrue(view.getValue(secret).getValue("stored").jsonPrimitive.boolean)
-                assertEquals(JsonNull, view.getValue(secret)["value"])
-            }
+            // Custom sound files are now executed (notification sound-file hint), so they are
+            // integration settings shown for editing, not retained-only; still never in this view.
+            assertEquals(SettingPolicy.Integration, OriginalAppSettings.policies["generalNotificationSound"])
+            assertFalse("generalNotificationSound" in view)
+            assertEquals("/home/user/sound.ogg", settings.integration().getValue("generalNotificationSound").jsonPrimitive.content)
             // Honored within the runtime roots (written through the runtime check), so not "retained only".
             assertEquals(SettingPolicy.Destination, OriginalAppSettings.policies["defaultDownloadFolder"])
             assertFalse("defaultDownloadFolder" in view)

@@ -30,6 +30,7 @@ Item {
     readonly property bool integrationSettings: service.capabilities.indexOf("settings.integration") >= 0
     readonly property bool windowSettings: service.capabilities.indexOf("download.windows") >= 0
     readonly property bool explicitRuntime: service.runtime && service.runtime.mode === "explicit-runtime"
+    readonly property bool soundFiles: explicitRuntime && service.capabilities.indexOf("settings.notificationSounds") >= 0
     // Original titles of retained-but-inactive settings (DesktopSettingsComponent/CommonSettings).
     readonly property var retainedTitles: ({
         autoStartOnBoot: qsTr("Start On Boot"), useSystemTray: qsTr("Use System Tray"),
@@ -87,6 +88,9 @@ Item {
             startOnBoot.checked = i.autoStartOnBoot !== false
             systemTray.checked = i.useSystemTray !== false
             notificationSound.checked = i.notificationSound !== false
+            successSound.text = i.successNotificationSound || ""
+            errorSound.text = i.errorNotificationSound || ""
+            generalSound.text = i.generalNotificationSound || ""
             progressWindow.checked = i.showDownloadProgressDialog !== false
             completionWindow.checked = i.showDownloadCompletionDialog !== false
         }
@@ -128,6 +132,13 @@ Item {
                             Check { id: systemTray; objectName: "settingsSystemTray"; visible: root.explicitRuntime; Accessible.name: qsTr("Use system tray while the frontend is running") }
                             RowLabel { text: qsTr("Notification Sound"); visible: root.explicitRuntime }
                             Check { id: notificationSound; objectName: "settingsNotificationSound"; visible: root.explicitRuntime; Accessible.name: qsTr("Play desktop notification sounds") }
+                            // Original custom sounds: a WAV file path, or empty for the default.
+                            RowLabel { text: qsTr("Finished Sound"); visible: root.soundFiles }
+                            Field { id: successSound; objectName: "settingsSuccessSound"; visible: root.soundFiles; enabled: notificationSound.checked; maximumLength: 4096; placeholderText: qsTr("Default"); Accessible.name: qsTr("WAV file played when a download finishes") }
+                            RowLabel { text: qsTr("Error Sound"); visible: root.soundFiles }
+                            Field { id: errorSound; objectName: "settingsErrorSound"; visible: root.soundFiles; enabled: notificationSound.checked; maximumLength: 4096; placeholderText: qsTr("Default"); Accessible.name: qsTr("WAV file played when a download fails") }
+                            RowLabel { text: qsTr("Other Sound"); visible: root.soundFiles }
+                            Field { id: generalSound; objectName: "settingsGeneralSound"; visible: root.soundFiles; enabled: notificationSound.checked; maximumLength: 4096; placeholderText: qsTr("Default"); Accessible.name: qsTr("WAV file played for other notifications") }
                             RowLabel { text: qsTr("Show Download Progress Window"); visible: root.windowSettings }
                             Check { id: progressWindow; objectName: "settingsProgressWindow"; visible: root.windowSettings; Accessible.name: qsTr("Open a progress window when you start a download") }
                             RowLabel { text: qsTr("Show Download Completion Window"); visible: root.windowSettings }
@@ -143,6 +154,10 @@ Item {
                                 onClicked: {
                                     const patch = root.explicitRuntime ? {autoStartOnBoot: startOnBoot.checked, useSystemTray: systemTray.checked, notificationSound: notificationSound.checked} : {}
                                     if (root.windowSettings) { patch.showDownloadProgressDialog = progressWindow.checked; patch.showDownloadCompletionDialog = completionWindow.checked }
+                                    if (root.soundFiles) {
+                                        patch.successNotificationSound = successSound.text.trim(); patch.errorNotificationSound = errorSound.text.trim()
+                                        patch.generalNotificationSound = generalSound.text.trim()
+                                    }
                                     root.service.updateIntegration(patch)
                                 }
                             }
