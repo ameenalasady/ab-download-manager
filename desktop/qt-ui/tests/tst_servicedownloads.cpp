@@ -292,6 +292,8 @@ private slots:
         if (hold) { QVERIFY(reviewFrame(view, qEnvironmentVariable("QT_ADAPTER_CAPTURE_DIR", service.directory.path()) + "/list-client.png", QSize(1120, 700))); QTest::qWait(hold); }
         model.setSearch("Zeta"); QCOMPARE(model.selectionCount(), 1); QCOMPARE(model.statistics()["selectedBytes"].toString(), "1000");
         QCOMPARE(model.statistics()["queuedCount"].toInt(), 1); // Global, not filtered.
+        model.setSearch("no such download"); QCOMPARE(model.selectionCount(), 0);
+        QTRY_COMPARE(status->property("text").toString(), QString()); // No "0 selected · 0 B".
         view.close(); QTest::qWait(100);
         view.setSource(QUrl()); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete); QTest::qWait(100);
     }

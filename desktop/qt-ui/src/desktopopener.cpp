@@ -105,3 +105,17 @@ bool DesktopOpener::showInFolder(const QUrl &url, QWindow *window) {
     });
     return true;
 }
+
+bool DesktopOpener::openWebPage(const QUrl &url, QWindow *window) {
+    if (!url.isValid() || !QStringList{QStringLiteral("http"), QStringLiteral("https")}.contains(url.scheme())
+        || url.host().isEmpty() || !url.userInfo().isEmpty()) return false;
+    withActivationToken(window, this, [this, url](const QString &token) {
+        QVariantMap options;
+        if (!token.isEmpty()) options.insert(QStringLiteral("activation_token"), token);
+        auto message = QDBusMessage::createMethodCall(QStringLiteral("org.freedesktop.portal.Desktop"),
+            QStringLiteral("/org/freedesktop/portal/desktop"), QStringLiteral("org.freedesktop.portal.OpenURI"), QStringLiteral("OpenURI"));
+        message << QString() << url.toString(QUrl::FullyEncoded) << options;
+        callWithFallback(message, this, [url] { QDesktopServices::openUrl(url); });
+    });
+    return true;
+}
