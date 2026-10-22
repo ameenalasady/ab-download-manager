@@ -3,6 +3,7 @@ import QtQuick
 import QtQuick.Controls as QQC2
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
+import "CategoryIcons.js" as CategoryIcons
 
 // Original category Name / optional file types / URL patterns / location hierarchy.
 // Persistence and matching belong solely to the Kotlin CategoryManager.
@@ -10,6 +11,7 @@ Item {
     id: root
     required property var service
     readonly property bool modalOpen: dialog.visible || confirmDelete.visible
+    readonly property bool iconEditable: service.capabilities.indexOf("category.icon") >= 0
     PreviewTheme { id: theme }
     function openCategories() { dialog.choose(""); dialog.open() }
     component Body: TextBlock { colors: theme }
@@ -18,6 +20,7 @@ Item {
     UiDialog {
         id: dialog; objectName: "serviceCategoriesDialog"
         property string selectedCategory: ""
+        property int iconIndex: -1
         readonly property int categoryIndex: {
             const all = root.service.categories
             for (let i = 0; i < all.length; ++i) if (all[i].id === selectedCategory) return i
@@ -36,6 +39,8 @@ Item {
             types.text = c ? c.acceptedFileTypes.join(" ") : ""
             patternsEnabled.checked = c ? c.acceptedUrlPatterns.length > 0 : false
             patterns.text = c ? c.acceptedUrlPatterns.join(" ") : ""
+            // A stored icon the picker does not offer stays unselected and unchanged.
+            iconIndex = CategoryIcons.indexOf(c ? c.icon : "icon:folder")
         }
         function send(op: string, args: var): bool { return root.service.categoryCommand(op, selectedCategory, args || {}) }
         title: qsTr("Categories")
@@ -80,6 +85,42 @@ Item {
                         SectionHeading { level: Tokens.headingPage; text: dialog.category ? qsTr("Edit Category") : qsTr("New Category") }
                         Body { text: qsTr("Name:") }
                         Field { id: nameField; objectName: "categoryName"; maximumLength: 120; Accessible.name: qsTr("Category name") }
+                        Body { text: qsTr("Icon:"); visible: root.iconEditable }
+                        // Same grid choice as the original IconPick; -1 is a stored icon it does not offer.
+                        RowLayout {
+                            visible: root.iconEditable; spacing: Tokens.spacingM
+                            // The desktop style may hide push-button icons; show the choice beside it.
+                            Kirigami.Icon {
+                                implicitWidth: Tokens.iconMedium; implicitHeight: Tokens.iconMedium
+                                source: iconButton.icon.name
+                            }
+                            UiButton {
+                                id: iconButton; objectName: "categoryIconButton"
+                                icon.name: dialog.iconIndex >= 0 ? CategoryIcons.choices[dialog.iconIndex].icon : "text-x-generic"
+                                text: dialog.iconIndex >= 0 ? CategoryIcons.choices[dialog.iconIndex].label : qsTr("Custom")
+                                Accessible.name: qsTr("Category icon: %1").arg(text)
+                                onClicked: iconPopup.open()
+                                QQC2.Popup {
+                                    id: iconPopup; objectName: "categoryIconPopup"
+                                    popupType: QQC2.Popup.Window
+                                    y: iconButton.height; padding: Tokens.spacingS
+                                    contentItem: GridLayout {
+                                        columns: 8; columnSpacing: 0; rowSpacing: 0
+                                        Repeater {
+                                            model: CategoryIcons.choices
+                                            IconButton {
+                                                required property var modelData
+                                                required property int index
+                                                objectName: "categoryIconChoice-" + index
+                                                text: modelData.label; icon.name: modelData.icon
+                                                checkable: true; checked: dialog.iconIndex === index
+                                                onClicked: { dialog.iconIndex = index; iconPopup.close() }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         QQC2.CheckBox { id: typesEnabled; objectName: "categoryTypesEnabled"; Layout.topMargin: Tokens.spacingS; text: qsTr("File Types") }
                         Field { id: types; objectName: "categoryTypes"; enabled: typesEnabled.checked; maximumLength: 5248; placeholderText: "zip rar 7z"; Accessible.name: qsTr("File types, space separated") }
                         QQC2.CheckBox { id: patternsEnabled; Layout.topMargin: Tokens.spacingS; text: qsTr("URL Patterns") }
@@ -115,9 +156,13 @@ Item {
                     icon.name: dialog.category ? "dialog-ok-apply" : "list-add"
                     QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.ApplyRole
                     enabled: !root.service.busy && nameField.text.trim() !== ""
-                    onClicked: dialog.send(dialog.category ? "category.update" : "category.create", {name: nameField.text,
-                        acceptedFileTypes: typesEnabled.checked ? types.text.trim().split(/\s+/).filter(s => s.length > 0) : [],
-                        acceptedUrlPatterns: patternsEnabled.checked ? patterns.text.trim().split(/\s+/).filter(s => s.length > 0) : []})
+                    onClicked: {
+                        const args = {name: nameField.text,
+                            acceptedFileTypes: typesEnabled.checked ? types.text.trim().split(/\s+/).filter(s => s.length > 0) : [],
+                            acceptedUrlPatterns: patternsEnabled.checked ? patterns.text.trim().split(/\s+/).filter(s => s.length > 0) : []}
+                        if (root.iconEditable && dialog.iconIndex >= 0) args.icon = CategoryIcons.choices[dialog.iconIndex].uri
+                        dialog.send(dialog.category ? "category.update" : "category.create", args)
+                    }
                 }
                 UiButton { text: qsTr("Close"); icon.name: "dialog-close"; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.RejectRole; onClicked: dialog.close() }
         }

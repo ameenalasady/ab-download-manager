@@ -124,6 +124,13 @@ class EngineSession(
     // Keep the original MyIcons URI mapping (including its historical property names).
     private val categoryIcons = listOf("icon:pictureFile", "icon:zipFile", "icon:musicFile",
         "icon:folderOpen", "icon:fileOpen", "icon:videoFile")
+    // Every icon the original category editor offers (its IconPick list), as stored URIs.
+    private val pickableCategoryIcons = setOf("icon:fileOpen", "icon:folderOpen", "icon:pictureFile", "icon:musicFile",
+        "icon:zipFile", "icon:videoFile", "icon:applicationFile", "icon:file", "icon:folder", "icon:browserIntegration",
+        "icon:appearance", "icon:settings", "icon:search", "icon:info", "icon:check", "icon:link", "icon:download",
+        "icon:speaker", "icon:group", "icon:activeCount", "icon:speed", "icon:resume", "icon:pause", "icon:stop",
+        "icon:queue", "icon:remove", "icon:clear", "icon:add", "icon:paste", "icon:copy", "icon:refresh", "icon:share",
+        "icon:lock", "icon:question", "icon:verticalDirection", "icon:downloadEngine", "icon:network", "icon:externalLink")
     private val categories = CategoryManager(CategoryFileStorage(categoryFile, saver), queueScope,
         CategoryDefaults {
             StandardCategoryDefaults(categoryIcons) { downloads.path }.getDefaultCategories()
@@ -167,7 +174,7 @@ class EngineSession(
             "browser.dismiss", "browser.settings", "settings.integration", "frontend.activate", "links.import",
             "system.activity", "download.probe", "download.review", "history.page", "history.delta", "download.windows", "download.parts",
             "download.replace", "download.delete", "settings.folder", "settings.duplicates",
-            "download.reset", "download.move", "download.links", "settings.sort",
+            "download.reset", "download.move", "download.links", "settings.sort", "category.icon",
             "queue.startAll", "queue.stopAll", "download.stopAll", "links.review", "browser.probe", "browser.probeBatch")
     }
 
@@ -933,14 +940,18 @@ class EngineSession(
     }
 
     private fun categoryDraft(request: JsonObject, previous: Category): Category {
-        require(listOf("path", "usePath", "icon", "items").none { it in request }) {
-            "Category path/icon/membership fields must use supported isolated workflows"
+        require(listOf("path", "usePath", "items").none { it in request }) {
+            "Category path/membership fields must use supported isolated workflows"
         }
+        // Optional; omitted keeps the stored icon, including one this editor does not offer.
+        val icon = request["icon"]?.let { value ->
+            (value as? JsonPrimitive)?.takeIf { it.isString }?.content?.takeIf { it in pickableCategoryIcons } ?: error("Unsupported category icon")
+        } ?: previous.icon
         fun filters(key: String): List<String> = (request[key] ?: error("Missing $key")).jsonArray.map {
             require(it is JsonPrimitive && it.isString) { "Invalid filter" }; it.content
         }
         val name = request["name"]?.jsonPrimitive?.content?.trim() ?: error("Missing category name")
-        val draft = previous.copy(name = name, acceptedFileTypes = filters("acceptedFileTypes"),
+        val draft = previous.copy(name = name, icon = icon, acceptedFileTypes = filters("acceptedFileTypes"),
             acceptedUrlPatterns = filters("acceptedUrlPatterns"))
         validateCategories(listOf(draft), allowDraft = previous.id == -1L)
         return draft

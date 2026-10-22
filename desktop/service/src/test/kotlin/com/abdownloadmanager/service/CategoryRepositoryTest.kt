@@ -100,6 +100,34 @@ class CategoryRepositoryTest {
         } finally { lifecycle.stop(); root.toFile().deleteRecursively() }
     }
 
+    @Test fun categoryIconsUseTheOriginalPickerUrisAndKeepUnofferedOnes() = runBlocking {
+        val root = Files.createTempDirectory("abdm-category-icon-test-")
+        val lifecycle = ServiceLifecycle(root)
+        try {
+            val file = root.resolve("app-data/config/download_db/categories/categories.json").toFile()
+            file.parentFile.mkdirs()
+            // A stored icon this editor does not offer survives edits that omit `icon`.
+            file.writeText(Json.encodeToString(ListSerializer(Category.serializer()), listOf(
+                Category(5, "Stored", "resource:custom.svg", root.resolve("Downloads").toString(), false, listOf("zip")))))
+            val engine = lifecycle.start()
+            assertTrue("category.icon" in EngineSession.capabilities)
+            val created = engine.command(command("category.create", *draft("Pictures 2", types = listOf("png")), "icon" to JsonPrimitive("icon:fileOpen")))
+                .getValue("categoryId").jsonPrimitive.content
+            fun iconOf(all: List<JsonObject>, id: String) = all.single { it.getValue("id").jsonPrimitive.content == id }.getValue("icon").jsonPrimitive.content
+            assertEquals("icon:fileOpen", iconOf(categories(engine), created))
+            val before = file.readText()
+            for (bad in listOf(JsonPrimitive("icon:notAnIcon"), JsonPrimitive("file:///tmp/x.svg"), JsonPrimitive(3), JsonNull))
+                assertFails { engine.command(command("category.update", "categoryId" to JsonPrimitive(created), *draft("Pictures 2"), "icon" to bad)) }
+            assertEquals(before, file.readText())
+            engine.command(command("category.update", "categoryId" to JsonPrimitive(created), *draft("Pictures 2"), "icon" to JsonPrimitive("icon:network")))
+            engine.command(command("category.update", "categoryId" to JsonPrimitive("5"), *draft("Stored, renamed")))
+            lifecycle.stop()
+            val stored = Json.decodeFromString(ListSerializer(Category.serializer()), file.readText()).associateBy { it.id }
+            assertEquals("icon:network", stored.getValue(created.toLong()).icon)
+            assertEquals("resource:custom.svg", stored.getValue(5).icon)
+        } finally { lifecycle.stop(); root.toFile().deleteRecursively() }
+    }
+
     @Test fun constructorFilesystemFailurePrecedesMonitorThreadsAndReleasesLease() = runBlocking {
         val root = Files.createTempDirectory("abdm-category-constructor-failure-test-")
         val lifecycle = ServiceLifecycle(root)

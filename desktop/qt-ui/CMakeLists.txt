@@ -19,7 +19,7 @@ qt_add_resources(qtui-preview preview_qml
     FILES qml/qmldir qml/Tokens.qml qml/SectionHeading.qml qml/TextBlock.qml qml/StatusMessage.qml
     qml/FormGrid.qml qml/FormLabel.qml qml/FormField.qml qml/SurfaceFrame.qml qml/SettingsSection.qml
     qml/ProgressTrack.qml qml/WindowFooter.qml qml/ButtonFocus.qml qml/UiButton.qml qml/UiComboBox.qml qml/UiTabButton.qml
-    qml/UiDialog.qml qml/DialogFooter.qml qml/IconButton.qml qml/SidebarItem.qml qml/HttpOptions.qml qml/DownloadsView.qml qml/DownloadDetails.qml qml/DownloadContent.qml qml/DownloadCompletion.qml qml/DownloadWindow.qml qml/ServiceWorkflows.qml qml/CategoryWorkflows.qml qml/BrowserRequests.qml qml/PreviewTheme.qml qml/LegacyIcon.qml qml/LegacyPaths.js
+    qml/UiDialog.qml qml/DialogFooter.qml qml/IconButton.qml qml/SidebarItem.qml qml/HttpOptions.qml qml/DownloadsView.qml qml/DownloadDetails.qml qml/DownloadContent.qml qml/DownloadCompletion.qml qml/DownloadWindow.qml qml/ServiceWorkflows.qml qml/CategoryWorkflows.qml qml/BrowserRequests.qml qml/PreviewTheme.qml qml/LegacyIcon.qml qml/LegacyPaths.js qml/CategoryIcons.js
 )
 # About → Licenses / Translators: the original project's license and translator credits.
 set(ABDM_REPOSITORY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")

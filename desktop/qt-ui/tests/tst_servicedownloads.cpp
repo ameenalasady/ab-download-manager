@@ -54,7 +54,7 @@ public:
     bool browserCapability = false, desktopCapability = false, windowsCapability = false;
     // New negotiated settings/duplicate extensions.
     bool folderCapability = false, duplicateCapability = false, replaceCapability = false;
-    bool actionsCapability = false, sortCapability = false, tasksCapability = false, reviewCapability = false, probeBatchCapability = false;
+    bool actionsCapability = false, sortCapability = false, tasksCapability = false, reviewCapability = false, probeBatchCapability = false, categoryIconCapability = false;
     // Sets one review row's browser.probeBatch outcome in the next snapshots.
     void setProbe(int index, const QJsonObject &probe) {
         auto requests = extensionSnapshot["browserRequests"].toArray(); auto request = requests[0].toObject();
@@ -127,6 +127,7 @@ public:
                     if (sortCapability) caps.append("settings.sort");
                     if (reviewCapability) { caps.append("links.review"); caps.append("browser.probe"); }
                     if (probeBatchCapability) caps.append("browser.probeBatch");
+                    if (categoryIconCapability) caps.append("category.icon");
                     if (tasksCapability) for (const auto &op : {"queue.startAll", "queue.stopAll", "download.stopAll"}) caps.append(op);
                     if (actionsCapability) for (const auto &op : {"download.reset", "download.move", "download.links"}) caps.append(op);
                     if (categoryCapability) for (const auto &op : {"category.create", "category.update", "category.delete", "category.move", "category.assign"}) caps.append(op);
@@ -413,6 +414,63 @@ private slots:
         QCOMPARE(service.commands, 1);
         view.close(); view.setSource(QUrl()); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     }
+    void categoryIconsFollowTheOriginalUrisInSidebarAndEditor() {
+        FakeService service; service.categoryCapability = service.categoryIconCapability = true;
+        const auto category = [](const QString &id, const QString &name, const QString &icon) {
+            return QJsonObject{{"id", id}, {"name", name}, {"icon", icon}, {"path", "/fixture/Downloads"}, {"usePath", false},
+                {"acceptedFileTypes", QJsonArray{"zip"}}, {"acceptedUrlPatterns", QJsonArray{}}, {"items", QJsonArray{}}};
+        };
+        // The original stores historical URI names: "icon:pictureFile" draws its archive icon.
+        service.categorySnapshot = {category("0", "Compressed", "icon:pictureFile"), category("3", "Music", "icon:folderOpen"),
+            category("4", "Pictures", "icon:fileOpen"), category("9", "Stored", "resource:custom.svg")};
+        ServiceDownloads model(service.descriptor); QTRY_COMPARE(model.categories().size(), 4);
+        QQuickView view; view.setResizeMode(QQuickView::SizeRootObjectToView); view.resize(1000, 700);
+        view.setInitialProperties({{"downloads", QVariant::fromValue(&model)}});
+        view.setSource(QUrl("qrc:/qt-ui/qml/DownloadsView.qml")); view.show(); QCOMPARE(view.status(), QQuickView::Ready);
+        auto *root = view.rootObject();
+        QHash<QString, QString> icons;
+        for (const auto &entry : root->property("navigationCategories").toList()) icons.insert(entry.toMap()["label"].toString(), entry.toMap()["icon"].toString());
+        QCOMPARE(icons["Compressed"], "package-x-generic");
+        QCOMPARE(icons["Music"], "audio-x-generic");
+        QCOMPARE(icons["Pictures"], "image-x-generic");
+        QCOMPARE(icons["Stored"], "text-x-generic");
+        QVERIFY(QMetaObject::invokeMethod(root, "openCategories"));
+        auto *dialog = root->findChild<QObject *>("serviceCategoriesDialog"); QVERIFY(dialog);
+        auto *picker = root->findChild<QObject *>("categoryIconButton"); QVERIFY(picker);
+        auto *apply = root->findChild<QObject *>("applyServiceCategory"); QVERIFY(apply);
+        QTRY_VERIFY(dialog->property("visible").toBool());
+        QTRY_VERIFY(picker->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(dialog, "choose", Q_ARG(QString, "0")));
+        QCOMPARE(picker->property("text").toString(), "Compressed");
+        QVERIFY(QMetaObject::invokeMethod(picker, "clicked"));
+        auto *popup = root->findChild<QObject *>("categoryIconPopup"); QVERIFY(popup);
+        QTRY_VERIFY(popup->property("opened").toBool());
+        auto *grid = qvariant_cast<QQuickItem *>(popup->property("contentItem"));
+        auto *network = visualChild(grid, "categoryIconChoice-36"); QVERIFY(network);
+        QCOMPARE(network->property("text").toString(), "Network");
+        QVERIFY(visualChild(grid, "categoryIconChoice-2")->property("checked").toBool()); // Current icon.
+        QVERIFY(QMetaObject::invokeMethod(network, "clicked"));
+        QTRY_VERIFY(!popup->property("visible").toBool());
+        QCOMPARE(picker->property("text").toString(), "Network");
+        QTRY_VERIFY(apply->property("enabled").toBool());
+        QVERIFY(QMetaObject::invokeMethod(apply, "clicked"));
+        QTRY_COMPARE(service.lastCommand["op"].toString(), "category.update");
+        QCOMPARE(service.lastCommand["categoryId"].toString(), "0");
+        QCOMPARE(service.lastCommand["icon"].toString(), "icon:network");
+        QTRY_VERIFY(!model.busy());
+        // An icon the picker does not offer is left as stored: no icon is sent.
+        QVERIFY(QMetaObject::invokeMethod(dialog, "choose", Q_ARG(QString, "9")));
+        QCOMPARE(dialog->property("iconIndex").toInt(), -1);
+        QCOMPARE(picker->property("text").toString(), "Custom");
+        QVERIFY(QMetaObject::invokeMethod(apply, "clicked"));
+        QTRY_COMPARE(service.lastCommand["categoryId"].toString(), "9");
+        QVERIFY(!service.lastCommand.contains("icon"));
+        QTRY_VERIFY(!model.busy());
+        // New categories start with the folder icon.
+        QVERIFY(QMetaObject::invokeMethod(dialog, "choose", Q_ARG(QString, "")));
+        QCOMPARE(picker->property("text").toString(), "Folder");
+        view.close(); view.setSource(QUrl()); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    }
     void tasksMenuDispatchesGlobalCommandsWithoutSelection() {
         FakeService service; service.tasksCapability = true;
         ServiceDownloads model(service.descriptor); QTRY_COMPARE(model.rowCount(), 1);
@@ -443,6 +501,15 @@ private slots:
         FakeService service;
         service.sortCapability = service.monitorCapability = service.tasksCapability = service.actionsCapability = service.detailsCapability = true;
         service.reviewCapability = service.browserCapability = service.runtimeCapability = service.desktopCapability = true;
+        service.categoryCapability = service.categoryIconCapability = true;
+        {
+            // The original defaults with their stored (historical) icon URIs.
+            const QList<QPair<QString, QString>> defaults{{"Compressed", "icon:pictureFile"}, {"Programs", "icon:zipFile"}, {"Videos", "icon:musicFile"},
+                {"Music", "icon:folderOpen"}, {"Pictures", "icon:fileOpen"}, {"Documents", "icon:videoFile"}};
+            for (int i = 0; i < defaults.size(); ++i) service.categorySnapshot.append(QJsonObject{{"id", QString::number(i)}, {"name", defaults[i].first},
+                {"icon", defaults[i].second}, {"path", "/downloads"}, {"usePath", false}, {"acceptedFileTypes", QJsonArray{"x"}},
+                {"acceptedUrlPatterns", QJsonArray{}}, {"items", QJsonArray{}}});
+        }
         auto settings = basicSettings(); settings["qtSortColumn"] = "name"; settings["qtSortDescending"] = false;
         service.extensionSnapshot = {{"queues", QJsonArray{}}, {"manualPending", QJsonArray{"9007199254740995"}}, {"settings", settings}, {"browserRequests", QJsonArray{}},
             {"integration", QJsonObject{{"autoStartOnBoot", false}, {"useSystemTray", false}, {"notificationSound", false}, {"notifications", true}}},
@@ -490,6 +557,14 @@ private slots:
         QMetaObject::invokeMethod(root->findChild<QObject *>("fileMenu"), "close"); QTest::qWait(200);
         QVERIFY(QMetaObject::invokeMethod(root, "openMenu", Q_ARG(QString, "Tasks"))); capture("tasks-menu");
         QMetaObject::invokeMethod(root->findChild<QObject *>("tasksMenu"), "close"); QTest::qWait(200);
+        QVERIFY(QMetaObject::invokeMethod(root, "openCategories"));
+        auto *categories = root->findChild<QObject *>("serviceCategoriesDialog"); QTRY_VERIFY(categories->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(categories, "choose", Q_ARG(QString, "3")));
+        capture("categories");
+        auto *iconPopup = root->findChild<QObject *>("categoryIconPopup");
+        QVERIFY(QMetaObject::invokeMethod(iconPopup, "open")); QTRY_VERIFY(iconPopup->property("opened").toBool()); capture("category-icons");
+        QMetaObject::invokeMethod(iconPopup, "close"); QTRY_VERIFY(!iconPopup->property("visible").toBool());
+        QMetaObject::invokeMethod(categories, "close"); QTRY_VERIFY(!categories->property("visible").toBool());
         auto *about = root->findChild<QObject *>("aboutPreviewDialog"); QVERIFY(about);
         QVERIFY(QMetaObject::invokeMethod(about, "open")); QTRY_VERIFY(about->property("opened").toBool());
         for (int page = 0; page < 3; ++page) {

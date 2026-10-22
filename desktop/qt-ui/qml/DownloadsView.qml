@@ -5,6 +5,7 @@ import QtQuick.Layouts
 import QtQml.Models
 import org.kde.kirigami as Kirigami
 import Abdm.Desktop
+import "CategoryIcons.js" as CategoryIcons
 
 Item {
     id: root
@@ -34,10 +35,9 @@ Item {
     }
     function categoryIcon(uri: string): string {
         if (["package-x-generic", "application-x-archive", "application-pdf", "video-x-generic", "audio-x-generic", "image-x-generic", "text-x-generic"].indexOf(uri) >= 0) return uri
-        return ({"icon:pictureFile": "image-x-generic", "icon:zipFile": "package-x-generic", "icon:musicFile": "audio-x-generic",
-                 "icon:folderOpen": "folder", "icon:fileOpen": "text-x-generic", "icon:videoFile": "video-x-generic",
-                 "FileZip": "package-x-generic", "FileApplication": "application-x-executable", "FileVideo": "video-x-generic",
-                 "FileMusic": "audio-x-generic", "FilePicture": "image-x-generic", "FileDocument": "text-x-generic"})[uri] || "text-x-generic"
+        const legacy = ({"FileZip": "package-x-generic", "FileApplication": "application-x-executable", "FileVideo": "video-x-generic",
+                 "FileMusic": "audio-x-generic", "FilePicture": "image-x-generic", "FileDocument": "text-x-generic"})[uri]
+        return legacy || CategoryIcons.themeIcon(uri)
     }
     readonly property var navigationCategories: {
         const all = {key: "all", label: qsTr("All Downloads"), icon: "folder-downloads"}
