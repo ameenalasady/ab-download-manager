@@ -3,6 +3,9 @@
 #include "renderwait.h"
 #include <QAccessible>
 #include <QElapsedTimer>
+#include <QPointer>
+#include <memory>
+#include <QQmlComponent>
 #include <QQuickItem>
 #include <QQuickStyle>
 #include <QQuickView>
@@ -29,6 +32,7 @@ private slots:
     void workflowDialogsKeepTheirFirstExposedSize();
     void buttonsKeepKeyboardFocusWithoutNativeTextRectangle();
     void desktopThemeAndReviewGallery();
+    void primaryHighlightSurvivesDialogFooter();
 };
 
 static void loadPreview(QQuickView &view, PreviewDownloads &model)
@@ -471,6 +475,60 @@ void DownloadsViewTest::desktopThemeAndReviewGallery()
     const QRectF emptyBounds = empty->mapRectToItem(viewport, QRectF(QPointF(), empty->size()));
     QVERIFY(QRectF(QPointF(), viewport->size()).contains(emptyBounds));
     QVERIFY(capture("empty-small"));
+}
+
+void DownloadsViewTest::primaryHighlightSurvivesDialogFooter()
+{
+    // Qt 6.11+ DialogButtonBox rewrites `highlighted` on every polish from its
+    // defaultButton. The footer picks the first visible, non-flat AcceptRole button once,
+    // without per-dialog onOpened workarounds, and never destroys a former default.
+    QQuickView view;
+    view.setResizeMode(QQuickView::SizeRootObjectToView);
+    QQmlComponent component(view.engine());
+    component.setData(R"(
+import QtQuick
+import QtQuick.Controls as QQC2
+Item {
+    width: 600; height: 400
+    UiDialog {
+        id: d; objectName: "probeDialog"; title: "Probe"
+        contentItem: Item { implicitHeight: 40 }
+        footer: DialogFooter {
+            UiButton { objectName: "probeHidden"; text: "Hidden"; visible: false; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.AcceptRole }
+            UiButton { objectName: "probeFlat"; text: "Flat"; flat: true; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.AcceptRole }
+            UiButton { objectName: "probePrimary"; text: "Primary"; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.AcceptRole }
+            UiButton { objectName: "probeCancel"; text: "Cancel"; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.RejectRole }
+        }
+    }
+})", QUrl("qrc:/qt-ui/qml/HighlightProbe.qml"));
+    std::unique_ptr<QObject> object(component.create());
+    auto *root = qobject_cast<QQuickItem *>(object.get());
+    QVERIFY2(root, qPrintable(component.errorString()));
+    root->setParentItem(view.contentItem());
+    view.resize(600, 400); view.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&view));
+    auto *dialog = root->findChild<QObject *>("probeDialog");
+    QPointer<QObject> primary = root->findChild<QObject *>("probePrimary");
+    QPointer<QObject> cancel = root->findChild<QObject *>("probeCancel");
+    QPointer<QObject> hidden = root->findChild<QObject *>("probeHidden");
+    QPointer<QObject> flat = root->findChild<QObject *>("probeFlat");
+    QVERIFY(dialog && primary && cancel && hidden && flat);
+    for (int round = 0; round < 2; ++round) {
+        QVERIFY(QMetaObject::invokeMethod(dialog, "open"));
+        QTRY_VERIFY(dialog->property("opened").toBool());
+        QTRY_VERIFY(primary->property("highlighted").toBool());
+        auto *frame = primary->findChild<QQuickItem *>("buttonPrimaryFrame");
+        QVERIFY(frame); QTRY_VERIFY(frame->isVisible());
+        // A later polish (resize) must not clear it again.
+        if (auto *window = qobject_cast<QQuickItem *>(dialog->property("contentItem").value<QObject *>())->window())
+            window->resize(window->width() + 40, window->height());
+        QTest::qWait(100);
+        QVERIFY(primary->property("highlighted").toBool());
+        for (auto *other : {cancel.data(), hidden.data(), flat.data()}) QVERIFY(!other->property("highlighted").toBool());
+        QVERIFY(QMetaObject::invokeMethod(dialog, "close"));
+        QTRY_VERIFY(!dialog->property("visible").toBool());
+    }
+    QVERIFY(primary && cancel && hidden && flat);
 }
 
 QTEST_MAIN(DownloadsViewTest)

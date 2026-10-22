@@ -275,7 +275,6 @@ Item {
         }
         UiDialog {
             id: duplicates; objectName: "browserDuplicateDialog"
-            onOpened: browserDuplicateAdd.highlighted = true
             title: qsTr("Download Already Exists"); preferredWidth: Tokens.dialogWidthMedium
             readonly property var existing: dialog.duplicateMatches.length ? dialog.duplicateMatches[0] : null
             readonly property bool canReplace: dialog.pendingChosen.length === 1 && root.service.capabilities.indexOf("download.replace") >= 0
@@ -292,7 +291,7 @@ Item {
                     UiButton { text: qsTr("Open File"); flat: true; visible: Boolean(duplicates.existing && duplicates.existing.fileUrl.toString() !== ""); onClicked: { DesktopOpener.openFile(duplicates.existing.fileUrl, dialog); duplicates.close() } },
                     UiButton { text: qsTr("Resume Existing"); flat: true; visible: Boolean(duplicates.existing && ["paused", "failed"].indexOf(duplicates.existing.state) >= 0); enabled: !root.service.busy; onClicked: { if (root.service.resumeDownload(duplicates.existing.id)) { duplicates.close(); dialog.close() } } }
                 ]
-                UiButton { id: browserDuplicateAdd; objectName: "browserDuplicateAddNew"; text: qsTr("Add New"); icon.name: "list-add"; highlighted: true; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.AcceptRole; onClicked: { dialog.acceptChosen(dialog.pendingChosen, dialog.pendingStart, "numbered"); if (dialog.submitting) duplicates.close() } }
+                UiButton { id: browserDuplicateAdd; objectName: "browserDuplicateAddNew"; text: qsTr("Add New"); icon.name: "list-add"; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.AcceptRole; onClicked: { dialog.acceptChosen(dialog.pendingChosen, dialog.pendingStart, "numbered"); if (dialog.submitting) duplicates.close() } }
                 UiButton { objectName: "browserDuplicateOverwrite"; text: qsTr("Overwrite"); icon.name: "edit-delete"; enabled: duplicates.canReplace && !root.service.busy; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.DestructiveRole; onClicked: { dialog.acceptChosen(dialog.pendingChosen, dialog.pendingStart, "overwrite"); if (dialog.submitting) duplicates.close() } }
                 UiButton { text: qsTr("Cancel"); icon.name: "dialog-cancel"; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.RejectRole; onClicked: duplicates.reject() }
             }

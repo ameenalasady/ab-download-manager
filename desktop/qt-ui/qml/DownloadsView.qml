@@ -695,14 +695,13 @@ Item {
         id: multipleAddDialog; objectName: "multipleAddDialog"
         title: qsTr("Add Multiple Downloads"); preferredWidth: Tokens.dialogWidthMedium
         preferredHeight: Tokens.dialogHeightMedium
-        onOpened: multipleReview.highlighted = true
         contentItem: QQC2.ScrollView {
             clip: true; contentWidth: availableWidth
             QQC2.TextArea { id: multipleLinks; objectName: "multipleAddLinks"; placeholderText: qsTr("Download links"); textFormat: TextEdit.PlainText; wrapMode: TextEdit.Wrap; selectByMouse: true; Accessible.name: qsTr("Download links") }
         }
         footer: DialogFooter {
             UiButton {
-                id: multipleReview; objectName: "reviewMultipleLinks"; text: qsTr("Review"); icon.name: "view-list-details"; highlighted: true
+                id: multipleReview; objectName: "reviewMultipleLinks"; text: qsTr("Review"); icon.name: "view-list-details"
                 enabled: root.live && !root.downloads.busy && multipleLinks.text.trim() !== "" && multipleLinks.text.length <= 256 * 1024
                 QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.AcceptRole
                 onClicked: { if (root.downloads.reviewLinks(multipleLinks.text)) multipleAddDialog.close() }
@@ -718,7 +717,6 @@ Item {
         readonly property bool moving: operation === "download.move"
         title: moving ? qsTr("Move / Rename Download") : qsTr("Reset Download Progress?")
         preferredWidth: Tokens.dialogWidthMedium
-        onOpened: mutationConfirm.highlighted = true
         contentItem: ColumnLayout {
             spacing: Tokens.contentSpacing
             // Move/Rename already shows the name in its editable field.
@@ -736,7 +734,7 @@ Item {
             UiButton {
                 id: mutationConfirm; objectName: "confirmDownloadMutation"; text: mutationDialog.moving ? qsTr("Move / Rename") : qsTr("Reset")
                 icon.name: mutationDialog.moving ? "edit-rename" : "view-refresh"
-                highlighted: true; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.AcceptRole
+                QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.AcceptRole
                 enabled: root.live && root.downloads.canMutateDownload(mutationDialog.targetId, mutationDialog.operation) && (!mutationDialog.moving || (moveName.text.trim() !== "" && moveFolder.text.trim() !== ""))
                 onClicked: {
                     if (mutationDialog.moving ? root.downloads.moveDownload(mutationDialog.targetId, moveName.text, moveFolder.text) : root.downloads.resetDownload(mutationDialog.targetId)) mutationDialog.close()
@@ -759,7 +757,6 @@ Item {
     }
     UiDialog {
         id: addDialog; objectName: "addExampleDialog"; property var categoryChoices: []
-        onOpened: { startDownloadButton.highlighted = root.live; addExample.highlighted = !root.live }
         title: qsTr("New Download")
         preferredWidth: Tokens.dialogWidthMedium
         onClosed: { root.addOptions = ({}); sourceInput.text = ""; nameInput.text = "" }
@@ -819,14 +816,13 @@ Item {
             StatusMessage { type: Kirigami.MessageType.Error; message: root.downloads.errorMessage }
         }
         footer: DialogFooter {
-            UiButton { id: startDownloadButton; objectName: "confirmStartDownload"; text: qsTr("Download"); icon.name: "download"; highlighted: true; visible: root.live; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.AcceptRole; onClicked: { if (root.submitDownload(true)) addDialog.accept() } }
-            UiButton { id: addExample; objectName: "confirmAddExample"; text: root.live ? qsTr("Add Paused") : qsTr("Add"); icon.name: "list-add"; highlighted: !root.live; QQC2.DialogButtonBox.buttonRole: root.live ? QQC2.DialogButtonBox.AlternateRole : QQC2.DialogButtonBox.AcceptRole; onClicked: { if (root.submitDownload(false)) addDialog.accept() } }
+            UiButton { id: startDownloadButton; objectName: "confirmStartDownload"; text: qsTr("Download"); icon.name: "download"; visible: root.live; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.AcceptRole; onClicked: { if (root.submitDownload(true)) addDialog.accept() } }
+            UiButton { id: addExample; objectName: "confirmAddExample"; text: root.live ? qsTr("Add Paused") : qsTr("Add"); icon.name: "list-add"; QQC2.DialogButtonBox.buttonRole: root.live ? QQC2.DialogButtonBox.AlternateRole : QQC2.DialogButtonBox.AcceptRole; onClicked: { if (root.submitDownload(false)) addDialog.accept() } }
             UiButton { text: qsTr("Cancel"); icon.name: "dialog-cancel"; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.RejectRole; onClicked: addDialog.reject() }
         }
     }
     UiDialog {
         id: duplicateDialog; objectName: "duplicateDownloadDialog"
-        onOpened: duplicateAddButton.highlighted = true
         property var matches: []
         property bool fileExists: false
         property bool start: false
@@ -857,14 +853,13 @@ Item {
                     onClicked: { if (root.downloads.resumeDownload(duplicateDialog.existing.id)) { duplicateDialog.close(); addDialog.close() } }
                 }
             ]
-            UiButton { id: duplicateAddButton; objectName: "duplicateAddNew"; text: qsTr("Add New"); icon.name: "list-add"; highlighted: true; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.AcceptRole; onClicked: { if (root.sendDownload(duplicateDialog.start, "numbered")) { duplicateDialog.close(); addDialog.accept() } } }
+            UiButton { id: duplicateAddButton; objectName: "duplicateAddNew"; text: qsTr("Add New"); icon.name: "list-add"; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.AcceptRole; onClicked: { if (root.sendDownload(duplicateDialog.start, "numbered")) { duplicateDialog.close(); addDialog.accept() } } }
             UiButton { objectName: "duplicateOverwrite"; text: qsTr("Overwrite"); icon.name: "edit-delete"; enabled: duplicateDialog.canReplace; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.DestructiveRole; onClicked: { if (root.sendDownload(duplicateDialog.start, "overwrite")) { duplicateDialog.close(); addDialog.accept() } } }
             UiButton { text: qsTr("Cancel"); icon.name: "dialog-cancel"; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.RejectRole; onClicked: duplicateDialog.reject() }
         }
     }
     UiDialog {
         id: removeDialog; objectName: "removeExampleDialog"
-        onOpened: removeConfirm.highlighted = true
         property string targetId: ""; property string targetName: ""; property var targetIds: []
         title: targetIds.length > 1 ? qsTr("Remove %1 Downloads?").arg(targetIds.length) : qsTr("Remove Download?")
         preferredWidth: Tokens.dialogWidthSmall
