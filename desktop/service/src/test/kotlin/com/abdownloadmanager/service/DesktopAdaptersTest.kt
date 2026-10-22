@@ -57,6 +57,35 @@ class DesktopAdaptersTest {
         } finally { lifecycle.stop(); root.toFile().deleteRecursively() }
     }
 
+    @Test fun activityHelperThatIgnoresStdinEofIsStoppedByTheTermFallback() = runBlocking {
+        val root = Files.createTempDirectory("abdm-activity-term-test-")
+        val pidFile = root.resolve("helper.pid").toFile()
+        // Never reads stdin, so closing it cannot stop the helper; only TERM can.
+        val helper = root.resolve("monitor.sh").toFile().apply {
+            writeText("""
+                echo ${'$'}${'$'} > "${'$'}1"
+                printf 'ready\n'
+                while :; do sleep 0.05; done
+            """.trimIndent())
+        }
+        val lifecycle = ServiceLifecycle(root, launcher = FrontendLauncher(null), activityCommand = listOf("/bin/sh", helper.path, pidFile.path))
+        try {
+            val engine = lifecycle.start()
+            suspend fun activity() = engine.snapshot().getValue("activity").jsonObject
+            engine.command(buildJsonObject { put("op", "settings.update"); put("settings", buildJsonObject { put("speedLimit", "1024"); put("useSpeedLimit", "EnabledWhenBessy") }) })
+            withTimeout(5000) { while (!activity().getValue("available").jsonPrimitive.boolean || pidFile.length() == 0L) delay(20) }
+            val pid = pidFile.readText().trim().toLong()
+            assertTrue(ProcessHandle.of(pid).map { it.isAlive }.orElse(false))
+            val started = System.nanoTime()
+            engine.command(buildJsonObject { put("op", "settings.update"); put("settings", buildJsonObject { put("useSpeedLimit", "Disabled") }) })
+            withTimeout(10_000) { while (activity().getValue("monitor").jsonPrimitive.content != "stopped") delay(20) }
+            // The EOF grace period elapsed before TERM, and TERM actually ended the helper.
+            assertTrue(System.nanoTime() - started >= 1_500_000_000L)
+            withTimeout(5000) { while (ProcessHandle.of(pid).map { it.isAlive }.orElse(false)) delay(20) }
+            assertFalse(activity().getValue("available").jsonPrimitive.boolean)
+        } finally { lifecycle.stop(); root.toFile().deleteRecursively() }
+    }
+
     @Test fun clipboardReviewKeepsCredentialsServiceSideAndCompletionNotificationHonorsSound() = runBlocking {
         val root = Files.createTempDirectory("abdm-notice-test-")
         val notices = Notices()

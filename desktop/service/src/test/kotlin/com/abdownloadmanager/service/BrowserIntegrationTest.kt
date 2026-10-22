@@ -31,7 +31,24 @@ class BrowserIntegrationTest {
         start()
     }
 
-    private fun freePort() = ServerSocket(0).use { it.localPort }
+    // The service needs a concrete port, so a test reserves one before the service binds it.
+    // An ephemeral port (ServerSocket(0)) could be handed to another parallel test fork in
+    // between. Instead pick from below Linux's ephemeral range (32768+), where nothing is
+    // assigned automatically, and hold a cross-process lock file for the test's duration.
+    private val reservedPorts = mutableListOf<java.nio.channels.FileChannel>()
+    private fun freePort(): Int {
+        val dir = Path.of(System.getProperty("java.io.tmpdir"), "abdm-test-ports"); Files.createDirectories(dir)
+        repeat(500) {
+            val port = 20000 + kotlin.random.Random.nextInt(10000)
+            val channel = java.nio.channels.FileChannel.open(dir.resolve("$port.lock"),
+                java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.WRITE)
+            val lock = runCatching { channel.tryLock() }.getOrNull()
+            if (lock != null && runCatching { ServerSocket(port).close() }.isSuccess) { reservedPorts += channel; return port }
+            channel.close() // Also releases a lock taken on an occupied port.
+        }
+        error("No free test port")
+    }
+    @AfterTest fun releasePorts() { reservedPorts.forEach { it.close() }; reservedPorts.clear() }
 
     private fun profile(settings: String): Path = Files.createTempDirectory("abdm-browser-test-").also {
         val file = it.resolve("app-data/config/appSettings.json").toFile()
@@ -176,6 +193,27 @@ class BrowserIntegrationTest {
                 assertFails { post(port, "ping", "null", key = "rotated-key") }
             } finally { lifecycle.stop(); root.toFile().deleteRecursively() }
         } finally { occupied.stop(0) }
+    }
+
+    @Test fun silentPortOccupantIsReportedAsAnotherApplicationAfterTheIdentityTimeout() = runBlocking<Unit> {
+        // Accepts connections in the kernel backlog but never answers: the identity probe
+        // must time out and report a foreign occupant, not hang or claim another ABDM.
+        ServerSocket(0, 50, java.net.InetAddress.getByName("127.0.0.1")).use { occupied ->
+            val settings = """{"apiEnabled":true,"apiPort":${occupied.localPort}}"""
+            val root = profile(settings)
+            val lifecycle = ServiceLifecycle(root, browserIntegration = true)
+            try {
+                val engine = lifecycle.start(); engine.awaitBrowserBridge()
+                val status = engine.snapshot().getValue("browserIntegration").jsonObject
+                assertEquals("failed", status.getValue("state").jsonPrimitive.content)
+                assertTrue(status.getValue("error").jsonPrimitive.content.contains("another application"))
+                assertEquals(settings, root.resolve("app-data/config/appSettings.json").toFile().readText())
+                // Disabling cancels the pending bind retry (the stop would otherwise wait for it).
+                engine.command(buildJsonObject { put("op", "browser.settings"); put("settings", buildJsonObject { put("apiEnabled", false) }) })
+                engine.awaitBrowserBridge()
+                assertEquals("disabled", engine.snapshot().getValue("browserIntegration").jsonObject.getValue("state").jsonPrimitive.content)
+            } finally { lifecycle.stop(); root.toFile().deleteRecursively() }
+        }
     }
 
     @Test fun coexistenceRetriesOnlyBindingAndResumesWhenThePortIsReleased() = runBlocking {
