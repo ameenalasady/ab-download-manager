@@ -7,6 +7,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QLocalServer>
+#include <QMimeData>
 #include <QQuickItem>
 #include <QQuickStyle>
 #include <QQuickView>
@@ -374,6 +375,44 @@ private slots:
         QVERIFY(!dialog->property("visible").toBool());
         view.close(); view.setSource(QUrl()); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     }
+    void droppedLinksOpenTheSharedReview() {
+        FakeService service; service.reviewCapability = service.browserCapability = service.runtimeCapability = true;
+        for (const auto &name : {"alpha.zip", "beta.zip"}) service.reviewItems.append(QJsonObject{
+            {"url", "https://example.invalid/" + QString(name)}, {"name", name}, {"hasHeaders", false}, {"downloadPage", QJsonValue::Null}});
+        service.extensionSnapshot = {{"queues", QJsonArray{}}, {"settings", basicSettings()}, {"browserRequests", QJsonArray{}},
+            {"browserIntegration", QJsonObject{{"state", "disabled"}, {"error", QJsonValue::Null}, {"enabled", false}, {"port", 15151}, {"auth", false}}},
+            {"runtime", QJsonObject{{"mode", "explicit-runtime"}, {"destination", "/downloads"}, {"destinationRoots", QJsonArray{"/downloads"}}, {"redirects", true}, {"proxy", "direct"}}}};
+        ServiceDownloads model(service.descriptor); QTRY_COMPARE(model.connectionState(), "ready");
+        QQuickView view; view.setResizeMode(QQuickView::SizeRootObjectToView); view.resize(1000, 700);
+        view.setInitialProperties({{"downloads", QVariant::fromValue(&model)}});
+        view.setSource(QUrl("qrc:/qt-ui/qml/DownloadsView.qml")); view.show(); QCOMPARE(view.status(), QQuickView::Ready);
+        QVERIFY(QTest::qWaitForWindowExposed(&view));
+        auto *overlay = qobject_cast<QQuickItem *>(view.rootObject()->findChild<QObject *>("linkDropOverlay")); QVERIFY(overlay);
+        const QPoint at(500, 350);
+        const auto drag = [&](QMimeData *data) {
+            QDragEnterEvent enter(at, Qt::CopyAction | Qt::MoveAction, data, Qt::LeftButton, Qt::NoModifier);
+            QGuiApplication::sendEvent(&view, &enter);
+            return enter.isAccepted();
+        };
+        const auto leave = [&] { QDragLeaveEvent left; QGuiApplication::sendEvent(&view, &left); };
+        // Local files are not links: refused, nothing is read or sent.
+        QMimeData files; files.setUrls({QUrl::fromLocalFile("/tmp/list.txt")});
+        QVERIFY(!drag(&files)); QVERIFY(!overlay->isVisible()); leave();
+        QMimeData links; links.setUrls({QUrl("https://example.invalid/alpha.zip"), QUrl("file:///tmp/x"), QUrl("https://example.invalid/beta.zip")});
+        links.setText("ignored when URLs are present");
+        QVERIFY(drag(&links));
+        QTRY_VERIFY(overlay->isVisible());
+        QCOMPARE(overlay->findChild<QQuickItem *>()->property("text").toString(), "Drop to add 2 links");
+        QDropEvent drop(QPointF(at), Qt::CopyAction | Qt::MoveAction, &links, Qt::LeftButton, Qt::NoModifier);
+        QGuiApplication::sendEvent(&view, &drop);
+        QTRY_COMPARE(service.lastCommand["op"].toString(), "links.review");
+        QCOMPARE(service.lastCommand["text"].toString(), "https://example.invalid/alpha.zip\nhttps://example.invalid/beta.zip");
+        QVERIFY(!overlay->isVisible());
+        QObject *review = nullptr;
+        QTRY_VERIFY((review = view.rootObject()->findChild<QObject *>("browserRequestDialog")) && review->property("visible").toBool());
+        QCOMPARE(service.commands, 1);
+        view.close(); view.setSource(QUrl()); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    }
     void tasksMenuDispatchesGlobalCommandsWithoutSelection() {
         FakeService service; service.tasksCapability = true;
         ServiceDownloads model(service.descriptor); QTRY_COMPARE(model.rowCount(), 1);
@@ -438,6 +477,13 @@ private slots:
         const auto root = view.rootObject();
         QTest::mouseMove(&view, QPoint(900, 500)); // The offscreen cursor starts over the File button.
         capture("main");
+        {
+            QMimeData links; links.setUrls({QUrl("https://mirror.example.invalid/a.zip"), QUrl("https://mirror.example.invalid/b.zip")});
+            QDragEnterEvent enter(QPoint(600, 350), Qt::CopyAction, &links, Qt::LeftButton, Qt::NoModifier);
+            QGuiApplication::sendEvent(&view, &enter); QVERIFY(enter.isAccepted());
+            capture("drop-links");
+            QDragLeaveEvent left; QGuiApplication::sendEvent(&view, &left);
+        }
         QVERIFY(QMetaObject::invokeMethod(root, "openActionsMenu")); capture("actions-menu");
         QMetaObject::invokeMethod(root->findChild<QObject *>("exampleActionsMenu"), "close"); QTest::qWait(200);
         QVERIFY(QMetaObject::invokeMethod(root, "openMenu", Q_ARG(QString, "File"))); capture("file-menu");

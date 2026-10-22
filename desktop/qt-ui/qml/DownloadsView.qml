@@ -277,6 +277,13 @@ Item {
         menu.x = Math.round(p.x); menu.y = Math.round(p.y); menu.open()
     }
     Shortcut { sequences: [StandardKey.New]; enabled: !root.modalOpen; onActivated: root.openAddDialog() }
+    // Links dragged in from a browser or editor go to the shared review, like Multiple Add.
+    // Only http(s) URLs or text; local files are not read.
+    function droppedLinkText(text: string, urls: var): string {
+        const links = Array.from(urls || []).map(u => u.toString()).filter(u => /^https?:\/\//i.test(u))
+        return links.length > 0 ? links.join("\n") : text
+    }
+    function droppedLinkCount(text: string): int { return (text.match(/https?:\/\/\S+/gi) || []).length }
     Shortcut { sequences: [StandardKey.Find]; enabled: !root.modalOpen; onActivated: { searchField.forceActiveFocus(); searchField.selectAll() } }
     component Caption: QQC2.Label { color: theme.secondary; elide: Text.ElideRight; textFormat: Text.PlainText }
     component GroupCaption: Caption {
@@ -930,6 +937,35 @@ Item {
                 onClicked: { if (root.live) { if (root.downloads.forgetDownloads(removeDialog.targetIds, removeDeleteFiles.visible && removeDeleteFiles.checked)) removeDialog.accept() } else if (JSON.stringify(root.downloads.selectedIds) === JSON.stringify(removeDialog.targetIds)) { root.downloads.removeSelected(); removeDialog.accept() } }
             }
             UiButton { text: qsTr("Cancel"); icon.name: "dialog-cancel"; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.RejectRole; onClicked: removeDialog.reject() }
+        }
+    }
+    DropArea {
+        id: linkDrop; objectName: "linkDropArea"
+        anchors.fill: parent; z: 10
+        enabled: root.live && root.downloads.capabilities.indexOf("links.review") >= 0 && !root.modalOpen && !root.downloads.busy
+        property int count: 0
+        onEntered: drag => {
+            count = root.droppedLinkCount(root.droppedLinkText(drag.text, drag.urls))
+            drag.accepted = count > 0 && (drag.supportedActions & Qt.CopyAction) !== 0
+        }
+        onExited: count = 0
+        onDropped: drop => {
+            const text = root.droppedLinkText(drop.text, drop.urls)
+            count = 0
+            if (root.droppedLinkCount(text) > 0 && root.downloads.reviewLinks(text)) drop.accept(Qt.CopyAction)
+        }
+        Rectangle {
+            objectName: "linkDropOverlay"
+            anchors.fill: parent; anchors.margins: Tokens.spacingM
+            visible: linkDrop.containsDrag && linkDrop.count > 0
+            radius: Tokens.radius
+            color: Qt.alpha(theme.surface, 0.9)
+            border.width: Tokens.focusRingWidth; border.color: theme.accent
+            SectionHeading {
+                anchors.centerIn: parent
+                level: Tokens.headingPage
+                text: linkDrop.count === 1 ? qsTr("Drop to add 1 link") : qsTr("Drop to add %1 links").arg(linkDrop.count)
+            }
         }
     }
 }
