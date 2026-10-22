@@ -21,4 +21,6 @@ public:
     Q_INVOKABLE bool openFile(const QUrl &url, QWindow *window = nullptr);
     // Containing folder in the file manager, with the file selected when supported.
     Q_INVOKABLE bool showInFolder(const QUrl &url, QWindow *window = nullptr);
+    // A web page (http/https only, no embedded credentials) in the user's browser.
+    Q_INVOKABLE bool openWebPage(const QUrl &url, QWindow *window = nullptr);
 };

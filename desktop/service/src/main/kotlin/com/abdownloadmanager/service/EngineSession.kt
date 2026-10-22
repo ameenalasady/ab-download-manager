@@ -667,7 +667,9 @@ class EngineSession(
                     if (op == "download.stopAll") jobControl.mutate {
                         val jobs = manager.downloadJobs.toList()
                         jobs.filter { it.isDownloadActive.value || manager.getJobStatusOf(it.id) is DownloadJobStatus.IsActive }.forEach { it.pause() }
-                        jobs.forEach { it.activeDownloadScope?.coroutineContext?.job?.join() }
+                        // Bounded: one job that never drains must not block every later command.
+                        withTimeoutOrNull(30_000) { jobs.forEach { it.activeDownloadScope?.coroutineContext?.job?.join() } }
+                            ?: error("Some downloads are still stopping")
                     }
                 }
                 "download.reset", "download.move" -> jobControl.mutate {
@@ -680,14 +682,17 @@ class EngineSession(
                     val draft = item.copy()
                     if (op == "download.move") {
                         draft.name = request["name"]?.jsonPrimitive?.content ?: error("Missing file name")
-                        draft.folder = request["folder"]?.jsonPrimitive?.content ?: error("Missing folder")
+                        val folder = Path.of(request["folder"]?.jsonPrimitive?.content ?: error("Missing folder"))
                         require(draft.name.length in 1..180 && draft.name != "." && draft.name != ".." &&
                             draft.name.none { it == '/' || it == '\\' || it.isISOControl() }) { "Invalid file name" }
-                        runtime.validateFolder(Path.of(draft.folder))
+                        runtime.validateFolder(folder)
+                        // Store and compare the canonical spelling: "/a/b/" and "/a/b" are one folder.
+                        draft.folder = folder.toString()
                         val target = File(draft.folder, draft.name)
                         runtime.validateDestination(target.toPath())
-                        if (draft.folder == item.folder && draft.name == item.name) { put("id", id.toString()); return@mutate }
-                        require(manager.getDownloadList().none { it.id != id && it.folder == draft.folder && it.name == draft.name }) { "Another download uses that destination" }
+                        val sameFolder = { other: String -> runCatching { Path.of(other).toAbsolutePath().normalize() == folder }.getOrDefault(false) }
+                        if (sameFolder(item.folder) && draft.name == item.name) { put("id", id.toString()); return@mutate }
+                        require(manager.getDownloadList().none { it.id != id && it.name == draft.name && sameFolder(it.folder) }) { "Another download uses that destination" }
                         // The original mover replaces files: reject BOTH destination names before calling it.
                         for (file in listOf(target, IncompleteFileUtil.addIncompleteIndicator(target, id))) {
                             runtime.validateDestination(file.toPath())

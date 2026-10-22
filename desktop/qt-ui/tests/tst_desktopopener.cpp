@@ -24,6 +24,13 @@ public slots:
         options = value;
         return QDBusObjectPath(QStringLiteral("/org/freedesktop/portal/desktop/request/fixture/1"));
     }
+    QDBusObjectPath OpenURI(const QString &, const QString &value, const QVariantMap &) {
+        ++uris; uri = value;
+        return QDBusObjectPath(QStringLiteral("/org/freedesktop/portal/desktop/request/fixture/2"));
+    }
+public:
+    int uris = 0;
+    QString uri;
 };
 class FileManagerFixture : public QObject {
     Q_OBJECT
@@ -69,6 +76,14 @@ private slots:
             QVERIFY(!opener.openFile(url));
         QVERIFY(!opener.showInFolder(QUrl::fromLocalFile(fifo)));
         QTest::qWait(50); QCOMPARE(portal.calls, 1); QCOMPARE(manager.items, 1);
+        // Download pages go to the session's browser through the portal, never a private xdg-open.
+        QVERIFY(opener.openWebPage(QUrl("https://example.invalid/page?q=a b#part")));
+        QTRY_COMPARE(portal.uris, 1);
+        QCOMPARE(portal.uri, QStringLiteral("https://example.invalid/page?q=a%20b#part"));
+        for (const auto &url : {QUrl(), QUrl("file:///etc/passwd"), QUrl("javascript:alert(1)"), QUrl("https://user:pw@example.invalid/"),
+                               QUrl("http:///nohost")})
+            QVERIFY(!opener.openWebPage(url));
+        QTest::qWait(50); QCOMPARE(portal.uris, 1);
         bus.unregisterObject("/org/freedesktop/portal/desktop");
         bus.unregisterObject("/org/freedesktop/FileManager1");
         bus.unregisterService("org.freedesktop.portal.Desktop");

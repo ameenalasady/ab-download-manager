@@ -63,4 +63,23 @@ class DownloadActionsTest {
             } finally { lifecycle.stop(); root.toFile().deleteRecursively() }
         }
     }
+    @Test fun moveTreatsTrailingSlashAsTheSameFolder() = runBlocking {
+        val root = Files.createTempDirectory("abdm-actions-")
+        val lifecycle = ServiceLifecycle(root)
+        try {
+            val engine = lifecycle.start()
+            suspend fun add(name: String) = engine.command(buildJsonObject {
+                put("op", "add"); put("url", "http://127.0.0.1:12345/$name"); put("name", name)
+            }).getValue("id").jsonPrimitive.content
+            val first = add("first.bin"); val second = add("second.bin")
+            val folder = root.resolve("Downloads").toString()
+            // Another download's destination, spelled with a trailing slash, is still occupied.
+            assertFails { engine.command(request("download.move", second, "first.bin", "$folder/")) }
+            engine.command(request("download.move", second, "renamed.bin", "$folder/"))
+            val row = engine.snapshot().getValue("rows").jsonArray.map { it.jsonObject }.single { it.getValue("id").jsonPrimitive.content == second }
+            assertEquals("renamed.bin", row.getValue("name").jsonPrimitive.content)
+            assertEquals(folder, row.getValue("details").jsonObject.getValue("folder").jsonPrimitive.content)
+            assertNotEquals(first, second)
+        } finally { lifecycle.stop(); root.toFile().deleteRecursively() }
+    }
 }

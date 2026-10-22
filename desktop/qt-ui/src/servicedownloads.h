@@ -187,6 +187,7 @@ private:
     bool matchesCategory(const QJsonObject &row, const QString &category) const;
     QString m_descriptor, m_token, m_epoch, m_clientId, m_pending, m_state = "disconnected";
     QString m_category = "all", m_search, m_selected, m_anchor, m_error, m_commandOperation, m_selectOnSnapshot;
+    QString m_probeRequest; int m_probeIndex = -1; // In-flight browser.probe, for its failure reply.
     QSet<QString> m_selection;
     QList<QJsonObject> m_batch;
     QString m_commandTarget, m_errorTarget, m_windowEpoch;

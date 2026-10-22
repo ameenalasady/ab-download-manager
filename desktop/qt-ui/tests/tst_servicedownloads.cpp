@@ -165,7 +165,7 @@ public:
                         reply["result"] = QJsonObject{{"ok", true}, {"requestId", "manual-review"}};
                     }
                     if (reviewCapability && request["op"] == "browser.probe")
-                        reply["result"] = QJsonObject{{"ok", true}, {"requestId", request["requestId"]}, {"index", request["index"]}, {"size", "3145728"}};
+                        reply["result"] = QJsonObject{{"ok", true}, {"requestId", request["requestId"]}, {"index", request["index"]}, {"statusCode", 206}, {"size", "3145728"}};
                     if (fulfillBrowserAccept && request["op"] == "browser.accept" && reply["result"].toObject()["ok"].toBool()) {
                         QJsonArray ids;
                         for (const auto &value : request["items"].toArray()) {
@@ -294,6 +294,8 @@ private slots:
         if (hold) { QVERIFY(reviewFrame(view, qEnvironmentVariable("QT_ADAPTER_CAPTURE_DIR", service.directory.path()) + "/list-client.png", QSize(1120, 700))); QTest::qWait(hold); }
         model.setSearch("Zeta"); QCOMPARE(model.selectionCount(), 1); QCOMPARE(model.statistics()["selectedBytes"].toString(), "1000");
         QCOMPARE(model.statistics()["queuedCount"].toInt(), 1); // Global, not filtered.
+        model.setSearch("no such download"); QCOMPARE(model.selectionCount(), 0);
+        QTRY_COMPARE(status->property("text").toString(), QString()); // No "0 selected · 0 B".
         view.close(); QTest::qWait(100);
         view.setSource(QUrl()); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete); QTest::qWait(100);
     }
