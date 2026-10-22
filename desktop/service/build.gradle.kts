@@ -30,6 +30,13 @@ tasks.processResources {
 // Changing that opt-in must invalidate Gradle's test cache.
 tasks.test {
     inputs.property("privateNotificationBus", providers.environmentVariable("ABDM_TEST_PRIVATE_BUS").orElse("0"))
+    // Classes own unique temporary profiles and ephemeral loopback ports. Use JVM
+    // forks, not concurrent methods: CategoryRepositoryTest inspects JVM-global
+    // service-owner threads, and DesktopNotificationBusTest owns one private bus name.
+    // JUnit 4 runs each class sequentially within its fork.
+    maxParallelForks = providers.gradleProperty("abdmTestForks").map { it.toInt() }
+        .getOrElse(minOf(8, Runtime.getRuntime().availableProcessors().coerceAtLeast(1)))
+    require(maxParallelForks > 0) { "abdmTestForks must be positive" }
 }
 
 application { mainClass.set("com.abdownloadmanager.service.IsolatedServiceKt") }

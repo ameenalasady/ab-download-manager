@@ -18,6 +18,8 @@
 #include <QClipboard>
 #include <QApplication>
 #include <QProcess>
+#include <QThread>
+#include <vector>
 
 static QByteArray encode(const QJsonObject &object) {
     const auto bytes = QJsonDocument(object).toJson(QJsonDocument::Compact);
@@ -2493,22 +2495,86 @@ int main(int argc, char **argv) {
     }
     QCoreApplication app(argc, argv);
     const auto &meta = ServiceDownloadsTest::staticMetaObject;
-    int result = 0;
+    bool jobsOk = false;
+    const auto jobsValue = qEnvironmentVariable("ABDM_TEST_JOBS");
+    int jobs = jobsValue.isEmpty() ? qMin(8, qMax(1, QThread::idealThreadCount())) : jobsValue.toInt(&jobsOk);
+    if (!jobsValue.isEmpty() && (!jobsOk || jobs < 1)) {
+        qCritical() << "ABDM_TEST_JOBS must be a positive integer";
+        return 2;
+    }
+    // Galleries share capture paths/display interaction; real-engine opt-ins share
+    // one service. Preserve their sequential contract even with an explicit job count.
+    for (const auto &entry : QProcessEnvironment::systemEnvironment().toStringList()) {
+        const auto key = entry.section('=', 0, 0);
+        if (key == "QT_SERVICE_TEST_DESCRIPTOR" || (key.startsWith("QT_")
+            && (key.endsWith("_HOLD_MS") || key.endsWith("_CAPTURE_DIR")))) jobs = 1;
+    }
+    QStringList cases, failures;
     for (int i = meta.methodOffset(); i < meta.methodCount(); ++i) {
         const auto method = meta.method(i); const auto name = method.name();
         if (method.methodType() != QMetaMethod::Slot || method.parameterCount() || method.returnMetaType().id() != QMetaType::Void
             || name == "initTestCase" || name == "cleanupTestCase" || name == "init" || name == "cleanup") continue;
-        QProcess child;
-        child.setProcessChannelMode(QProcess::ForwardedChannels);
-        child.start(QCoreApplication::applicationFilePath(), {QString::fromLatin1(name), QStringLiteral("-nocrashhandler")});
-        if (!child.waitForStarted(5000)) { qCritical() << "Cannot start test case" << name; result = 1; continue; }
-        if (!child.waitForFinished(120000)) {
-            qCritical() << "Test case timed out" << name;
-            child.kill(); child.waitForFinished(5000); result = 1;
-        } else if (child.exitStatus() != QProcess::NormalExit || child.exitCode() != 0) {
-            qCritical() << "Test case failed" << name << child.exitCode(); result = 1;
-        }
+        cases.append(QString::fromLatin1(name));
     }
-    return result;
+    struct Case {
+        QString name;
+        QProcess process;
+        QElapsedTimer elapsed;
+        QByteArray output;
+    };
+    std::vector<std::unique_ptr<Case>> running;
+    int next = 0;
+    QFile output;
+    if (!output.open(stdout, QIODevice::WriteOnly)) {
+        qCritical() << "Cannot open test output";
+        return 2;
+    }
+    const auto finish = [&](Case &test, const QString &error = {}) {
+        test.output += test.process.readAll();
+        output.write(test.output);
+        // Write directly: desktop Qt logging rules can suppress qInfo outside QtTest.
+        output.write(QStringLiteral("CASE %1: %2 ms (%3)\n").arg(test.name).arg(test.elapsed.elapsed())
+            .arg(error.isEmpty() ? QStringLiteral("passed") : error).toUtf8());
+        output.flush();
+        if (!error.isEmpty()) failures.append(test.name);
+    };
+    output.write(QStringLiteral("Running %1 isolated cases with %2 jobs\n").arg(cases.size()).arg(jobs).toUtf8());
+    output.flush();
+    QEventLoop loop;
+    QTimer poll;
+    QObject::connect(&poll, &QTimer::timeout, &loop, [&] {
+        for (auto it = running.begin(); it != running.end();) {
+            auto &test = **it;
+            test.output += test.process.readAll();
+            if (test.process.state() == QProcess::NotRunning) {
+                finish(test, test.process.exitStatus() != QProcess::NormalExit || test.process.exitCode() != 0
+                    ? QStringLiteral("failed, exit %1").arg(test.process.exitCode()) : QString());
+                it = running.erase(it);
+            } else if (test.elapsed.elapsed() >= 120000) {
+                test.process.kill();
+                test.process.waitForFinished(5000);
+                finish(test, QStringLiteral("timed out after 120 s"));
+                it = running.erase(it);
+            } else ++it;
+        }
+        while (next < cases.size() && int(running.size()) < jobs) {
+            auto test = std::make_unique<Case>();
+            test->name = cases[next++];
+            test->process.setProcessChannelMode(QProcess::MergedChannels);
+            test->elapsed.start();
+            test->process.start(QCoreApplication::applicationFilePath(), {test->name, QStringLiteral("-nocrashhandler")});
+            if (!test->process.waitForStarted(5000)) {
+                finish(*test, QStringLiteral("cannot start: %1").arg(test->process.errorString()));
+            } else running.push_back(std::move(test));
+        }
+        if (next == cases.size() && running.empty()) loop.quit();
+    });
+    poll.start(10);
+    loop.exec();
+    if (!failures.isEmpty()) {
+        output.write(("Failing cases: " + failures.join(", ") + '\n').toUtf8());
+        output.flush();
+    }
+    return failures.isEmpty() ? 0 : 1;
 }
 #include "tst_servicedownloads.moc"
