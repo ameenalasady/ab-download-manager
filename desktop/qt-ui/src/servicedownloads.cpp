@@ -757,7 +757,7 @@ bool ServiceDownloads::command(QJsonObject cmd) {
     if (m_state != "ready" || !m_pending.isEmpty()) { fail(tr("Service busy or disconnected. Try again after synchronization.")); return false; }
     if (!m_capabilities.contains(cmd["op"].toString())) { fail(tr("This service does not support that operation.")); return false; }
     m_commandOperation = cmd["op"].toString();
-    m_commandTarget = cmd["id"].toString();
+    m_commandTarget = cmd.value("id").toString();
     m_pending = QUuid::createUuid().toString(QUuid::WithoutBraces);
     cmd["type"] = "command"; cmd["epoch"] = m_epoch; cmd["commandId"] = m_pending;
     // One request in flight: a routine snapshot defers, never rejects, a user command.
@@ -1097,5 +1097,8 @@ bool ServiceDownloads::updateIntegration(const QVariantMap &settings) {
 bool ServiceDownloads::importLinks(const QString &text) {
     if (text.size() > 256 * 1024) { fail(tr("Clipboard text is too large.")); return false; }
     return command({{"op", "links.import"}, {"text", text}});
+}
+bool ServiceDownloads::taskCommand(const QString &operation) {
+    return QStringList{"queue.startAll", "queue.stopAll", "download.stopAll"}.contains(operation) && command({{"op", operation}});
 }
 bool ServiceDownloads::shutdownService() { return command({{"op", "service.shutdown"}}); }

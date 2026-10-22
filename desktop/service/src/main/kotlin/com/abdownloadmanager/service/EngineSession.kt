@@ -158,7 +158,8 @@ class EngineSession(
             "browser.dismiss", "browser.settings", "settings.integration", "frontend.activate", "links.import",
             "system.activity", "download.probe", "download.review", "history.page", "history.delta", "download.windows", "download.parts",
             "download.replace", "download.delete", "settings.folder", "settings.duplicates",
-            "download.reset", "download.move", "download.links", "settings.sort")
+            "download.reset", "download.move", "download.links", "settings.sort",
+            "queue.startAll", "queue.stopAll", "download.stopAll")
     }
 
     /** A frontend polled; browser requests then wait for it instead of launching one.
@@ -649,6 +650,17 @@ class EngineSession(
                 "browser.settings" -> {
                     preferences.updateBrowser(request["settings"]?.jsonObject ?: error("Missing settings"))
                     bridge.apply(preferences.browser())
+                }
+                "queue.startAll" -> queues.getAll().forEach { if (!it.isQueueActive) it.start() }
+                "queue.stopAll", "download.stopAll" -> {
+                    // Stop producers before the active jobs so a freed slot cannot refill.
+                    if (op == "download.stopAll") manual.clearQueue()
+                    queues.getAll().forEach { it.stopAsync() }
+                    if (op == "download.stopAll") {
+                        val jobs = manager.downloadJobs.toList()
+                        jobs.filter { it.isDownloadActive.value || manager.getJobStatusOf(it.id) is DownloadJobStatus.IsActive }.forEach { it.pause() }
+                        jobs.forEach { it.activeDownloadScope?.coroutineContext?.job?.join() }
+                    }
                 }
                 "download.reset", "download.move" -> {
                     val id = request["id"]?.jsonPrimitive?.content?.toLongOrNull() ?: error("Invalid stable ID")

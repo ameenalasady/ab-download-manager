@@ -40,7 +40,7 @@ public:
     bool browserCapability = false, desktopCapability = false, windowsCapability = false;
     // New negotiated settings/duplicate extensions.
     bool folderCapability = false, duplicateCapability = false, replaceCapability = false;
-    bool actionsCapability = false, sortCapability = false;
+    bool actionsCapability = false, sortCapability = false, tasksCapability = false;
     // Serial command-batch probes: the full log, a 1-based index that is refused, a
     // mismatched commandId (unexpected reply), and how many snapshots were served.
     QList<QJsonObject> commandLog;
@@ -104,6 +104,7 @@ public:
                     if (duplicateCapability) caps.append("settings.duplicates");
                     if (replaceCapability) caps.append("download.replace");
                     if (sortCapability) caps.append("settings.sort");
+                    if (tasksCapability) for (const auto &op : {"queue.startAll", "queue.stopAll", "download.stopAll"}) caps.append(op);
                     if (actionsCapability) for (const auto &op : {"download.reset", "download.move", "download.links"}) caps.append(op);
                     if (categoryCapability) for (const auto &op : {"category.create", "category.update", "category.delete", "category.move", "category.assign"}) caps.append(op);
                     reply["capabilities"] = caps;
@@ -174,6 +175,24 @@ private slots:
     void initTestCase() {
         QGuiApplication::setDesktopFileName(QStringLiteral("org.abdownloadmanager.QtCapability.ServiceTest-%1").arg(QCoreApplication::applicationPid()));
         QQuickStyle::setStyle("org.kde.desktop"); QQuickWindow::setDefaultAlphaBuffer(true);
+    }
+    void tasksMenuDispatchesGlobalCommandsWithoutSelection() {
+        FakeService service; service.tasksCapability = true;
+        ServiceDownloads model(service.descriptor); QTRY_COMPARE(model.rowCount(), 1);
+        QVERIFY(model.selectedId().isEmpty());
+        QQuickView view; view.setResizeMode(QQuickView::SizeRootObjectToView); view.resize(1000, 700);
+        view.setInitialProperties({{"downloads", QVariant::fromValue(&model)}});
+        view.setSource(QUrl("qrc:/qt-ui/qml/DownloadsView.qml")); view.show();
+        QCOMPARE(view.status(), QQuickView::Ready);
+        QVERIFY(QMetaObject::invokeMethod(view.rootObject(), "openMenu", Q_ARG(QString, "Tasks")));
+        auto *menu = view.rootObject()->findChild<QObject *>("tasksMenu"); QVERIFY(menu); QTRY_VERIFY(menu->property("visible").toBool());
+        const int hold = qBound(0, qEnvironmentVariableIntValue("QT_TASKS_GALLERY_HOLD_MS"), 10000); if (hold) QTest::qWait(hold);
+        for (const auto &[object, operation] : {qMakePair("startAllQueues", "queue.startAll"), qMakePair("stopAllQueues", "queue.stopAll"), qMakePair("stopAllDownloads", "download.stopAll")}) {
+            QTRY_VERIFY(!model.busy()); auto *item = view.rootObject()->findChild<QObject *>(object); QVERIFY(item);
+            QVERIFY(QMetaObject::invokeMethod(item, "triggered")); QTRY_COMPARE(service.lastCommand["op"].toString(), operation);
+            QVERIFY(service.lastCommand["id"].toString().isEmpty()); QVERIFY(service.lastCommand["queueId"].toString().isEmpty());
+        }
+        QMetaObject::invokeMethod(menu, "close"); QTest::qWait(200); view.close(); QTest::qWait(100);
     }
     void sortingAndAggregateStatusPreserveStableSelection() {
         FakeService service; service.sortCapability = service.monitorCapability = true;

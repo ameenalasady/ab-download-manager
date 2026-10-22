@@ -254,7 +254,7 @@ Item {
     readonly property var menuNames: ["File", "Tasks", "Tools", "Help"]
     function openMenu(name: string) {
         const index = Math.max(0, menuNames.indexOf(name))
-        const menu = [fileMenu, actionsMenu, toolsMenu, helpMenu][index]
+        const menu = [fileMenu, tasksMenu, toolsMenu, helpMenu][index]
         const button = menuButtons.itemAt(index)
         // Anchor below the menubar button that opened it, never at fixed offsets.
         const p = button ? button.mapToItem(root, 0, button.height) : Qt.point(Tokens.spacingM, Tokens.rowHeight)
@@ -614,6 +614,12 @@ Item {
             enabled: root.explicitRuntime && !root.downloads.busy
             onTriggered: root.downloads.importFromClipboard()
         }
+    }
+    MenuSurface {
+        id: tasksMenu; objectName: "tasksMenu"
+        QQC2.MenuItem { objectName: "startAllQueues"; text: qsTr("&Start All Queues"); icon.name: "media-playback-start"; visible: root.live && root.downloads.capabilities.indexOf("queue.startAll") >= 0; enabled: !root.downloads.busy; onTriggered: root.downloads.taskCommand("queue.startAll") }
+        QQC2.MenuItem { objectName: "stopAllQueues"; text: qsTr("Stop All &Queues"); icon.name: "media-playback-stop"; visible: root.live && root.downloads.capabilities.indexOf("queue.stopAll") >= 0; enabled: !root.downloads.busy; onTriggered: root.downloads.taskCommand("queue.stopAll") }
+        QQC2.MenuItem { objectName: "stopAllDownloads"; text: qsTr("Stop All &Downloads"); icon.name: "media-playback-pause"; visible: root.live && root.downloads.capabilities.indexOf("download.stopAll") >= 0; enabled: !root.downloads.busy; onTriggered: root.downloads.taskCommand("download.stopAll") }
     }
     MenuSurface {
         id: actionsMenu; objectName: "exampleActionsMenu"

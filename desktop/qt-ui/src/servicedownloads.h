@@ -67,6 +67,7 @@ public:
     Q_INVOKABLE bool importLinks(const QString &text);
     Q_INVOKABLE void importFromClipboard() { emit clipboardImportRequested(); }
     Q_INVOKABLE bool shutdownService();
+    Q_INVOKABLE bool taskCommand(const QString &operation);
     QString sizeUnit() const { return m_settings.value("sizeUnit", "BinaryBytes").toString(); }
     Q_INVOKABLE static QString formatSize(qint64 bytes, const QString &unit);
     QStringList capabilities() const { return m_capabilities; }

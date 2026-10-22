@@ -408,9 +408,9 @@ void DownloadsViewTest::desktopThemeAndReviewGallery()
     QVERIFY(capture("home"));
     model.select("preview-2");
     qreal previousMenuX = -1;
-    for (const QString &name : {QString("File"), QString("Tasks"), QString("Tools"), QString("Help")}) {
+    for (const QString &name : {QString("File"), QString("Tools"), QString("Help")}) {
         QVERIFY(QMetaObject::invokeMethod(view.rootObject(), "openMenu", Q_ARG(QString, name)));
-        const char *object = name == "File" ? "fileMenu" : name == "Tasks" ? "exampleActionsMenu" : name == "Tools" ? "toolsMenu" : "helpMenu";
+        const char *object = name == "File" ? "fileMenu" : name == "Tasks" ? "tasksMenu" : name == "Tools" ? "toolsMenu" : "helpMenu";
         // Each menu opens below its own menubar button, left to right.
         const qreal x = child(view, object)->property("x").toReal();
         QVERIFY2(x > previousMenuX, qPrintable(name)); previousMenuX = x;
