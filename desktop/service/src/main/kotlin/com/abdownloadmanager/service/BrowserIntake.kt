@@ -17,7 +17,7 @@ class BrowserItem(val url: String, val name: String, val downloadPage: String?, 
     val hasHeaders get() = credentials != null
 }
 
-/** Review source: browser extension, explicit clipboard import or manual Multiple Add. */
+/** Review source: browser extension or explicit text intake (clipboard/Multiple Add). */
 class BrowserRequest(val id: String, val items: List<BrowserItem>, val receivedAt: Long, val source: String = "browser", val outcomeUnknown: Boolean = false)
 
 object BrowserLinks {
@@ -89,7 +89,7 @@ class BrowserIntake(private val maxItems: Int = 100, journalFile: java.nio.file.
     val requests: List<BrowserRequest> get() = pending.values.toList()
     init {
         journal?.load()?.forEach { r ->
-            require(r.id.matches(Regex("[A-Za-z0-9_-]{16}")) && r.source in setOf("browser", "clipboard", "manual") && r.receivedAt >= 0 && r.items.isNotEmpty())
+            require(r.id.matches(Regex("[A-Za-z0-9_-]{16}")) && r.source in setOf("browser", "clipboard") && r.receivedAt >= 0 && r.items.isNotEmpty())
             require(pending.put(r.id, r) == null) { "Duplicate browser review ID" }
             r.items.forEach { i ->
                 require(i.url.length in 1..2048 && i.name.length in 1..180 && i.name !in setOf(".", "..") &&
@@ -120,7 +120,7 @@ class BrowserIntake(private val maxItems: Int = 100, journalFile: java.nio.file.
             "Too many links are waiting. Review or dismiss pending requests in AB Download Manager."
         }
         val id = Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(12).also(random::nextBytes))
-        require(source in setOf("browser", "clipboard", "manual"))
+        require(source in setOf("browser", "clipboard"))
         return BrowserRequest(id, items, now, source).also { publish(pending + (id to it)) }
     }
 

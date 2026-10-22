@@ -84,9 +84,6 @@ Item {
                         Field { id: types; objectName: "categoryTypes"; enabled: typesEnabled.checked; maximumLength: 5248; placeholderText: "zip rar 7z"; Accessible.name: qsTr("File types, space separated") }
                         QQC2.CheckBox { id: patternsEnabled; Layout.topMargin: Tokens.spacingS; text: qsTr("URL Patterns") }
                         Field { id: patterns; objectName: "categoryPatterns"; enabled: patternsEnabled.checked; maximumLength: 16416; placeholderText: "http://127.0.0.1:*/files/*"; Accessible.name: qsTr("URL patterns, space separated") }
-                        QQC2.CheckBox { Layout.topMargin: Tokens.spacingS; text: qsTr("Download Location"); checked: false; enabled: false }
-                        // Disabled together with its check box: custom locations are not available yet.
-                        Field { readOnly: true; enabled: false; text: root.service.runtime && root.service.runtime.mode === "explicit-runtime" ? root.service.runtime.destination : qsTr("Isolated profile / Downloads"); Accessible.name: qsTr("Default category destination") }
                         Kirigami.Separator { Layout.fillWidth: true; Layout.topMargin: Tokens.spacingM; Layout.bottomMargin: Tokens.spacingS }
                         SectionHeading { text: qsTr("Selected Download") }
                         Hint {

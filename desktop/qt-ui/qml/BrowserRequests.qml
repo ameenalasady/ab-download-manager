@@ -206,9 +206,8 @@ Item {
         property var items: []
         property var categoryChoices: []
         title: downloadId !== "" ? (progressContent ? progressContent.windowTitle : qsTr("Download"))
-            : requestSource === "manual" ? qsTr("Add Multiple Downloads")
-            : requestSource === "clipboard" ? qsTr("Download from Clipboard")
-            : items.length === 1 ? qsTr("Download from Browser") : qsTr("Download %1 Links from Browser").arg(items.length)
+            : items.length > 1 ? qsTr("Add Multiple Downloads")
+            : requestSource === "clipboard" ? qsTr("Review Download") : qsTr("Download from Browser")
         readonly property int checkedCount: items.filter(i => i.checked).length
         readonly property bool multiple: items.length > 1
         readonly property var filteredItems: {
@@ -276,6 +275,7 @@ Item {
         }
         UiDialog {
             id: duplicates; objectName: "browserDuplicateDialog"
+            onOpened: browserDuplicateAdd.highlighted = true
             title: qsTr("Download Already Exists"); preferredWidth: Tokens.dialogWidthMedium
             readonly property var existing: dialog.duplicateMatches.length ? dialog.duplicateMatches[0] : null
             readonly property bool canReplace: dialog.pendingChosen.length === 1 && root.service.capabilities.indexOf("download.replace") >= 0
@@ -292,7 +292,7 @@ Item {
                     UiButton { text: qsTr("Open File"); flat: true; visible: Boolean(duplicates.existing && duplicates.existing.fileUrl.toString() !== ""); onClicked: { DesktopOpener.openFile(duplicates.existing.fileUrl, dialog); duplicates.close() } },
                     UiButton { text: qsTr("Resume Existing"); flat: true; visible: Boolean(duplicates.existing && ["paused", "failed"].indexOf(duplicates.existing.state) >= 0); enabled: !root.service.busy; onClicked: { if (root.service.resumeDownload(duplicates.existing.id)) { duplicates.close(); dialog.close() } } }
                 ]
-                UiButton { objectName: "browserDuplicateAddNew"; text: qsTr("Add New"); icon.name: "list-add"; highlighted: true; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.AcceptRole; onClicked: { dialog.acceptChosen(dialog.pendingChosen, dialog.pendingStart, "numbered"); if (dialog.submitting) duplicates.close() } }
+                UiButton { id: browserDuplicateAdd; objectName: "browserDuplicateAddNew"; text: qsTr("Add New"); icon.name: "list-add"; highlighted: true; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.AcceptRole; onClicked: { dialog.acceptChosen(dialog.pendingChosen, dialog.pendingStart, "numbered"); if (dialog.submitting) duplicates.close() } }
                 UiButton { objectName: "browserDuplicateOverwrite"; text: qsTr("Overwrite"); icon.name: "edit-delete"; enabled: duplicates.canReplace && !root.service.busy; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.DestructiveRole; onClicked: { dialog.acceptChosen(dialog.pendingChosen, dialog.pendingStart, "overwrite"); if (dialog.submitting) duplicates.close() } }
                 UiButton { text: qsTr("Cancel"); icon.name: "dialog-cancel"; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.RejectRole; onClicked: duplicates.reject() }
             }
@@ -478,10 +478,10 @@ Item {
                     color: readOnly ? theme.secondary : theme.text
                     Accessible.name: qsTr("Download location")
                 }
-                FormLabel { text: qsTr("Category:") }
+                FormLabel { text: qsTr("Category:"); visible: category.visible }
                 UiComboBox {
                     id: category; objectName: "browserRequestCategory"; Layout.fillWidth: true; model: dialog.categoryChoices; textRole: "name"
-                    enabled: root.service.capabilities.indexOf("category.create") >= 0; Accessible.name: qsTr("Download category")
+                    visible: root.service.capabilities.indexOf("category.create") >= 0; enabled: !root.service.busy; Accessible.name: qsTr("Download category")
                 }
             }
             // Copy audit (sizing pass): the bottom progress-window note was removed at the

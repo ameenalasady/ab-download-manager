@@ -96,8 +96,9 @@ class EngineSession(
             { settings.useSparseFileAllocation }), registry, systemDownloads,
         destinationValidator = { runtime.validateDestination(it.toPath()) })
     private val queueStore = DownloadQueueFileStorageDatabase(saver, queueDirectory)
-    private val queues = QueueManager(queueStore, manager, queueScope.coroutineContext)
-    private val manual = ManualDownloadQueue(manager, queueScope)
+    private val jobControl = GuardedDownloadControl(manager)
+    private val queues = QueueManager(queueStore, jobControl, queueScope.coroutineContext)
+    private val manual = ManualDownloadQueue(jobControl, queueScope)
     private val monitor = DownloadMonitor(manager, manual, lazy {
         object : DownloadItemStateFactory<IDownloadItem, DownloadJob> {
             override fun createProcessingDownloadItemState(props: ProcessingDownloadItemFactoryInputs<DownloadJob>) =
@@ -643,7 +644,9 @@ class EngineSession(
                     val text = request["text"]?.jsonPrimitive?.content ?: error("Missing text")
                     val (items, ignored) = ClipboardLinks.items(text, runtime)
                     require(items.isNotEmpty()) { if (ignored > 0) "No supported HTTP(S) links found" else "No download links found" }
-                    put("requestId", intake.offerItems(items, System.currentTimeMillis(), if (op == "links.review") "manual" else "clipboard").id)
+                    // Both routes import explicit text; retain the existing journal kind so
+                    // older releases can still read pending reviews after a rollback.
+                    put("requestId", intake.offerItems(items, System.currentTimeMillis(), "clipboard").id)
                     put("ignored", ignored)
                 }
                 "frontend.activate" -> {
@@ -661,13 +664,13 @@ class EngineSession(
                     // Stop producers before the active jobs so a freed slot cannot refill.
                     if (op == "download.stopAll") manual.clearQueue()
                     queues.getAll().forEach { it.stopAsync() }
-                    if (op == "download.stopAll") {
+                    if (op == "download.stopAll") jobControl.mutate {
                         val jobs = manager.downloadJobs.toList()
                         jobs.filter { it.isDownloadActive.value || manager.getJobStatusOf(it.id) is DownloadJobStatus.IsActive }.forEach { it.pause() }
                         jobs.forEach { it.activeDownloadScope?.coroutineContext?.job?.join() }
                     }
                 }
-                "download.reset", "download.move" -> {
+                "download.reset", "download.move" -> jobControl.mutate {
                     val id = request["id"]?.jsonPrimitive?.content?.toLongOrNull() ?: error("Invalid stable ID")
                     val item = list.getById(id) as? HttpDownloadItem ?: error("Download no longer exists")
                     require(item.status != DownloadStatus.Downloading && manager.getJobStatusOf(id) !is DownloadJobStatus.IsActive &&
@@ -683,7 +686,7 @@ class EngineSession(
                         runtime.validateFolder(Path.of(draft.folder))
                         val target = File(draft.folder, draft.name)
                         runtime.validateDestination(target.toPath())
-                        if (draft.folder == item.folder && draft.name == item.name) { put("id", id.toString()); return@buildJsonObject }
+                        if (draft.folder == item.folder && draft.name == item.name) { put("id", id.toString()); return@mutate }
                         require(manager.getDownloadList().none { it.id != id && it.folder == draft.folder && it.name == draft.name }) { "Another download uses that destination" }
                         // The original mover replaces files: reject BOTH destination names before calling it.
                         for (file in listOf(target, IncompleteFileUtil.addIncompleteIndicator(target, id))) {
@@ -701,7 +704,7 @@ class EngineSession(
                     finally { ownedJobs.addAll(manager.downloadJobs.filter { !it.scope.coroutineContext.job.isCompleted }) }
                     put("id", id.toString())
                 }
-                "download.edit" -> {
+                "download.edit" -> jobControl.mutate {
                     val id = request["id"]?.jsonPrimitive?.content?.toLongOrNull() ?: error("Invalid stable ID")
                     val item = list.getById(id) as? HttpDownloadItem ?: error("Download no longer exists")
                     require(item.status != DownloadStatus.Completed && item.status != DownloadStatus.Downloading &&
@@ -731,7 +734,7 @@ class EngineSession(
                     }
                     put("id", id.toString())
                 }
-                "download.forget" -> {
+                "download.forget" -> jobControl.mutate {
                     val id = request["id"]?.jsonPrimitive?.content?.toLongOrNull() ?: error("Invalid stable ID")
                     val keepFiles = request["keepFiles"]?.jsonPrimitive?.booleanOrNull ?: error("Missing keepFiles parameter")
                     val item = list.getById(id) ?: error("Download no longer exists")

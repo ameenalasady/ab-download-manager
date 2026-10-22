@@ -196,7 +196,7 @@ Item {
                         Section {
                             visible: settingsDialog.page === 2 && root.policySettings
                             Repeater {
-                                model: [{policy: "platform", title: qsTr("Not Active in This Preview")},
+                                model: [{policy: "platform", title: qsTr("Inactive Settings")},
                                         {policy: "runtime-override", title: qsTr("Replaced by the Explicit Runtime Policy")}]
                                 delegate: ColumnLayout {
                                     id: retainedGroup

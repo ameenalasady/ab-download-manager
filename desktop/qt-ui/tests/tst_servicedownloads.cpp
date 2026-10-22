@@ -15,6 +15,8 @@
 #include <memory>
 #include <QSignalSpy>
 #include <QClipboard>
+#include <QApplication>
+#include <QProcess>
 
 static QByteArray encode(const QJsonObject &object) {
     const auto bytes = QJsonDocument(object).toJson(QJsonDocument::Compact);
@@ -159,7 +161,7 @@ public:
                     reply["result"] = refused ? QJsonObject{{"ok", false}, {"error", "Fixture command refusal"}}
                         : (commandResult.isEmpty() ? QJsonObject{{"ok", true}} : commandResult);
                     if (reviewCapability && request["op"] == "links.review") {
-                        extensionSnapshot["browserRequests"] = QJsonArray{QJsonObject{{"id", "manual-review"}, {"receivedAt", "1"}, {"source", "manual"}, {"outcomeUnknown", false}, {"items", reviewItems}}};
+                        extensionSnapshot["browserRequests"] = QJsonArray{QJsonObject{{"id", "manual-review"}, {"receivedAt", "1"}, {"source", "clipboard"}, {"outcomeUnknown", false}, {"items", reviewItems}}};
                         reply["result"] = QJsonObject{{"ok", true}, {"requestId", "manual-review"}};
                     }
                     if (reviewCapability && request["op"] == "browser.probe")
@@ -2402,5 +2404,35 @@ private slots:
     }
 };
 
-QTEST_MAIN(ServiceDownloadsTest)
+// Repeated Qt/KDE desktop-style QML-engine teardown intermittently corrupts the
+// heap on this stack. This is not acceptance of arbitrary engine reuse. Exercise
+// every case in its own process (like the real one-engine frontend),
+// without retries, skipped cases or hiding a child failure. Explicit case/gallery
+// invocation retains the usual QtTest command-line contract.
+int main(int argc, char **argv) {
+    if (argc > 1) {
+        QApplication app(argc, argv);
+        ServiceDownloadsTest test;
+        return QTest::qExec(&test, argc, argv);
+    }
+    QCoreApplication app(argc, argv);
+    const auto &meta = ServiceDownloadsTest::staticMetaObject;
+    int result = 0;
+    for (int i = meta.methodOffset(); i < meta.methodCount(); ++i) {
+        const auto method = meta.method(i); const auto name = method.name();
+        if (method.methodType() != QMetaMethod::Slot || method.parameterCount() || method.returnMetaType().id() != QMetaType::Void
+            || name == "initTestCase" || name == "cleanupTestCase" || name == "init" || name == "cleanup") continue;
+        QProcess child;
+        child.setProcessChannelMode(QProcess::ForwardedChannels);
+        child.start(QCoreApplication::applicationFilePath(), {QString::fromLatin1(name), QStringLiteral("-nocrashhandler")});
+        if (!child.waitForStarted(5000)) { qCritical() << "Cannot start test case" << name; result = 1; continue; }
+        if (!child.waitForFinished(120000)) {
+            qCritical() << "Test case timed out" << name;
+            child.kill(); child.waitForFinished(5000); result = 1;
+        } else if (child.exitStatus() != QProcess::NormalExit || child.exitCode() != 0) {
+            qCritical() << "Test case failed" << name << child.exitCode(); result = 1;
+        }
+    }
+    return result;
+}
 #include "tst_servicedownloads.moc"

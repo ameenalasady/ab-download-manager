@@ -30,7 +30,7 @@ class MultipleAddTest {
             assertTrue(engine.snapshot().getValue("rows").jsonArray.isEmpty()); assertEquals(0, requests.get())
             lifecycle.stop(); lifecycle = ServiceLifecycle(root); engine = lifecycle.start()
             val pending = engine.snapshot().getValue("browserRequests").jsonArray.single().jsonObject
-            assertEquals("manual", pending.getValue("source").jsonPrimitive.content)
+            assertEquals("clipboard", pending.getValue("source").jsonPrimitive.content) // Existing journal kind stays rollback-readable.
             assertEquals(2, pending.getValue("items").jsonArray.size)
             val journal = root.resolve("app-data/config/browser-review.json")
             val before = Files.readAllBytes(journal)

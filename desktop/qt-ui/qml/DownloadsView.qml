@@ -292,6 +292,8 @@ Item {
                 model: [qsTr("&File"), qsTr("&Tasks"), qsTr("T&ools"), qsTr("&Help")]
                 delegate: QQC2.ToolButton {
                     required property string modelData; required property int index
+                    visible: index === 1 ? root.live && ["queue.startAll", "queue.stopAll", "download.stopAll"].some(c => root.downloads.capabilities.indexOf(c) >= 0)
+                        : index === 2 ? root.live && ["queue.create", "category.create", "settings.update"].some(c => root.downloads.capabilities.indexOf(c) >= 0) : true
                     text: modelData; Accessible.name: modelData.replace("&", ""); Accessible.role: Accessible.ButtonMenu
                     onClicked: root.openMenu(root.menuNames[index])
                 }
@@ -319,11 +321,7 @@ Item {
                                 onClicked: root.downloads.category = modelData.key
                             }
                         }
-                        GroupCaption { text: qsTr("Queues"); Layout.topMargin: Tokens.spacingXL }
-                        NavigationItem {
-                            text: qsTr("Main"); iconSource: "view-list-details"; visible: !root.live; enabled: false
-                            Accessible.description: qsTr("Queue controls require the service")
-                        }
+                        GroupCaption { text: qsTr("Queues"); Layout.topMargin: Tokens.spacingXL; visible: root.live && root.downloads.queues.length > 0 }
                         Repeater {
                             model: root.live ? root.downloads.queues : []
                             delegate: NavigationItem {
@@ -351,12 +349,13 @@ Item {
                     ActionButton { objectName: "resumeExampleButton"; text: qsTr("Resume selected download"); icon.name: "media-playback-start"; enabled: root.downloads.canResume; onClicked: root.downloads.resumeSelected() }
                     ActionButton { objectName: "pauseExampleButton"; text: qsTr("Pause selected download"); icon.name: "media-playback-pause"; enabled: root.downloads.canPause; onClicked: root.downloads.pauseSelected() }
                     ActionButton {
-                        text: root.live ? qsTr("Remove from list, keep files…") : qsTr("Remove example…"); icon.name: "list-remove"
+                        text: root.live ? qsTr("Remove from list, keep files…") : qsTr("Remove…"); icon.name: "list-remove"
+                        visible: !root.live || root.downloads.capabilities.indexOf("download.forget") >= 0
                         enabled: root.live ? root.downloads.canRemove : root.downloads.selectedId !== ""; onClicked: root.openRemoveDialog()
                     }
                     ActionButton { objectName: "copyLinkToolbarButton"; text: qsTr("Copy Link"); icon.name: "edit-copy"; visible: root.live && root.downloads.capabilities.indexOf("download.links") >= 0; enabled: root.downloads.selectionCount > 0; onClicked: root.downloads.copyDownloadLinks() }
                     ActionButton { id: actionsButton; objectName: "exampleActionsButton"; text: qsTr("More download actions"); icon.name: "overflow-menu"; onClicked: root.openActionsMenu() }
-                    ActionButton { objectName: "settingsToolbarButton"; text: qsTr("Settings"); icon.name: "configure"; enabled: root.live && root.downloads.capabilities.indexOf("settings.update") >= 0; onClicked: root.openSettings() }
+                    ActionButton { objectName: "settingsToolbarButton"; text: qsTr("Settings"); icon.name: "configure"; visible: root.live && root.downloads.capabilities.indexOf("settings.update") >= 0; enabled: root.live && !root.downloads.busy; onClicked: root.openSettings() }
                     Item { Layout.fillWidth: true }
                     Kirigami.SearchField {
                         id: searchField; objectName: "previewSearch"
@@ -615,7 +614,7 @@ Item {
         QQC2.MenuItem { objectName: "addMultipleDownloads"; text: qsTr("Add &Multiple Downloads…"); icon.name: "list-add"; visible: root.live && root.downloads.capabilities.indexOf("links.review") >= 0; enabled: !root.downloads.busy; onTriggered: root.openMultipleAdd() }
         QQC2.MenuItem {
             objectName: "importClipboardLinks"; text: qsTr("New Download from &Clipboard…"); icon.name: "edit-paste"
-            visible: root.live && root.downloads.capabilities.indexOf("links.import") >= 0
+            visible: root.explicitRuntime && root.downloads.capabilities.indexOf("links.import") >= 0
             enabled: root.explicitRuntime && !root.downloads.busy
             onTriggered: root.downloads.importFromClipboard()
         }
@@ -628,18 +627,26 @@ Item {
     }
     MenuSurface {
         id: actionsMenu; objectName: "exampleActionsMenu"
+        onAboutToShow: {
+            // Submenus have generated MenuItems; Menu.visible would open the popup.
+            for (let i = 0; i < count; ++i) {
+                const item = itemAt(i) as QQC2.MenuItem
+                if (item && item.subMenu === queueActionMenu) item.visible = root.live && root.downloads.capabilities.indexOf("queue.add") >= 0
+                if (item && item.subMenu === categoryActionMenu) item.visible = root.live && root.downloads.capabilities.indexOf("category.assign") >= 0
+            }
+        }
         QQC2.MenuItem { text: qsTr("&Resume"); icon.name: "media-playback-start"; enabled: root.downloads.canResume; onTriggered: root.downloads.resumeSelected() }
         QQC2.MenuItem { text: qsTr("&Pause"); icon.name: "media-playback-pause"; enabled: root.downloads.canPause; onTriggered: root.downloads.pauseSelected() }
         QQC2.MenuSeparator {}
         QQC2.MenuItem { objectName: "openCompletedDownload"; text: qsTr("&Open File"); icon.name: "document-open"; visible: root.live && root.singleSelection && root.downloads.downloadState(root.downloads.selectedId).state === "completed"; enabled: root.currentFileUrl.toString() !== ""; onTriggered: DesktopOpener.openFile(root.currentFileUrl, root.Window.window) }
         QQC2.MenuItem { objectName: "revealDownload"; text: qsTr("Show in &Folder"); icon.name: "folder-open"; visible: root.live && root.singleSelection; enabled: root.currentFolderUrl.toString() !== ""; onTriggered: DesktopOpener.showInFolder(root.currentFileUrl.toString() !== "" ? root.currentFileUrl : root.currentFolderUrl, root.Window.window) }
-        QQC2.MenuItem { objectName: "showDownloadWindow"; text: qsTr("Show in Separate &Window"); icon.name: "window-new"; enabled: root.live && root.singleSelection; onTriggered: root.openDownloadWindow() }
-        QQC2.MenuItem { objectName: "showDownloadDetails"; text: qsTr("P&roperties…"); icon.name: "document-properties"; enabled: root.live && root.singleSelection && root.downloads.capabilities.indexOf("download.details") >= 0; onTriggered: root.openDetails() }
+        QQC2.MenuItem { objectName: "showDownloadWindow"; text: qsTr("Show in Separate &Window"); icon.name: "window-new"; visible: root.live; enabled: root.singleSelection; onTriggered: root.openDownloadWindow() }
+        QQC2.MenuItem { objectName: "showDownloadDetails"; text: qsTr("P&roperties…"); icon.name: "document-properties"; visible: root.live && root.downloads.capabilities.indexOf("download.details") >= 0; enabled: root.singleSelection; onTriggered: root.openDetails() }
         QQC2.MenuItem { objectName: "copyDownloadLink"; text: qsTr("Copy &Link"); icon.name: "edit-copy"; visible: root.live && root.downloads.capabilities.indexOf("download.links") >= 0; enabled: root.downloads.selectionCount > 0; onTriggered: root.downloads.copyDownloadLinks() }
         QQC2.MenuItem { objectName: "openDownloadPage"; text: qsTr("Open Download &Page"); icon.name: "internet-web-browser"; visible: root.live && root.singleSelection && root.downloads.downloadPageUrl(root.downloads.selectedId).toString() !== ""; onTriggered: Qt.openUrlExternally(root.downloads.downloadPageUrl(root.downloads.selectedId)) }
         QQC2.MenuItem { objectName: "moveRenameDownload"; text: qsTr("&Move / Rename…"); icon.name: "edit-rename"; visible: root.live && root.downloads.capabilities.indexOf("download.move") >= 0; enabled: root.singleSelection && root.downloads.canMutateDownload(root.downloads.selectedId, "download.move"); onTriggered: root.openMutation("download.move") }
         QQC2.MenuItem { objectName: "resetDownload"; text: qsTr("&Reset Progress…"); icon.name: "view-refresh"; visible: root.live && root.downloads.capabilities.indexOf("download.reset") >= 0; enabled: root.singleSelection && root.downloads.canMutateDownload(root.downloads.selectedId, "download.reset"); onTriggered: root.openMutation("download.reset") }
-        QQC2.MenuItem { objectName: "editDownloadOptions"; text: qsTr("&Edit Connection Options…"); icon.name: "configure"; enabled: root.live && root.singleSelection && root.downloads.canResume && root.downloads.capabilities.indexOf("download.edit") >= 0; onTriggered: root.openHttpEdit() }
+        QQC2.MenuItem { objectName: "editDownloadOptions"; text: qsTr("&Edit Connection Options…"); icon.name: "configure"; visible: root.live && root.downloads.capabilities.indexOf("download.edit") >= 0; enabled: root.singleSelection && root.downloads.canResume; onTriggered: root.openHttpEdit() }
         MenuSurface {
             id: queueActionMenu; title: qsTr("Add to &Queue"); icon.name: "view-list-details"
             enabled: root.live && root.downloads.selectionCount > 0 && !root.downloads.busy
@@ -667,18 +674,18 @@ Item {
         }
         QQC2.MenuItem { text: qsTr("Select &All"); icon.name: "edit-select-all"; enabled: root.downloads.visibleCount > 0; onTriggered: root.downloads.selectAll() }
         QQC2.MenuSeparator {}
-        QQC2.MenuItem { text: root.live ? qsTr("Re&move from List, Keep Files…") : qsTr("Re&move Example…"); icon.name: "list-remove"; enabled: root.live ? root.downloads.canRemove : root.downloads.selectedId !== ""; onTriggered: root.openRemoveDialog() }
+        QQC2.MenuItem { text: root.live ? qsTr("Re&move from List, Keep Files…") : qsTr("Re&move…"); icon.name: "list-remove"; visible: !root.live || root.downloads.capabilities.indexOf("download.forget") >= 0; enabled: root.live ? root.downloads.canRemove : root.downloads.selectedId !== ""; onTriggered: root.openRemoveDialog() }
     }
     MenuSurface {
         id: toolsMenu; objectName: "toolsMenu"
-        QQC2.MenuItem { text: qsTr("&Queues…"); icon.name: "view-list-details"; enabled: root.live && root.downloads.capabilities.indexOf("queue.create") >= 0; onTriggered: root.openQueues("0") }
-        QQC2.MenuItem { text: qsTr("&Categories…"); icon.name: "folder"; enabled: root.live && root.downloads.capabilities.indexOf("category.create") >= 0; onTriggered: root.openCategories() }
+        QQC2.MenuItem { text: qsTr("&Queues…"); icon.name: "view-list-details"; visible: root.live && root.downloads.capabilities.indexOf("queue.create") >= 0; enabled: root.live && !root.downloads.busy; onTriggered: root.openQueues("0") }
+        QQC2.MenuItem { text: qsTr("&Categories…"); icon.name: "folder"; visible: root.live && root.downloads.capabilities.indexOf("category.create") >= 0; enabled: root.live && !root.downloads.busy; onTriggered: root.openCategories() }
         QQC2.MenuSeparator {}
-        QQC2.MenuItem { text: qsTr("Configure &Download Manager…"); icon.name: "configure"; enabled: root.live && root.downloads.capabilities.indexOf("settings.update") >= 0; onTriggered: root.openSettings() }
+        QQC2.MenuItem { text: qsTr("Configure &Download Manager…"); icon.name: "configure"; visible: root.live && root.downloads.capabilities.indexOf("settings.update") >= 0; enabled: root.live && !root.downloads.busy; onTriggered: root.openSettings() }
     }
     MenuSurface {
         id: helpMenu; objectName: "helpMenu"
-        QQC2.MenuItem { text: qsTr("&About Download Manager Preview"); icon.name: "help-about"; onTriggered: aboutDialog.open() }
+        QQC2.MenuItem { text: qsTr("&About Download Manager"); icon.name: "help-about"; onTriggered: aboutDialog.open() }
     }
     UiDialog {
         id: multipleAddDialog; objectName: "multipleAddDialog"
@@ -735,7 +742,7 @@ Item {
     }
     UiDialog {
         id: aboutDialog; objectName: "aboutPreviewDialog"
-        title: qsTr("About Download Manager Preview"); preferredWidth: Tokens.dialogWidthSmall
+        title: qsTr("About Download Manager"); preferredWidth: Tokens.dialogWidthSmall
         contentItem: ColumnLayout {
             spacing: Tokens.contentSpacing
             SectionHeading { level: Tokens.headingHero; text: qsTr("AB Download Manager") }
@@ -747,7 +754,8 @@ Item {
     }
     UiDialog {
         id: addDialog; objectName: "addExampleDialog"; property var categoryChoices: []
-        title: root.live ? qsTr("New Download") : qsTr("Add Example Download")
+        onOpened: { startDownloadButton.highlighted = root.live; addExample.highlighted = !root.live }
+        title: qsTr("New Download")
         preferredWidth: Tokens.dialogWidthMedium
         onClosed: { root.addOptions = ({}); sourceInput.text = ""; nameInput.text = "" }
         // Known duplicates are shown while typing, before Download is pressed. The lookups
@@ -776,11 +784,11 @@ Item {
                     Accessible.description: readOnly ? qsTr("Fixed by the test profile") : ""
                     onTextChanged: existingCheck.restart()
                 }
-                FormLabel { text: qsTr("Category:") }
-                UiComboBox { id: addCategory; objectName: "addCategorySelection"; Layout.fillWidth: true; enabled: root.live && root.downloads.capabilities.indexOf("category.create") >= 0; model: addDialog.categoryChoices; textRole: "name"; Accessible.name: qsTr("Download category") }
+                FormLabel { text: qsTr("Category:"); visible: addCategory.visible }
+                UiComboBox { id: addCategory; objectName: "addCategorySelection"; Layout.fillWidth: true; visible: root.live && root.downloads.capabilities.indexOf("category.create") >= 0; model: addDialog.categoryChoices; textRole: "name"; Accessible.name: qsTr("Download category") }
                 Item { implicitWidth: 1; visible: root.live }
                 UiButton {
-                    objectName: "openAddHttpOptions"; text: qsTr("Connection && Authentication…"); icon.name: "configure"; visible: root.live
+                    objectName: "openAddHttpOptions"; text: qsTr("Connection && Authentication…"); icon.name: "configure"; visible: root.live && root.downloads.capabilities.indexOf("download.http-options") >= 0
                     Accessible.name: qsTr("Connection and authentication options")
                     enabled: root.live && root.downloads.capabilities.indexOf("download.http-options") >= 0
                     onClicked: { if (httpOptionsLoader.item) (httpOptionsLoader.item as HttpOptions).openOptions("", "", root.addOptions) }
@@ -806,13 +814,14 @@ Item {
             StatusMessage { type: Kirigami.MessageType.Error; message: root.downloads.errorMessage }
         }
         footer: DialogFooter {
-            UiButton { objectName: "confirmStartDownload"; text: qsTr("Download"); icon.name: "download"; highlighted: true; visible: root.live; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.AcceptRole; onClicked: { if (root.submitDownload(true)) addDialog.accept() } }
-            UiButton { id: addExample; objectName: "confirmAddExample"; text: root.live ? qsTr("Add Paused") : qsTr("Add Example"); icon.name: "list-add"; highlighted: !root.live; QQC2.DialogButtonBox.buttonRole: root.live ? QQC2.DialogButtonBox.AlternateRole : QQC2.DialogButtonBox.AcceptRole; onClicked: { if (root.submitDownload(false)) addDialog.accept() } }
+            UiButton { id: startDownloadButton; objectName: "confirmStartDownload"; text: qsTr("Download"); icon.name: "download"; highlighted: true; visible: root.live; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.AcceptRole; onClicked: { if (root.submitDownload(true)) addDialog.accept() } }
+            UiButton { id: addExample; objectName: "confirmAddExample"; text: root.live ? qsTr("Add Paused") : qsTr("Add"); icon.name: "list-add"; highlighted: !root.live; QQC2.DialogButtonBox.buttonRole: root.live ? QQC2.DialogButtonBox.AlternateRole : QQC2.DialogButtonBox.AcceptRole; onClicked: { if (root.submitDownload(false)) addDialog.accept() } }
             UiButton { text: qsTr("Cancel"); icon.name: "dialog-cancel"; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.RejectRole; onClicked: addDialog.reject() }
         }
     }
     UiDialog {
         id: duplicateDialog; objectName: "duplicateDownloadDialog"
+        onOpened: duplicateAddButton.highlighted = true
         property var matches: []
         property bool fileExists: false
         property bool start: false
@@ -843,15 +852,16 @@ Item {
                     onClicked: { if (root.downloads.resumeDownload(duplicateDialog.existing.id)) { duplicateDialog.close(); addDialog.close() } }
                 }
             ]
-            UiButton { objectName: "duplicateAddNew"; text: qsTr("Add New"); icon.name: "list-add"; highlighted: true; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.AcceptRole; onClicked: { if (root.sendDownload(duplicateDialog.start, "numbered")) { duplicateDialog.close(); addDialog.accept() } } }
+            UiButton { id: duplicateAddButton; objectName: "duplicateAddNew"; text: qsTr("Add New"); icon.name: "list-add"; highlighted: true; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.AcceptRole; onClicked: { if (root.sendDownload(duplicateDialog.start, "numbered")) { duplicateDialog.close(); addDialog.accept() } } }
             UiButton { objectName: "duplicateOverwrite"; text: qsTr("Overwrite"); icon.name: "edit-delete"; enabled: duplicateDialog.canReplace; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.DestructiveRole; onClicked: { if (root.sendDownload(duplicateDialog.start, "overwrite")) { duplicateDialog.close(); addDialog.accept() } } }
             UiButton { text: qsTr("Cancel"); icon.name: "dialog-cancel"; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.RejectRole; onClicked: duplicateDialog.reject() }
         }
     }
     UiDialog {
         id: removeDialog; objectName: "removeExampleDialog"
+        onOpened: removeConfirm.highlighted = true
         property string targetId: ""; property string targetName: ""; property var targetIds: []
-        title: !root.live ? qsTr("Remove Example?") : targetIds.length > 1 ? qsTr("Remove %1 Downloads?").arg(targetIds.length) : qsTr("Remove Download?")
+        title: targetIds.length > 1 ? qsTr("Remove %1 Downloads?").arg(targetIds.length) : qsTr("Remove Download?")
         preferredWidth: Tokens.dialogWidthSmall
         contentItem: ColumnLayout {
             spacing: Tokens.contentSpacing
@@ -871,8 +881,8 @@ Item {
         }
         footer: DialogFooter {
             UiButton {
-                objectName: "confirmRemoveExample"; icon.name: removeDeleteFiles.checked ? "edit-delete" : "list-remove"
-                text: !root.live ? qsTr("Remove Example") : removeDeleteFiles.checked ? qsTr("Delete") : qsTr("Remove")
+                id: removeConfirm; objectName: "confirmRemoveExample"; icon.name: removeDeleteFiles.checked ? "edit-delete" : "list-remove"
+                text: removeDeleteFiles.checked ? qsTr("Delete") : qsTr("Remove")
                 QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.AcceptRole
                 enabled: root.live ? !root.downloads.busy && root.downloads.canForgetDownloads(removeDialog.targetIds) : JSON.stringify(root.downloads.selectedIds) === JSON.stringify(removeDialog.targetIds)
                 onClicked: { if (root.live) { if (root.downloads.forgetDownloads(removeDialog.targetIds, removeDeleteFiles.visible && removeDeleteFiles.checked)) removeDialog.accept() } else if (JSON.stringify(root.downloads.selectedIds) === JSON.stringify(removeDialog.targetIds)) { root.downloads.removeSelected(); removeDialog.accept() } }

@@ -12,7 +12,10 @@ class DownloadsViewTest : public QObject
 {
     Q_OBJECT
 private slots:
-    void initTestCase() { QQuickStyle::setStyle(QStringLiteral("org.kde.desktop")); }
+    void initTestCase() {
+        QGuiApplication::setDesktopFileName(QStringLiteral("org.abdownloadmanager.QtCapability.ViewTest-%1").arg(QCoreApplication::applicationPid()));
+        QQuickStyle::setStyle(QStringLiteral("org.kde.desktop"));
+    }
     void loadsAndResizes();
     void addDialogValidationAndCancel();
     void removeConfirmationUsesStableId();
@@ -52,6 +55,13 @@ void DownloadsViewTest::loadsAndResizes()
     loadPreview(view, model);
     QCOMPARE(view.status(), QQuickView::Ready);
     QVERIFY(view.rootObject());
+    QCOMPARE(child(view, "aboutPreviewDialog")->property("title").toString(), "About Download Manager");
+    for (const char *name : {"settingsToolbarButton", "showDownloadDetails", "editDownloadOptions", "copyDownloadLink", "addMultipleDownloads"})
+        QVERIFY2(!child(view, name)->property("visible").toBool(), name);
+    for (auto *object : view.rootObject()->findChildren<QObject *>()) {
+        QVERIFY(object->property("text").toString() != "Main");
+        QVERIFY(!object->property("text").toString().contains("Remove Example"));
+    }
     for (const QSize &size : {QSize(948, 762), QSize(728, 522), QSize(1280, 900)}) {
         view.resize(size);
         QTRY_COMPARE(view.rootObject()->size(), QSizeF(size));
@@ -295,6 +305,7 @@ void DownloadsViewTest::buttonsKeepKeyboardFocusWithoutNativeTextRectangle()
     auto *button = qobject_cast<QQuickItem *>(child(view, "confirmAddExample"));
     QVERIFY(window && button);
     QVERIFY(QTest::qWaitForWindowExposed(window));
+    QTRY_VERIFY(button->property("highlighted").toBool());
     auto *outline = button->findChild<QQuickItem *>("buttonKeyboardFocusFrame");
     QVERIFY(outline);
     // The desktop StyleItem used activeFocus OR highlighted as its paint hint, painting
@@ -412,7 +423,7 @@ void DownloadsViewTest::desktopThemeAndReviewGallery()
     QVERIFY(capture("home"));
     model.select("preview-2");
     qreal previousMenuX = -1;
-    for (const QString &name : {QString("File"), QString("Tools"), QString("Help")}) {
+    for (const QString &name : {QString("File"), QString("Help")}) {
         QVERIFY(QMetaObject::invokeMethod(view.rootObject(), "openMenu", Q_ARG(QString, name)));
         const char *object = name == "File" ? "fileMenu" : name == "Tasks" ? "tasksMenu" : name == "Tools" ? "toolsMenu" : "helpMenu";
         // Each menu opens below its own menubar button, left to right.
