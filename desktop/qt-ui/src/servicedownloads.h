@@ -28,6 +28,9 @@ class ServiceDownloads : public QAbstractListModel
     Q_PROPERTY(QString search READ search WRITE setSearch NOTIFY viewChanged)
     Q_PROPERTY(int visibleCount READ rowCount NOTIFY viewChanged)
     Q_PROPERTY(QVariantMap counts READ counts NOTIFY viewChanged)
+    Q_PROPERTY(QString sortColumn READ sortColumn NOTIFY viewChanged)
+    Q_PROPERTY(bool sortDescending READ sortDescending NOTIFY viewChanged)
+    Q_PROPERTY(QVariantMap statistics READ statistics NOTIFY selectionChanged)
     // Current row of the selection (keyboard focus/anchor end); single-item actions use it.
     Q_PROPERTY(QString selectedId READ selectedId NOTIFY selectionChanged)
     Q_PROPERTY(QStringList selectedIds READ selectedIds NOTIFY selectionChanged)
@@ -108,6 +111,10 @@ public:
     void setCategory(const QString &value);
     void setSearch(const QString &value);
     QVariantMap counts() const;
+    QString sortColumn() const { return m_settings.value("qtSortColumn", "dateAdded").toString(); }
+    bool sortDescending() const { return m_settings.value("qtSortDescending", true).toBool(); }
+    Q_INVOKABLE bool sortBy(const QString &column);
+    QVariantMap statistics() const;
     QString selectedId() const { return m_selected; }
     QStringList selectedIds() const;
     int selectionCount() const { return m_selection.size(); }

@@ -100,6 +100,10 @@ Item {
         return ({ready: qsTr("Connected"), connecting: qsTr("Connecting…"), disconnected: qsTr("Disconnected")})[downloads.connectionState] || downloads.connectionState
     }
     readonly property bool filtered: downloads.search !== "" || downloads.category !== "all"
+    Connections {
+        target: root.downloads
+        function onViewChanged() { list.currentIndex = root.downloads.indexOf(root.downloads.selectedId) }
+    }
     function stateLabel(state: string): string {
         return ({downloading: qsTr("Downloading"), queued: qsTr("Added"), paused: qsTr("Paused"), completed: qsTr("Completed"), failed: qsTr("Error")})[state] || state
     }
@@ -395,16 +399,27 @@ Item {
                                 Row {
                                     Item { width: table.iconWidth; height: tableHeader.height }
                                     Repeater {
-                                        model: [{label: qsTr("Name"), w: table.nameWidth, shown: true}, {label: qsTr("Size"), w: table.sizeWidth, shown: true},
-                                                {label: qsTr("Status"), w: table.statusWidth, shown: true}, {label: qsTr("Speed"), w: table.speedWidth, shown: table.showSpeed},
-                                                {label: qsTr("Time Left"), w: table.etaWidth, shown: table.showEta}, {label: qsTr("Date Added"), w: table.dateWidth, shown: table.showDate}]
+                                        model: [{label: qsTr("Name"), key: "name", w: table.nameWidth, shown: true}, {label: qsTr("Size"), key: "size", w: table.sizeWidth, shown: true},
+                                                {label: qsTr("Status"), key: "state", w: table.statusWidth, shown: true}, {label: qsTr("Speed"), key: "speed", w: table.speedWidth, shown: table.showSpeed},
+                                                {label: qsTr("Time Left"), key: "remainingTime", w: table.etaWidth, shown: table.showEta}, {label: qsTr("Date Added"), key: "dateAdded", w: table.dateWidth, shown: table.showDate}]
                                         delegate: Caption {
+                                            id: headerCell
                                             required property var modelData
+                                            readonly property bool sortable: root.live && root.downloads.capabilities.indexOf("settings.sort") >= 0
+                                            objectName: "sortHeader-" + modelData.key
                                             visible: modelData.shown; width: modelData.w; height: tableHeader.height
                                             leftPadding: Tokens.cellPadding; rightPadding: Tokens.cellPadding
-                                            font.weight: Font.DemiBold
-                                            verticalAlignment: Text.AlignVCenter; text: modelData.label
+                                            font.weight: Font.DemiBold; elide: Text.ElideRight
+                                            verticalAlignment: Text.AlignVCenter
+                                            text: modelData.label + (sortable && root.downloads.sortColumn === modelData.key ? (root.downloads.sortDescending ? " ▾" : " ▴") : "")
                                             Accessible.role: Accessible.ColumnHeader
+                                            Accessible.name: text; Accessible.focusable: sortable
+                                            Accessible.onPressAction: if (sortable && !root.downloads.busy) root.downloads.sortBy(modelData.key)
+                                            activeFocusOnTab: sortable
+                                            Keys.onSpacePressed: if (sortable && !root.downloads.busy) root.downloads.sortBy(modelData.key)
+                                            Keys.onReturnPressed: if (sortable && !root.downloads.busy) root.downloads.sortBy(modelData.key)
+                                            MouseArea { anchors.fill: parent; enabled: headerCell.sortable && !root.downloads.busy; cursorShape: Qt.PointingHandCursor; onClicked: root.downloads.sortBy(headerCell.modelData.key) }
+                                            Rectangle { anchors.fill: parent; color: "transparent"; visible: headerCell.activeFocus; border.width: Tokens.focusRingWidth; border.color: theme.focusColor }
                                         }
                                     }
                                 }
@@ -559,7 +574,16 @@ Item {
                 }
             }
         }
-        // Conditional notices only; no permanent footer/status bar or counters.
+        Kirigami.Separator { Layout.fillWidth: true; visible: root.live }
+        RowLayout {
+            objectName: "downloadsStatusBar"; visible: root.live
+            Layout.fillWidth: true; Layout.leftMargin: Tokens.spacingL; Layout.rightMargin: Tokens.spacingL
+            Layout.topMargin: Tokens.spacingS; Layout.bottomMargin: Tokens.spacingS; spacing: Tokens.spacingL
+            Caption { objectName: "downloadsSelectedSummary"; Layout.fillWidth: true; text: root.live ? qsTr("%1 selected · %2").arg(root.downloads.selectionCount).arg(root.downloads.statistics.selectedSizeLabel) : ""; elide: Text.ElideRight }
+            Caption { objectName: "downloadsQueuedSummary"; text: root.live ? qsTr("Queued: %1").arg(root.downloads.connectionState === "ready" ? root.downloads.statistics.queuedCount : "—") : "" }
+            Caption { objectName: "downloadsSpeedSummary"; text: root.live ? qsTr("Total: %1").arg(root.downloads.connectionState === "ready" ? root.downloads.statistics.speedLabel : "—") : "" }
+        }
+        // Conditional connection/error/intake notices remain separate from the status bar.
         RowLayout {
             visible: root.downloads.errorMessage !== "" || !root.live || !root.explicitRuntime || root.downloads.connectionState !== "ready" || (root.downloads.browserRequests || []).length > 0
             Layout.fillWidth: true; Layout.leftMargin: Tokens.spacingL; Layout.rightMargin: Tokens.spacingL

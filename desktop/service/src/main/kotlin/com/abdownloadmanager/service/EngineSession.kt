@@ -158,7 +158,7 @@ class EngineSession(
             "browser.dismiss", "browser.settings", "settings.integration", "frontend.activate", "links.import",
             "system.activity", "download.probe", "download.review", "history.page", "history.delta", "download.windows", "download.parts",
             "download.replace", "download.delete", "settings.folder", "settings.duplicates",
-            "download.reset", "download.move", "download.links")
+            "download.reset", "download.move", "download.links", "settings.sort")
     }
 
     /** A frontend polled; browser requests then wait for it instead of launching one.

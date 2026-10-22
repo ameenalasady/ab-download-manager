@@ -41,6 +41,7 @@ class EngineSettingsRepository(
         // Qt frontend only (the original asks on every duplicate): what Add does when the link or
         // destination already exists. Never an automatic overwrite; that stays a per-add choice.
         put("qtDuplicateAction", "ask")
+        put("qtSortColumn", "dateAdded"); put("qtSortDescending", true)
     }
     private val writable = defaults.keys
     private val browserKeys = setOf("apiEnabled", "apiPort", "apiAuthEnabled", "apiAuthKey")
@@ -70,6 +71,9 @@ class EngineSettingsRepository(
             require(p.isString && p.content in OriginalAppSettings.sizeUnits) { "Unsupported $key" }; JsonPrimitive(p.content)
         }
         "speedLimit" -> { val n = p.content.toLong(); require(n > 0) { "Speed limit must be positive" }; JsonPrimitive(n.toString()) }
+        "qtSortColumn" -> {
+            require(p.isString && p.content in setOf("name", "size", "state", "speed", "remainingTime", "dateAdded")) { "Unsupported sort column" }; JsonPrimitive(p.content)
+        }
         "qtDuplicateAction" -> {
             require(p.isString && p.content in setOf("ask", "numbered", "existing")) { "Unsupported duplicate action" }; JsonPrimitive(p.content)
         }

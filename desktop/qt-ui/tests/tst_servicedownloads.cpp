@@ -40,7 +40,7 @@ public:
     bool browserCapability = false, desktopCapability = false, windowsCapability = false;
     // New negotiated settings/duplicate extensions.
     bool folderCapability = false, duplicateCapability = false, replaceCapability = false;
-    bool actionsCapability = false;
+    bool actionsCapability = false, sortCapability = false;
     // Serial command-batch probes: the full log, a 1-based index that is refused, a
     // mismatched commandId (unexpected reply), and how many snapshots were served.
     QList<QJsonObject> commandLog;
@@ -103,6 +103,7 @@ public:
                     if (folderCapability) caps.append("settings.folder");
                     if (duplicateCapability) caps.append("settings.duplicates");
                     if (replaceCapability) caps.append("download.replace");
+                    if (sortCapability) caps.append("settings.sort");
                     if (actionsCapability) for (const auto &op : {"download.reset", "download.move", "download.links"}) caps.append(op);
                     if (categoryCapability) for (const auto &op : {"category.create", "category.update", "category.delete", "category.move", "category.assign"}) caps.append(op);
                     reply["capabilities"] = caps;
@@ -124,6 +125,12 @@ public:
                     commandSnapshots.append(snapshots);
                     if (loseCommandReply) { client->abort(); return; }
                     const bool refused = failAtCommand > 0 && int(commandLog.size()) == failAtCommand;
+                    if (sortCapability && request["op"] == "settings.update" && !refused) {
+                        auto settings = extensionSnapshot["settings"].toObject();
+                        const auto patch = request["settings"].toObject();
+                        for (auto i = patch.begin(); i != patch.end(); ++i) settings[i.key()] = i.value();
+                        extensionSnapshot["settings"] = settings;
+                    }
                     if (request["op"] == "download.forget") {
                         if (!refused && commandResult.isEmpty()) for (int i = rows.size() - 1; i >= 0; --i)
                             if (rows[i].toObject()["id"] == request["id"]) rows.removeAt(i);
@@ -164,7 +171,43 @@ public:
 class ServiceDownloadsTest : public QObject {
     Q_OBJECT
 private slots:
-    void initTestCase() { QQuickStyle::setStyle("org.kde.desktop"); QQuickWindow::setDefaultAlphaBuffer(true); }
+    void initTestCase() {
+        QGuiApplication::setDesktopFileName(QStringLiteral("org.abdownloadmanager.QtCapability.ServiceTest-%1").arg(QCoreApplication::applicationPid()));
+        QQuickStyle::setStyle("org.kde.desktop"); QQuickWindow::setDefaultAlphaBuffer(true);
+    }
+    void sortingAndAggregateStatusPreserveStableSelection() {
+        FakeService service; service.sortCapability = service.monitorCapability = true;
+        auto settings = basicSettings(); settings["qtSortColumn"] = "dateAdded"; settings["qtSortDescending"] = true;
+        service.extensionSnapshot = {{"queues", QJsonArray{}}, {"manualPending", QJsonArray{"9007199254740995"}}, {"settings", settings}};
+        service.rows = QJsonArray{
+            QJsonObject{{"id", "9007199254740993"}, {"name", "Zeta.bin"}, {"size", "1000"}, {"downloaded", "250"}, {"state", "downloading"}, {"speed", "1200"}, {"remainingTime", "1"}, {"dateAdded", "100"}},
+            QJsonObject{{"id", "9007199254740994"}, {"name", "alpha.bin"}, {"size", "9007199254740993"}, {"downloaded", "0"}, {"state", "downloading"}, {"speed", "800"}, {"remainingTime", "999999"}, {"dateAdded", "200"}},
+            QJsonObject{{"id", "9007199254740995"}, {"name", "unknown.bin"}, {"size", "-1"}, {"downloaded", "0"}, {"state", "queued"}, {"speed", "0"}, {"remainingTime", "-1"}, {"dateAdded", "300"}}};
+        ServiceDownloads model(service.descriptor); QTRY_COMPARE(model.rowCount(), 3);
+        QCOMPARE(model.idAt(0), "9007199254740995"); model.selectAll();
+        QCOMPARE(model.statistics()["selectedBytes"].toString(), "9007199254741993");
+        QCOMPARE(model.statistics()["unknownSizes"].toInt(), 1); QCOMPARE(model.statistics()["queuedCount"].toInt(), 1);
+        QCOMPARE(model.statistics()["speedLabel"].toString(), "1.95 KiB/s");
+        QVERIFY(model.sortBy("name")); QTRY_COMPARE(model.sortColumn(), "name");
+        QCOMPARE(model.idAt(0), "9007199254740994"); QCOMPARE(model.selectionCount(), 3);
+        QTRY_VERIFY(!model.busy()); QVERIFY(model.sortBy("size")); QTRY_COMPARE(model.sortColumn(), "size");
+        QCOMPARE(model.idAt(0), "9007199254740993"); QCOMPARE(model.idAt(2), "9007199254740995");
+        QTRY_VERIFY(!model.busy()); QVERIFY(model.sortBy("size")); QTRY_VERIFY(model.sortDescending());
+        QCOMPARE(model.idAt(0), "9007199254740994"); QCOMPARE(model.idAt(2), "9007199254740995"); // Unknown stays last.
+        QTRY_VERIFY(!model.busy()); QVERIFY(!model.sortBy("not-a-column"));
+        QQuickView view; view.setResizeMode(QQuickView::SizeRootObjectToView);
+        view.setInitialProperties({{"downloads", QVariant::fromValue(&model)}});
+        view.resize(1120, 700); view.setMinimumSize(QSize(1120, 700)); view.setMaximumSize(QSize(1120, 700));
+        view.setSource(QUrl("qrc:/qt-ui/qml/DownloadsView.qml")); view.setTitle("Parity list fixture"); view.show();
+        QCOMPARE(view.status(), QQuickView::Ready);
+        auto *status = view.rootObject()->findChild<QObject *>("downloadsSelectedSummary"); QVERIFY(status);
+        QTRY_VERIFY(status->property("text").toString().contains("3 selected"));
+        const int hold = qBound(0, qEnvironmentVariableIntValue("QT_LIST_GALLERY_HOLD_MS"), 10000);
+        if (hold) { QVERIFY(reviewFrame(view, qEnvironmentVariable("QT_ADAPTER_CAPTURE_DIR", service.directory.path()) + "/list-client.png", QSize(1120, 700))); QTest::qWait(hold); }
+        model.setSearch("Zeta"); QCOMPARE(model.selectionCount(), 1); QCOMPARE(model.statistics()["selectedBytes"].toString(), "1000");
+        QCOMPARE(model.statistics()["queuedCount"].toInt(), 1); // Global, not filtered.
+        view.close(); QTest::qWait(100);
+    }
     void capturedDownloadActionsAndLinks() {
         FakeService service; service.detailsCapability = service.actionsCapability = true;
         auto row = service.rows[0].toObject(); const auto id = row["id"].toString();

@@ -17,6 +17,7 @@
 #include <unistd.h>
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace {
 constexpr quint32 maxFrame = 2 * 1024 * 1024;
@@ -311,6 +312,8 @@ void ServiceDownloads::readFrames() {
             if (!sizeUnits.contains(s["sizeUnit"].toString()) || !sizeUnits.contains(s["speedUnit"].toString())
                 || !s["useCategoryByDefault"].isBool()) { invalid(); return; }
         }
+        if (m_capabilities.contains("settings.sort") && (!QStringList{"name", "size", "state", "speed", "remainingTime", "dateAdded"}.contains(settings.value("qtSortColumn").toString())
+            || !snapshot["settings"].toObject()["qtSortDescending"].isBool())) { invalid(); return; }
         if (m_capabilities.contains("settings.duplicates")
             && !QStringList{"ask", "numbered", "existing"}.contains(snapshot["settings"].toObject()["qtDuplicateAction"].toString())) { invalid(); return; }
         QVariantMap settingsPolicy;
@@ -477,6 +480,7 @@ void ServiceDownloads::readFrames() {
         const bool runtimeChanged = runtime != m_runtime;
         const bool categoriesChanged = categories != m_categories;
         const bool unitsChanged = settings.value("sizeUnit") != m_settings.value("sizeUnit") || settings.value("speedUnit") != m_settings.value("speedUnit");
+        const bool sortChanged = settings.value("qtSortColumn") != m_settings.value("qtSortColumn") || settings.value("qtSortDescending") != m_settings.value("qtSortDescending");
         const bool extensionsChanged = queues != m_queues || settings != m_settings || categoriesChanged || runtimeChanged || settingsPolicy != m_settingsPolicy || integration != m_integration
             || manualPending != m_manualPending || parts != m_parts;
         if (extensionsChanged) {
@@ -484,7 +488,7 @@ void ServiceDownloads::readFrames() {
             m_settingsPolicy = settingsPolicy; m_integration = integration; m_manualPending = manualPending; m_parts = parts;
             if (m_category.startsWith("category:") && !m_categoryMembers.contains(m_category)) m_category = "all";
         }
-        if (rows != m_rows || categoriesChanged || unitsChanged || !m_selectOnSnapshot.isEmpty()) {
+        if (rows != m_rows || categoriesChanged || unitsChanged || sortChanged || !m_selectOnSnapshot.isEmpty()) {
             m_rows = rows;
             if (!m_selectOnSnapshot.isEmpty()) {
                 m_selected = m_anchor = m_selectOnSnapshot; m_selection = {m_selectOnSnapshot}; m_selectOnSnapshot.clear();
@@ -636,6 +640,31 @@ void ServiceDownloads::updateCounts() {
     }
     m_counts = counts;
 }
+bool ServiceDownloads::sortBy(const QString &column) {
+    if (!m_capabilities.contains("settings.sort") || !QStringList{"name", "size", "state", "speed", "remainingTime", "dateAdded"}.contains(column)) return false;
+    return updateSettings({{"qtSortColumn", column}, {"qtSortDescending", column == sortColumn() ? !sortDescending() : column == "dateAdded"}});
+}
+QVariantMap ServiceDownloads::statistics() const {
+    qint64 selectedBytes = 0, speed = 0; int unknown = 0, queued = 0;
+    QSet<QString> waiting = m_manualPending;
+    for (const auto &value : m_queues) {
+        const auto queue = value.toMap();
+        if (queue["active"].toBool()) for (const auto &id : queue["items"].toList()) waiting.insert(id.toString());
+    }
+    auto add = [](qint64 &total, qint64 value) { total += std::min(std::max(qint64(0), value), std::numeric_limits<qint64>::max() - total); };
+    for (const auto &row : m_rows) {
+        const auto id = row["id"].toString(), state = row["state"].toString();
+        if (m_selection.contains(id)) {
+            const auto size = row["size"].toString().toLongLong();
+            if (size < 0) ++unknown; else add(selectedBytes, size);
+        }
+        if (state == "downloading") add(speed, row["speed"].toString().toLongLong());
+        else if (state != "completed" && waiting.contains(id)) ++queued;
+    }
+    return {{"selectedBytes", QString::number(selectedBytes)}, {"unknownSizes", unknown}, {"queuedCount", queued},
+        {"selectedSizeLabel", sizeText(selectedBytes, sizeUnit()) + (unknown ? tr(" + unknown") : QString())},
+        {"speedLabel", m_capabilities.contains("monitor.stats") ? sizeText(speed, m_settings.value("speedUnit", "BinaryBytes").toString()) + "/s" : QStringLiteral("—")}};
+}
 void ServiceDownloads::rebuild() {
     // Cache once per model update, not once per QML sidebar binding; membership is
     // indexed by stable string ID, without repeated QVariant-list copies/scans.
@@ -643,6 +672,25 @@ void ServiceDownloads::rebuild() {
     beginResetModel(); m_visible.clear();
     for (int i = 0; i < m_rows.size(); ++i)
         if (matchesCategory(m_rows[i], m_category) && m_rows[i]["name"].toString().contains(m_search.trimmed(), Qt::CaseInsensitive)) m_visible.append(i);
+    const QString column = sortColumn(); const bool descending = sortDescending();
+    std::sort(m_visible.begin(), m_visible.end(), [this, &column, descending](int a, int b) {
+        const auto &left = m_rows[a], &right = m_rows[b]; int comparison = 0;
+        if (column == "name" || column == "state") {
+            const auto key = column == "name" ? "name" : "state";
+            comparison = QString::compare(left[key].toString(), right[key].toString(), Qt::CaseInsensitive);
+        } else {
+            auto number = [&column](const QJsonObject &row) {
+                if ((column == "speed" || column == "remainingTime") && row["state"] != "downloading") return qint64(-1);
+                bool ok = false; const auto n = row[column].toString().toLongLong(&ok); return ok ? n : qint64(-1);
+            };
+            const auto l = number(left), r = number(right);
+            // Unknown values stay last in either direction.
+            if ((l < 0) != (r < 0)) return l >= 0;
+            comparison = l < r ? -1 : l > r ? 1 : 0;
+        }
+        if (!comparison) return left["id"].toString().toLongLong() < right["id"].toString().toLongLong();
+        return descending ? comparison > 0 : comparison < 0;
+    });
     // Hidden or removed rows are never actionable: drop them from the selection.
     QSet<QString> visible;
     for (int i : std::as_const(m_visible)) visible.insert(m_rows[i]["id"].toString());
