@@ -43,6 +43,11 @@ Supported actions:
 - `invalid-add-name`, `invalid-add-folder` on a single-download form: deterministic
   validation states; the folder fixture is a regular file inside the disposable profile.
   Close/reopen the form to reset; do not confirm downloads in these validation states;
+- `long-add-folder` creates a deeply nested disposable download folder and selects it on the form;
+- `assert-add-size WIDTH HEIGHT` checks the single-download AWT window's current/minimum/maximum
+  dimensions and verifies resizing is disabled (dimensions include app UI scale, not screenshot pixels);
+- `assert-add-status CLASS` checks the form's actual validation result, e.g. `CanAdd`,
+  `DownloadAlreadyExists`, `InvalidFileName`, or `CantWriteInThisFolder`;
 - `assert-no-option-dialogs` after opening a picker: fails if it created a visible AWT Dialog;
   pair with a screenshot to confirm the intended picker actually opened;
 - `search text` (or `search` to clear);

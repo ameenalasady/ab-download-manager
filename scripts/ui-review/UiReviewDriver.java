@@ -102,6 +102,28 @@ public final class UiReviewDriver {
                             new AddDownloadCredentialsInUiProps.Configs(null));
                     }).toList();
                     app.openAddDownloadDialog(links, new ImportOptions());
+                } else if (command.startsWith("assert-add-size ")) {
+                    String[] parts = command.split(" ");
+                    Window window = Arrays.stream(Window.getWindows())
+                        .filter(w -> w.isShowing() && w instanceof Frame f && f.getTitle().startsWith("Add Download"))
+                        .findFirst().orElseThrow();
+                    Dimension expected = new Dimension(Integer.parseInt(parts[1]), Integer.parseInt(parts[2]));
+                    if (!window.getSize().equals(expected) || !window.getMinimumSize().equals(expected) ||
+                        !window.getMaximumSize().equals(expected) || ((Frame) window).isResizable())
+                        throw new IllegalStateException("Add Download bounds: " + window.getSize() +
+                            ", min=" + window.getMinimumSize() + ", max=" + window.getMaximumSize());
+                } else if (command.startsWith("assert-add-status ")) {
+                    var component = (BaseAddSingleDownloadComponent) app.getOpenedAddDownloadDialogs().getValue().getFirst();
+                    var result = component.getCanAddResult().getValue();
+                    if (result == null || !result.getClass().getSimpleName().equals(command.substring(18)))
+                        throw new IllegalStateException("Unexpected add status: " + result);
+                } else if (command.equals("long-add-folder")) {
+                    Path folder = root.resolve("Downloads");
+                    for (int i = 0; i < 6; i++) folder = folder.resolve("A-long-disposable-download-folder-" + i);
+                    Files.createDirectories(folder);
+                    var component = (BaseAddSingleDownloadComponent) app.getOpenedAddDownloadDialogs().getValue().getFirst();
+                    component.setUseCategory(false);
+                    component.setFolder(folder.toString());
                 } else if (command.startsWith("ui-scale ")) {
                     float scale = Float.parseFloat(command.substring(9));
                     if (scale < 0.75f || scale > 2f) throw new IllegalArgumentException("Review scale out of range");

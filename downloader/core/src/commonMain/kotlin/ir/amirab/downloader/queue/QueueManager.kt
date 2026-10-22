@@ -9,6 +9,8 @@ import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.EmptyCoroutineContext
 
 object DefaultQueueInfo {
     const val ID = 0L
@@ -18,6 +20,7 @@ object DefaultQueueInfo {
 class QueueManager(
     private val queueDb: IDownloadQueueDatabase,
     private val listOfJobs: DownloadManagerMinimalControl,
+    private val ownerContext: CoroutineContext = EmptyCoroutineContext,
 ) {
     companion object {
 
@@ -85,7 +88,7 @@ class QueueManager(
         if (queue.isMainQueue()) {
             return
         }
-        queue.dispose()
+        queue.closeAndJoin()
         queueDb.deleteQueue(queue.id)
         queues.update {
             it.filter {
@@ -117,10 +120,10 @@ class QueueManager(
             val dbQueues = queueModels.map {
                 createQueue(it)
             }
+            queues.update { dbQueues }
             for (queue in dbQueues) {
                 queue.boot()
             }
-            queues.update { dbQueues }
             val ids = queueModels.map { it.id }
             if (DefaultQueueInfo.ID !in ids) {
                 addDefaultQueue()
@@ -146,7 +149,12 @@ class QueueManager(
             downloadEvents = listOfJobs,
             persistedModel = queueModel,
             onQueueEvent = ::onQueueEvent,
+            ownerContext = ownerContext,
         )
+    }
+
+    suspend fun closeAndJoin() {
+        queues.value.forEach { it.closeAndJoin() }
     }
 
     fun getAll(): List<DownloadQueue> {

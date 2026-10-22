@@ -1,5 +1,116 @@
 # Desktop UI consistency pass
 
+## Compact spacing installed with approval (600×312)
+
+At the user's request, installed and started **`ABDownloadManagerNativeWayland-20261018-033455`**
+with 6-dp form gaps and the reduced gap below Size. Tests were explicitly skipped for this
+installation; the release distributable was freshly rebuilt and packaged with `build.py
+--skip-gradle` (not reused from the previous release). The idle native instance exited
+gracefully; the existing native profile and integrations were retained. Verified the new
+installed runtime running with WLToolkit and the expected profile (PID **2552757**).
+Protected system/XWayland/integration file hashes matched before/after.
+
+Pre-upgrade profile/install record/previous release backup:
+`~/.local/state/abdm-backups/native-compact6-profile-20261018-033520/`.
+Build/install logs and verification: `build/ui-review/compact6-{package,build,install}.log`
+and `compact6-installed.json`. No smoke or real-use UI test actions were run during this
+installation.
+
+## Further compact spacing (initial source review; subsequently installed above)
+
+Following the installed 600×336 version, the user requested tighter spacing: form row gaps
+are now **6 dp**, with a **600×312-dp** fixed window. The initial compact review was 600×320;
+the subsequent 8-dp height reduction specifically trims the gap below Size/above the divider,
+without changing field/button sizes or further changing row gaps. Feedback and shared popup
+placement remain unchanged, as does the renderer patch. The installed 032752 app/profile
+has not been changed or restarted for this follow-up.
+
+Desktop Kotlin compilation and whitespace checks passed. The first 600×320 iteration also
+passed the 43 Kotlin tests; isolated native source-overlay review covered long URL/name,
+normal/duplicate, and anchored solutions (`compact6-{normal,duplicate,solutions}.png`).
+The final 600×312 bounds and duplicate result were asserted and visually reviewed in
+`build/ui-review/compact6-tight-bottom.png`. Review used only the disposable,
+integration-disabled `build/ui-review/compact6` profile; the review app and fixture were
+closed afterwards. No new bundle or installation for this follow-up.
+
+## Spacing correction installed with approval
+
+The user requested installation of the corrected **600×336-dp / 10-dp row-gap** version.
+Installed and selected release: **`ABDownloadManagerNativeWayland-20261018-032752`**;
+verified running from that installed runtime with WLToolkit, the existing native profile,
+and independent IPC (PID **2517554** at installation). The old native instance was idle
+(no active downloads) and exited gracefully before the swap. Its current database contained
+no download entries; no production data was imported, deleted or used for review.
+
+The full bundle build/Kotlin tests and native Wayland + XWayland download, persistence,
+second-launch/IPC and graceful-shutdown smoke checks passed. All smoke profiles were under
+ignored `build/ui-review/spacing-smoke/`. Packaged UI review without source overlays verified
+the long URL/name form and actual fixed 600×336 AWT bounds in the integration-disabled
+`spacing-package` profile. Screenshot: `build/ui-review/spacing-package-normal.png`.
+Logs: `spacing-{build,smoke,package,install}.log`; installed verification:
+`spacing-installed.json`. The renderer patch hash is unchanged. Protected file hashes
+matched before/after installation; the separate system/XWayland installation, browser/CLI
+integration, autostart and KWin files were not changed. The existing native integration
+policy/settings were retained. Review instance and disposable HTTP fixture were closed.
+
+Pre-upgrade native app-data snapshot and previous release/install record:
+`~/.local/state/abdm-backups/native-spacing-profile-20261018-032936/`.
+Installer desktop-only backup:
+`~/.local/state/abdm-backups/native-desktop-20261018-032937-dfe31e/restore-desktop.sh`.
+That script restores the desktop entry only, not the selected release or profile.
+
+## Fixed Add Download bounds and inline metadata feedback (initial source review; subsequently installed above)
+
+Spacing correction requested after review: restored the original **10-dp row gaps** and
+reduced the fixed window height by the same four × 6 dp, to **600×336 dp**. This retains
+the removed bottom gap without distributing that space between the fields. The captures
+and dimension assertions below describe the preceding 600×360/16-dp review, not this
+subsequent sizing correction. The correction passed desktop Kotlin compilation; it has
+not been installed or activated.
+
+This follow-up leaves installed **`ABDownloadManagerNativeWayland-20261017-180057`**
+running and selected. Neither its real-use profile nor the separate system/XWayland
+installation was used for iteration or changed.
+
+- Single-download windows now explicitly have equal **600×360-dp minimum/maximum bounds**
+  (following app UI scale), with resize/maximize disabled. The initial fixed size alone
+  previously still allowed a much larger window. A baseline with a ~1,000-character URL
+  did **not** reproduce automatic content-driven growth; the supplied screenshots establish
+  the unwanted larger geometry, not its precise cause.
+- URL/name remain full-width, single-line, horizontally scrolling/selectable editors; their
+  model values are not truncated. URL now has an accessible full-value Copy action alongside
+  Paste. Name/folder retain normal editor selection/copy. The form still scrolls vertically
+  independently of the footer when content/font size requires it.
+- Removed the separate reserved status lane. Duplicate/name/folder feedback now replaces
+  resume-support text **beside Size**, without adding or changing row heights. Size and
+  refresh/settings remain visible. Full feedback and resume Yes/No remain available through
+  the tooltip and accessibility description; feedback retains polite live-region semantics.
+  Normal resume information returns when there is no feedback. The initial review distributed
+  the released lane's space into 16-dp field gaps; the correction above restores the original
+  spacing and removes the equivalent height from the window instead.
+- Show solutions / Change solution uses the existing footer, retaining the common anchored
+  picker implementation. Shared popup measurement/positioning and the renderer viewport
+  synchronization patch are unchanged; no individual positioning offsets were added.
+
+Validation: desktop Kotlin compilation, **43 Kotlin tests** and **41 Python tests** passed;
+`git diff --check` passed. The real native app was reviewed with freshly compiled source
+classes over the verified bundle, using only integration-disabled disposable `text-baseline`,
+`text-candidate`, and `text-final` profiles under ignored `build/ui-review/`. A loopback HTTP
+fixture provided a ~1,000-character URL and 209-character filename; nested folder paths,
+normal/duplicate/selected strategy, both validation errors, solution popup, and 150% UI scale
+were exercised. A real 1-KiB disposable download produced the persisted duplicate. The driver
+asserted actual validation states and current/min/max AWT dimensions (600×360 and 900×540),
+plus disabled resizing and no top-level picker dialog. Wait for response/category inference
+and validation to settle before asserting or setting a custom folder.
+
+Evidence: `build/ui-review/text-{long-normal,long-duplicate,solutions,selected,invalid-name,
+invalid-folder,150-duplicate}.png`, `text-contact.png`, `text-{kotlin,python,assertions}.log`.
+The reviewed renderer patch still hashes to
+`24773ad1996ff30af8789631e245ebc51f7e6cc8ad0f9f0df4a50b0dccfb422f`.
+No new bundle was installed/activated; packaged acceptance, the renderer matrix, XWayland,
+all locales/font scales, OS clipboard/IME gestures and screen-reader acceptance were not
+rerun for this source-only change. Review instances and the HTTP fixture were closed.
+
 ## Add Download form cohesion follow-up (installed)
 
 The user approved installation of **`ABDownloadManagerNativeWayland-20261017-180057`**.

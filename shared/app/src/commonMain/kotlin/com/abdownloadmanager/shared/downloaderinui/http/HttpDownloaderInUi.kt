@@ -20,8 +20,7 @@ import ir.amirab.downloader.downloaditem.http.HttpDownloader
 import ir.amirab.downloader.downloaditem.http.IHttpDownloadCredentials
 import ir.amirab.downloader.monitor.ProcessingDownloadItemFactoryInputs
 import ir.amirab.downloader.monitor.ProcessingDownloadItemState
-import ir.amirab.downloader.monitor.RangeBasedProcessingDownloadItemState
-import ir.amirab.downloader.monitor.UiRangedPart
+import ir.amirab.downloader.monitor.createHttpProcessingState
 import ir.amirab.util.HttpUrlUtils
 import ir.amirab.util.compose.StringSource
 import ir.amirab.util.compose.asStringSource
@@ -111,34 +110,7 @@ class HttpDownloaderInUi(
 
     override fun createProcessingDownloadItemState(
         props: ProcessingDownloadItemFactoryInputs<HttpDownloadJob>
-    ): ProcessingDownloadItemState {
-        val downloadJob = props.downloadJob
-        val downloadItem = downloadJob.downloadItem
-        val downloadJobStatus = downloadJob.status.value
-        val parts = downloadJob.getParts()
-        val contentLength = downloadItem.contentLength
-        return RangeBasedProcessingDownloadItemState(
-            id = downloadItem.id,
-            folder = downloadItem.folder,
-            name = downloadItem.name,
-            contentLength = contentLength,
-            dateAdded = downloadItem.dateAdded,
-            startTime = downloadItem.startTime ?: -1,
-            completeTime = downloadItem.completeTime ?: -1,
-            status = downloadJobStatus,
-            saveLocation = downloadItem.name,
-            parts = parts.map {
-                UiRangedPart.fromPart(
-                    part = it,
-                    totalLength = contentLength,
-                )
-            },
-            speed = props.speed,
-            supportResume = downloadJob.supportsConcurrent,
-            downloadLink = downloadItem.link,
-            isWaiting = props.isWaiting,
-        )
-    }
+    ): ProcessingDownloadItemState = createHttpProcessingState(props)
 
     override fun createBareDownloadItem(
         credentials: HttpDownloadCredentials,

@@ -28,6 +28,8 @@ kotlin {
 
             api(project(":downloader:core"))
             api(project(":downloader:monitor"))
+            api(project(":shared:categories"))
+            api(project(":shared:download-lifecycle"))
 
             api(project(":shared:config"))
             api(project(":shared:utils"))

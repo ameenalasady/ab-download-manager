@@ -114,6 +114,8 @@ class OkHttpHttpDownloaderClient(
                     ).let {
                         if (proxy.username != null && proxy.type == ProxyType.HTTP) {
                             it.proxyAuthenticator { _, r ->
+                                // Do not loop indefinitely when the proxy rejects credentials.
+                                if (r.request.header("Proxy-Authorization") != null) return@proxyAuthenticator null
                                 val credentials = Credentials.basic(
                                     proxy.username,
                                     proxy.password.orEmpty()

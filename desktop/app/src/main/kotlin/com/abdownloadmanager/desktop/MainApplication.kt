@@ -30,6 +30,8 @@ class MainApplication : AutoCloseable,
     private val customRenderApi: CustomRenderApi by inject()
 
     private val browserNativeMessaging: NativeMessaging by inject()
+    private var repositoryInitialized = false
+    private var systemInitialized = false
     fun start(
         appArguments: AppArguments,
         globalAppExceptionHandler: GlobalAppExceptionHandler,
@@ -42,9 +44,13 @@ class MainApplication : AutoCloseable,
 
                 // boot configs from the storage so download manager can use them on boot!
                 customRenderApi.boot()
-                appRepository.boot()
+                val repository = appRepository
+                repositoryInitialized = true
+                repository.boot()
                 if (!ExperimentalDesktopProfile.blocksDesktopFeatures) integration.boot()
-                downloadSystem.boot()
+                val system = downloadSystem
+                systemInitialized = true
+                system.boot()
                 previousVersion.boot()
                 if (!ExperimentalDesktopProfile.blocksDesktopFeatures) keepAwakeManager.boot()
                 //waiting for compose kmp to add multi launcher to nativeDistributions,the PR is already exists but not merger
@@ -64,6 +70,16 @@ class MainApplication : AutoCloseable,
     }
 
     override fun close() {
-        //nothing yet!
+        // Drain the extracted subscriptions. This is not yet full transfer/store/platform
+        // shutdown; do not use this hook as authorization to release a live writer lease.
+        runBlocking {
+            try {
+                if (repositoryInitialized) appRepository.closeEnginePolicyAndJoin()
+            } finally {
+                if (systemInitialized) downloadSystem.closeListenersAndJoin()
+            }
+        }
+        repositoryInitialized = false
+        systemInitialized = false
     }
 }

@@ -79,7 +79,7 @@ fun AddDownloadPage(
         }
         Column(
             Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             DownloadFormRow(myStringResource(Res.string.download_link)) {
                 UrlTextField(text = credentials.link, setText = ::setLink)
@@ -147,21 +147,16 @@ fun AddDownloadPage(
             }
             DownloadFormRow(myStringResource(Res.string.size)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    FlowRow(
-                        modifier = Modifier.weight(1f),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                        itemVerticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        RenderFileTypeAndSize(component)
-                        RenderResumeSupport(component)
+                    RenderFileTypeAndSize(component)
+                    Spacer(Modifier.width(16.dp))
+                    Box(Modifier.weight(1f)) {
+                        DownloadStatus(component)
                     }
                     Spacer(Modifier.width(12.dp))
                     ConfigActionsButtons(component)
                 }
             }
         }
-        DownloadStatus(component)
         Spacer(Modifier.height(8.dp))
         Spacer(Modifier.fillMaxWidth().height(1.dp).background(myColors.onBackground / 10))
         Spacer(Modifier.height(12.dp))
@@ -181,7 +176,9 @@ private fun DownloadFormRow(label: String, content: @Composable () -> Unit) {
     }
 }
 
-/** A reserved, non-scrolling status lane: validation never inserts rows into the form. */
+/** Feedback reuses the metadata row, rather than reserving an empty status lane.
+ * The solution action lives in the footer, so long messages cannot squeeze its target.
+ */
 @Composable
 private fun DownloadStatus(component: BaseAddSingleDownloadComponent) {
     val result by component.canAddResult.collectAsState()
@@ -196,16 +193,26 @@ private fun DownloadStatus(component: BaseAddSingleDownloadComponent) {
         strategy == OnDuplicateStrategy.OverrideDownload -> myStringResource(Res.string.download_strategy_override_existing_file)
         else -> null
     }
+    val response by component.checkResponseResult.collectAsState()
+    val fileInfo = response?.getOrNull()?.takeIf { it.isSuccessFul }
+    val details = listOfNotNull(
+        message,
+        fileInfo?.let {
+            myStringResource(Res.string.resume_support) + ": " +
+                myStringResource(if (it.resumeSupport) Res.string.yes else Res.string.no)
+        },
+    ).joinToString("\n")
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 36.dp),
+        Modifier.fillMaxWidth().heightIn(min = 32.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Box(Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite }) {
             if (message != null) {
-                Tooltip(message.asStringSource()) {
+                Tooltip(details.asStringSource()) {
                     Text(
                         text = message,
+                        modifier = Modifier.semantics { contentDescription = details },
                         fontSize = myTextSizes.sm,
                         color = if (strategy != null && (duplicate || result == CanAddResult.CanAdd)) {
                             myColors.onBackground / 70
@@ -216,12 +223,9 @@ private fun DownloadStatus(component: BaseAddSingleDownloadComponent) {
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+            } else {
+                RenderResumeSupport(component)
             }
-        }
-        if (duplicate || strategy != null) {
-            SolutionButton(component, myStringResource(
-                if (strategy == null) Res.string.show_solutions else Res.string.change_solution
-            ))
         }
     }
 }
@@ -379,6 +383,11 @@ private fun MainActionButtons(component: BaseAddSingleDownloadComponent) {
         ) {
             val onDuplicateStrategy by component.onDuplicateStrategy.collectAsState()
             val canAddResult by component.canAddResult.collectAsState()
+            if (canAddResult is CanAddResult.DownloadAlreadyExists || onDuplicateStrategy != null) {
+                SolutionButton(component, myStringResource(
+                    if (onDuplicateStrategy == null) Res.string.show_solutions else Res.string.change_solution
+                ))
+            }
             if (canAddResult is CanAddResult.DownloadAlreadyExists && onDuplicateStrategy == null) {
                 if (component.shouldShowOpenFile.collectAsState().value) {
                     ActionButton(
@@ -519,6 +528,10 @@ private fun UrlTextField(
         myStringResource(Res.string.download_link),
         modifier = modifier.fillMaxWidth(),
         end = {
+            // Copy the model value, never the clipped viewport or a shortened display string.
+            MyTextFieldIcon(MyIcons.copy, contentDescription = myStringResource(Res.string.copy)) {
+                ClipboardUtil.copy(text)
+            }
             MyTextFieldIcon(MyIcons.paste) {
                 setText(
                     ClipboardUtil.read()
@@ -526,6 +539,7 @@ private fun UrlTextField(
                 )
             }
         },
+        singleLine = true,
         errorText = errorText
     )
 }
@@ -541,6 +555,7 @@ private fun NameTextField(
         setText,
         myStringResource(Res.string.name),
         modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
         errorText = errorText,
     )
 }

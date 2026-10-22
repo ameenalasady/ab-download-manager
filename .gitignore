@@ -9,3 +9,20 @@ local.properties
 
 # Ignore android keystores
 *.jks
+
+# Qt / CMake local build trees and generated configuration
+cmake-build*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+compile_commands.json
+.qt/
+*.user
+
+# Python tooling used by the Qt launch, capture, package, and smoke scripts
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/

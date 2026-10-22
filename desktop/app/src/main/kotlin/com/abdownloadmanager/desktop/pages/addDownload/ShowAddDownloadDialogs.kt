@@ -53,7 +53,7 @@ private fun AddDownloadWindow(
     val uiScale = LocalUiScale.current
     when (addDownloadComponent) {
         is BaseAddSingleDownloadComponent -> {
-            val h = 360.applyUiScale(uiScale)
+            val h = 312.applyUiScale(uiScale)
             val w = 600.applyUiScale(uiScale)
             val size = remember {
                 DpSize(
@@ -74,7 +74,12 @@ private fun AddDownloadWindow(
                 state = state,
                 onCloseRequest = onRequestClose,
                 alwaysOnTop = true,
-                minSize = DpSize(w.dp, h.dp),
+                // This compact form is a fixed-size popup, not a content-sized window.
+                // Bound both axes at the window boundary; editors scroll long values inside it.
+                minSize = size,
+                maxSize = size,
+                resizable = false,
+                onRequestToggleMaximize = null,
                 windowController = rememberWindowController(
                     title = myStringResource(Res.string.add_download),
                 ),

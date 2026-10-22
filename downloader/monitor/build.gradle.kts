@@ -17,7 +17,8 @@ kotlin {
                 implementation(project(":downloader:core"))
                 implementation(project(":shared:utils"))
                 implementation(libs.kotlin.coroutines.core)
-                implementation(libs.compose.runtime)
+                // Immutable is a binary annotation, not a runtime UI dependency.
+                compileOnly(libs.compose.runtime)
             }
         }
     }

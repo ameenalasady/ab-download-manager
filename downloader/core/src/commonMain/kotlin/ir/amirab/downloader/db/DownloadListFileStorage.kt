@@ -70,7 +70,11 @@ class DownloadListFileStorage(
     }
 
     override suspend fun removeById(itemId: Long) {
-        getDownloadItemFile(itemId).delete()
+        withContext(Dispatchers.IO) {
+            fileLocks.withLock(itemId) {
+                java.nio.file.Files.deleteIfExists(getDownloadItemFile(itemId).toPath())
+            }
+        }
     }
 
     override suspend fun remove(item: IDownloadItem) {

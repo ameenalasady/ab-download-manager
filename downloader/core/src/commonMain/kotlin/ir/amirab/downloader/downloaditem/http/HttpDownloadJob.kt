@@ -71,7 +71,8 @@ class HttpDownloadJob(
             file = outFile,
             emptyFileCreator = downloadManager.emptyFileCreator,
             appendExtensionToIncompleteDownloads = downloadManager.settings.appendExtensionToIncompleteDownloads,
-            downloadId = id
+            downloadId = id,
+            validatePath = downloadManager.destinationValidator,
         )
     }
 

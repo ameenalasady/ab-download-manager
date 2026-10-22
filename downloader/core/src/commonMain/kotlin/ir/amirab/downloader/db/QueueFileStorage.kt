@@ -73,7 +73,7 @@ class DownloadQueueFileStorageDatabase(
 
     override suspend fun deleteQueue(queueId: Long) {
         lock.withLock {
-            getFileOfQueue(queueId).delete()
+            java.nio.file.Files.deleteIfExists(getFileOfQueue(queueId).toPath())
         }
     }
 
