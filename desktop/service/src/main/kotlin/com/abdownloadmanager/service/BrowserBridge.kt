@@ -9,8 +9,9 @@ import java.io.File
 import java.net.BindException
 import java.net.HttpURLConnection
 import java.net.URI
-import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.ScheduledThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 
 data class BrowserSettings(val enabled: Boolean, val port: Int, val apiKey: String?)
@@ -27,7 +28,12 @@ class BrowserBridge(
     private val retryMillis: Long = 15_000,
 ) : AutoCloseable {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
-    private val worker = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "browser-bridge").apply { isDaemon = true } }
+    // Shutdown drops a pending bind retry rather than waiting out its delay; queued
+    // immediate work (the close cleanup) still runs.
+    private val worker = ScheduledThreadPoolExecutor(1) { r -> Thread(r, "browser-bridge").apply { isDaemon = true } }.apply {
+        removeOnCancelPolicy = true
+        executeExistingDelayedTasksAfterShutdownPolicy = false
+    }
     private var server: MyServer? = null
     private var retry: ScheduledFuture<*>? = null
     @Volatile private var status: JsonObject = state("disabled")
@@ -62,7 +68,9 @@ class BrowserBridge(
                 val bind = generateSequence<Throwable>(e) { it.cause }.any { it is BindException }
                 if (bind) {
                     val occupant = occupant(next.port)
-                    retry = worker.schedule({ bind(next) }, retryMillis, TimeUnit.MILLISECONDS)
+                    // Closing (shutdown) refuses the retry; the bridge is then stopping anyway.
+                    retry = try { worker.schedule({ bind(next) }, retryMillis, TimeUnit.MILLISECONDS) }
+                        catch (_: RejectedExecutionException) { null }
                     // Never echo exception text: it can contain request data.
                     state("failed", if (occupant == "abdm") "Port ${next.port} is used by another AB Download Manager instance; retrying"
                         else "Port ${next.port} is already in use by another application; retrying", occupant, retrying = true)

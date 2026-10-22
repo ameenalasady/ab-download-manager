@@ -208,7 +208,7 @@ class BrowserIntegrationTest {
                 assertEquals("failed", status.getValue("state").jsonPrimitive.content)
                 assertTrue(status.getValue("error").jsonPrimitive.content.contains("another application"))
                 assertEquals(settings, root.resolve("app-data/config/appSettings.json").toFile().readText())
-                // Disabling cancels the pending bind retry (the stop would otherwise wait for it).
+                // Disabling cancels the pending bind retry.
                 engine.command(buildJsonObject { put("op", "browser.settings"); put("settings", buildJsonObject { put("apiEnabled", false) }) })
                 engine.awaitBrowserBridge()
                 assertEquals("disabled", engine.snapshot().getValue("browserIntegration").jsonObject.getValue("state").jsonPrimitive.content)
@@ -240,6 +240,27 @@ class BrowserIntegrationTest {
             assertEquals("pong", post(port, "ping", "null").body())
             assertEquals(0, calls) // No download/request was ever replayed by the bind retry.
             bridge.apply(BrowserSettings(false, port, null)); bridge.awaitIdle()
+            assertEquals("disabled", bridge.snapshot().getValue("state").jsonPrimitive.content)
+        } finally { bridge.close(); occupant.stop(0) }
+    }
+
+    @Test fun closeCancelsAPendingBindRetryInsteadOfWaitingForIt() {
+        val handler = object : com.abdownloadmanager.integration.IntegrationHandler {
+            override suspend fun addDownloadByGui(request: com.abdownloadmanager.integration.model.AddDownloadsFromIntegration) = Unit
+            override fun listQueues() = emptyList<com.abdownloadmanager.integration.model.ApiQueueModel>()
+            override suspend fun addDownload(task: com.abdownloadmanager.integration.model.NewDownloadTask): Long = 1
+        }
+        val occupant = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        occupant.createContext("/") { e -> e.sendResponseHeaders(404, -1); e.close() }
+        occupant.start()
+        val bridge = BrowserBridge(handler, true) // Production retry interval (15 s).
+        try {
+            bridge.apply(BrowserSettings(true, occupant.address.port, null)); bridge.awaitIdle()
+            assertTrue(bridge.snapshot().getValue("retrying").jsonPrimitive.boolean)
+            val started = System.nanoTime()
+            bridge.close()
+            val elapsed = (System.nanoTime() - started) / 1_000_000
+            assertTrue(elapsed < 5_000, "close waited ${elapsed} ms for the pending bind retry")
             assertEquals("disabled", bridge.snapshot().getValue("state").jsonPrimitive.content)
         } finally { bridge.close(); occupant.stop(0) }
     }
