@@ -794,11 +794,90 @@ Item {
     }
     UiDialog {
         id: aboutDialog; objectName: "aboutPreviewDialog"
-        title: qsTr("About Download Manager"); preferredWidth: Tokens.dialogWidthSmall
+        title: qsTr("About Download Manager"); preferredWidth: Tokens.dialogWidthMedium; preferredHeight: Tokens.dialogHeightMedium
+        // Loaded on first open; the bundled credits never change at runtime.
+        property var translators: []
+        property string license: ""
+        // Main open-source components of this edition (frontend, then service).
+        readonly property var components: [
+            ["Qt 6", "LGPL-3.0"], ["KDE Kirigami", "LGPL-2.0-or-later"], ["KDE KWindowSystem", "LGPL-2.1-or-later"],
+            ["KDE Qt Quick Controls desktop style", "LGPL-3.0 or GPL-2.0-or-later"], ["Kotlin and kotlinx libraries", "Apache-2.0"],
+            ["OkHttp and Okio", "Apache-2.0"], ["Ktor", "Apache-2.0"], ["dbus-java", "MIT"]]
+        function openLink(url: string) { DesktopOpener.openWebPage(url, contentItem ? contentItem.Window.window : null) }
+        onAboutToShow: {
+            if (translators.length === 0) translators = AboutCredits.translators()
+            if (license === "") license = AboutCredits.licenseText()
+        }
+        onClosed: aboutPages.currentIndex = 0
         contentItem: ColumnLayout {
             spacing: Tokens.contentSpacing
-            SectionHeading { level: Tokens.headingHero; text: qsTr("AB Download Manager") }
-            Body { text: root.live ? qsTr("Qt / KDE edition, using the original download engine.") : qsTr("Qt / KDE interface preview with example data.") }
+            QQC2.TabBar {
+                id: aboutPages; objectName: "aboutPages"; Layout.fillWidth: true
+                UiTabButton { text: qsTr("About") }
+                UiTabButton { text: qsTr("Licenses") }
+                UiTabButton { text: qsTr("Translators") }
+            }
+            StackLayout {
+                Layout.fillWidth: true; Layout.fillHeight: true
+                currentIndex: aboutPages.currentIndex
+                ColumnLayout {
+                    spacing: Tokens.contentSpacing
+                    SectionHeading { level: Tokens.headingHero; text: qsTr("AB Download Manager") }
+                    Body { text: root.live ? qsTr("Qt / KDE edition, using the original download engine.") : qsTr("Qt / KDE interface preview with example data."); Layout.fillWidth: true }
+                    Body { text: qsTr("Free and open-source software, licensed under the Apache License 2.0."); Layout.fillWidth: true }
+                    Flow {
+                        Layout.fillWidth: true; spacing: Tokens.spacingM
+                        UiButton { objectName: "aboutWebsite"; flat: true; text: qsTr("Project Website"); onClicked: aboutDialog.openLink("https://abdownloadmanager.com") }
+                        UiButton { objectName: "aboutSourceCode"; flat: true; text: qsTr("Source Code"); onClicked: aboutDialog.openLink("https://github.com/amir1376/ab-download-manager") }
+                        UiButton { objectName: "aboutTranslate"; flat: true; text: qsTr("Help Translate"); onClicked: aboutDialog.openLink("https://crowdin.com/project/ab-download-manager") }
+                    }
+                    Item { Layout.fillHeight: true }
+                }
+                ColumnLayout {
+                    spacing: Tokens.contentSpacing
+                    Body { text: qsTr("This edition is built on these open-source components:"); Layout.fillWidth: true }
+                    GridLayout {
+                        objectName: "aboutComponents"; columns: 2
+                        columnSpacing: Tokens.formColumnSpacing; rowSpacing: Tokens.spacingS
+                        Repeater {
+                            model: aboutDialog.components.length * 2
+                            QQC2.Label {
+                                required property int index
+                                readonly property var entry: aboutDialog.components[Math.floor(index / 2)]
+                                text: entry[index % 2]; textFormat: Text.PlainText
+                                color: index % 2 ? theme.secondary : theme.text
+                            }
+                        }
+                    }
+                    SectionHeading { text: qsTr("AB Download Manager license") }
+                    QQC2.ScrollView {
+                        Layout.fillWidth: true; Layout.fillHeight: true; clip: true; contentWidth: availableWidth
+                        QQC2.TextArea {
+                            objectName: "aboutLicenseText"; readOnly: true; selectByMouse: true
+                            textFormat: TextEdit.PlainText; wrapMode: TextEdit.Wrap; font.family: "monospace"
+                            text: aboutDialog.license; Accessible.name: qsTr("License text")
+                        }
+                    }
+                }
+                ColumnLayout {
+                    spacing: Tokens.contentSpacing
+                    Body { text: qsTr("With gratitude to everyone who helped translate this project."); Layout.fillWidth: true }
+                    ListView {
+                        objectName: "aboutTranslators"
+                        Layout.fillWidth: true; Layout.fillHeight: true; clip: true
+                        spacing: Tokens.spacingM
+                        model: aboutDialog.translators
+                        QQC2.ScrollBar.vertical: QQC2.ScrollBar {}
+                        delegate: ColumnLayout {
+                            id: language
+                            required property var modelData
+                            width: ListView.view.width - Tokens.spacingL; spacing: Tokens.spacingXS
+                            QQC2.Label { text: language.modelData.language; font.weight: Font.DemiBold; textFormat: Text.PlainText; Layout.fillWidth: true; elide: Text.ElideRight }
+                            QQC2.Label { text: language.modelData.names.join(", "); color: theme.secondary; textFormat: Text.PlainText; wrapMode: Text.Wrap; Layout.fillWidth: true }
+                        }
+                    }
+                }
+            }
         }
         footer: DialogFooter {
             UiButton { text: qsTr("Close"); icon.name: "dialog-close"; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.RejectRole; onClicked: aboutDialog.close() }

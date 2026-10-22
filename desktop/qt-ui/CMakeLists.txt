@@ -6,7 +6,8 @@ target_include_directories(qtui-preview PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src"
 target_link_libraries(qtui-preview PUBLIC Qt6::Core Qt6::DBus Qt6::Network Qt6::Quick Qt6::Widgets)
 qt_add_qml_module(qtui-preview URI Abdm.Desktop VERSION 1.0 NO_PLUGIN
     OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/Abdm/Desktop"
-    SOURCES src/nativewindowstyle.cpp src/nativewindowstyle.h src/desktopopener.cpp src/desktopopener.h)
+    SOURCES src/nativewindowstyle.cpp src/nativewindowstyle.h src/desktopopener.cpp src/desktopopener.h
+    src/aboutcredits.cpp src/aboutcredits.h)
 target_sources(qtui-preview PRIVATE ../qt-capability/src/kwindowsystembridge.cpp)
 target_include_directories(qtui-preview PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../qt-capability/src")
 if(TARGET PkgConfig::KF6WindowSystemPC)
@@ -19,6 +20,16 @@ qt_add_resources(qtui-preview preview_qml
     qml/FormGrid.qml qml/FormLabel.qml qml/FormField.qml qml/SurfaceFrame.qml qml/SettingsSection.qml
     qml/ProgressTrack.qml qml/WindowFooter.qml qml/ButtonFocus.qml qml/UiButton.qml qml/UiComboBox.qml qml/UiTabButton.qml
     qml/UiDialog.qml qml/DialogFooter.qml qml/IconButton.qml qml/SidebarItem.qml qml/HttpOptions.qml qml/DownloadsView.qml qml/DownloadDetails.qml qml/DownloadContent.qml qml/DownloadCompletion.qml qml/DownloadWindow.qml qml/ServiceWorkflows.qml qml/CategoryWorkflows.qml qml/BrowserRequests.qml qml/PreviewTheme.qml qml/LegacyIcon.qml qml/LegacyPaths.js
+)
+# About → Licenses / Translators: the original project's license and translator credits.
+set(ABDM_REPOSITORY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
+set_source_files_properties("${ABDM_REPOSITORY_ROOT}/LICENSE" PROPERTIES QT_RESOURCE_ALIAS LICENSE)
+set_source_files_properties("${ABDM_REPOSITORY_ROOT}/shared/resources/src/commonMain/resources/com/abdownloadmanager/resources/credits/translators.json"
+    PROPERTIES QT_RESOURCE_ALIAS translators.json)
+qt_add_resources(qtui-preview about_credits
+    PREFIX "/qt-ui/credits"
+    FILES "${ABDM_REPOSITORY_ROOT}/LICENSE"
+    "${ABDM_REPOSITORY_ROOT}/shared/resources/src/commonMain/resources/com/abdownloadmanager/resources/credits/translators.json"
 )
 
 if(BUILD_TESTING AND TARGET Qt6::Test)

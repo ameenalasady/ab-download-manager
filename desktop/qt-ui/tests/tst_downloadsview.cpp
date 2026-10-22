@@ -33,6 +33,7 @@ private slots:
     void buttonsKeepKeyboardFocusWithoutNativeTextRectangle();
     void desktopThemeAndReviewGallery();
     void primaryHighlightSurvivesDialogFooter();
+    void aboutShowsLicensesAndTranslators();
 };
 
 static void loadPreview(QQuickView &view, PreviewDownloads &model)
@@ -531,6 +532,43 @@ Item {
         QTRY_VERIFY(!dialog->property("visible").toBool());
     }
     QVERIFY(primary && cancel && hidden && flat);
+}
+
+void DownloadsViewTest::aboutShowsLicensesAndTranslators()
+{
+    PreviewDownloads model;
+    QQuickView view;
+    loadPreview(view, model);
+    QVERIFY(QTest::qWaitForWindowExposed(&view));
+    auto *about = child(view, "aboutPreviewDialog");
+    QVERIFY(QMetaObject::invokeMethod(about, "open"));
+    QTRY_VERIFY(about->property("opened").toBool());
+    // Bundled original credits: every language with at least one translator.
+    const auto translators = about->property("translators").toList();
+    QVERIFY(translators.size() >= 20);
+    bool arabic = false;
+    for (const auto &value : translators) {
+        const auto language = value.toMap();
+        QVERIFY(!language["language"].toString().isEmpty());
+        QVERIFY(!language["names"].toStringList().isEmpty());
+        arabic = arabic || language["language"].toString().contains("Arabic");
+    }
+    QVERIFY(arabic);
+    QVERIFY(about->property("license").toString().contains("Apache License"));
+    QVERIFY(about->property("license").toString().contains("Version 2.0, January 2004"));
+    auto *pages = child(view, "aboutPages"); QVERIFY(pages);
+    for (const char *link : {"aboutWebsite", "aboutSourceCode", "aboutTranslate"}) QTRY_VERIFY2(child(view, link)->property("visible").toBool(), link);
+    pages->setProperty("currentIndex", 1);
+    auto *licenseText = qobject_cast<QQuickItem *>(child(view, "aboutLicenseText")); QVERIFY(licenseText);
+    QTRY_VERIFY(licenseText->isVisible());
+    QVERIFY(licenseText->property("text").toString().contains("Apache License"));
+    pages->setProperty("currentIndex", 2);
+    auto *list = qobject_cast<QQuickItem *>(child(view, "aboutTranslators")); QVERIFY(list);
+    QTRY_VERIFY(list->isVisible());
+    QTRY_COMPARE(list->property("count").toInt(), translators.size());
+    QVERIFY(QMetaObject::invokeMethod(about, "close"));
+    QTRY_VERIFY(!about->property("visible").toBool());
+    QCOMPARE(pages->property("currentIndex").toInt(), 0); // Reopens on the About page.
 }
 
 QTEST_MAIN(DownloadsViewTest)

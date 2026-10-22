@@ -490,6 +490,13 @@ private slots:
         QMetaObject::invokeMethod(root->findChild<QObject *>("fileMenu"), "close"); QTest::qWait(200);
         QVERIFY(QMetaObject::invokeMethod(root, "openMenu", Q_ARG(QString, "Tasks"))); capture("tasks-menu");
         QMetaObject::invokeMethod(root->findChild<QObject *>("tasksMenu"), "close"); QTest::qWait(200);
+        auto *about = root->findChild<QObject *>("aboutPreviewDialog"); QVERIFY(about);
+        QVERIFY(QMetaObject::invokeMethod(about, "open")); QTRY_VERIFY(about->property("opened").toBool());
+        for (int page = 0; page < 3; ++page) {
+            root->findChild<QObject *>("aboutPages")->setProperty("currentIndex", page);
+            capture(QStringLiteral("about-%1").arg(page));
+        }
+        QMetaObject::invokeMethod(about, "close"); QTRY_VERIFY(!about->property("visible").toBool());
         auto *exitDialog = root->findChild<QObject *>("confirmExitDialog"); QVERIFY(exitDialog);
         QVERIFY(QMetaObject::invokeMethod(root, "requestExit")); QTRY_VERIFY(exitDialog->property("visible").toBool()); capture("exit-confirm");
         QMetaObject::invokeMethod(exitDialog, "close"); QTRY_VERIFY(!exitDialog->property("visible").toBool());
