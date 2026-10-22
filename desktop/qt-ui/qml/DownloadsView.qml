@@ -695,14 +695,23 @@ Item {
         id: multipleAddDialog; objectName: "multipleAddDialog"
         title: qsTr("Add Multiple Downloads"); preferredWidth: Tokens.dialogWidthMedium
         preferredHeight: Tokens.dialogHeightMedium
-        contentItem: QQC2.ScrollView {
-            clip: true; contentWidth: availableWidth
-            QQC2.TextArea { id: multipleLinks; objectName: "multipleAddLinks"; placeholderText: qsTr("Download links"); textFormat: TextEdit.PlainText; wrapMode: TextEdit.Wrap; selectByMouse: true; Accessible.name: qsTr("Download links") }
+        readonly property bool oversized: multipleLinks.text.length > 256 * 1024
+        contentItem: ColumnLayout {
+            spacing: Tokens.contentSpacing
+            QQC2.ScrollView {
+                Layout.fillWidth: true; Layout.fillHeight: true
+                clip: true; contentWidth: availableWidth
+                QQC2.TextArea { id: multipleLinks; objectName: "multipleAddLinks"; placeholderText: qsTr("Download links"); textFormat: TextEdit.PlainText; wrapMode: TextEdit.Wrap; selectByMouse: true; Accessible.name: qsTr("Download links") }
+            }
+            StatusMessage {
+                objectName: "multipleAddTooLarge"; type: Kirigami.MessageType.Warning
+                message: multipleAddDialog.oversized ? qsTr("This text is larger than 256 KB; add the links in smaller batches.") : ""
+            }
         }
         footer: DialogFooter {
             UiButton {
                 id: multipleReview; objectName: "reviewMultipleLinks"; text: qsTr("Review"); icon.name: "view-list-details"
-                enabled: root.live && !root.downloads.busy && multipleLinks.text.trim() !== "" && multipleLinks.text.length <= 256 * 1024
+                enabled: root.live && !root.downloads.busy && multipleLinks.text.trim() !== "" && !multipleAddDialog.oversized
                 QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.AcceptRole
                 onClicked: { if (root.downloads.reviewLinks(multipleLinks.text)) multipleAddDialog.close() }
             }

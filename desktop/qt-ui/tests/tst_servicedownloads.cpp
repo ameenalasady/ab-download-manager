@@ -248,6 +248,40 @@ private slots:
         QTRY_COMPARE(model.rowCount(), 1); view.close(); QTest::qWait(300);
         view.setSource(QUrl()); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete); QTest::qWait(100);
     }
+    void multipleAddExplainsOversizedTextAndClipboardFollowsRuntime() {
+        // New Download from Clipboard is shown in the installed (explicit-runtime) mode only.
+        for (const QString mode : {"explicit-runtime", "isolated"}) {
+            FakeService service; service.reviewCapability = service.browserCapability = service.runtimeCapability = service.desktopCapability = true;
+            service.extensionSnapshot = {{"queues", QJsonArray{}}, {"settings", basicSettings()}, {"browserRequests", QJsonArray{}},
+                {"browserIntegration", QJsonObject{{"state", "disabled"}, {"error", QJsonValue::Null}, {"enabled", false}, {"port", 15151}, {"auth", false}}},
+                {"integration", QJsonObject{{"autoStartOnBoot", false}, {"useSystemTray", false}, {"notificationSound", false}, {"notifications", true}}},
+                {"runtime", QJsonObject{{"mode", mode}, {"destination", "/downloads"}, {"destinationRoots", QJsonArray{"/downloads"}}, {"redirects", true}, {"proxy", "direct"}}}};
+            ServiceDownloads model(service.descriptor); QTRY_COMPARE(model.connectionState(), "ready");
+            QTRY_COMPARE(model.runtime()["mode"].toString(), mode);
+            QQuickView view; view.setResizeMode(QQuickView::SizeRootObjectToView); view.resize(1000, 700);
+            view.setInitialProperties({{"downloads", QVariant::fromValue(&model)}});
+            view.setSource(QUrl("qrc:/qt-ui/qml/DownloadsView.qml")); view.show(); QCOMPARE(view.status(), QQuickView::Ready);
+            QVERIFY(QMetaObject::invokeMethod(view.rootObject(), "openMenu", Q_ARG(QString, "File")));
+            auto *fileMenu = view.rootObject()->findChild<QObject *>("fileMenu"); QVERIFY(fileMenu); QTRY_VERIFY(fileMenu->property("visible").toBool());
+            auto *clipboard = view.rootObject()->findChild<QObject *>("importClipboardLinks"); QVERIFY(clipboard);
+            QTRY_COMPARE(clipboard->property("visible").toBool(), mode == "explicit-runtime");
+            QVERIFY(QMetaObject::invokeMethod(fileMenu, "close")); QTRY_VERIFY(!fileMenu->property("visible").toBool());
+            QVERIFY(QMetaObject::invokeMethod(view.rootObject(), "openMultipleAdd"));
+            auto *entry = view.rootObject()->findChild<QObject *>("multipleAddLinks"); QVERIFY(entry);
+            auto *warning = view.rootObject()->findChild<QObject *>("multipleAddTooLarge"); QVERIFY(warning);
+            auto *review = view.rootObject()->findChild<QObject *>("reviewMultipleLinks"); QVERIFY(review);
+            const QString link = "https://example.invalid/a.zip\n";
+            entry->setProperty("text", link.repeated(256 * 1024 / link.size()));
+            QTRY_VERIFY(review->property("enabled").toBool());
+            QVERIFY(!warning->property("visible").toBool());
+            entry->setProperty("text", link.repeated(256 * 1024 / link.size() + 1));
+            QTRY_VERIFY(warning->property("visible").toBool());
+            QVERIFY(warning->property("message").toString().contains("256 KB"));
+            QVERIFY(!review->property("enabled").toBool());
+            QVERIFY(service.commandLog.isEmpty());
+            view.close(); view.setSource(QUrl()); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        }
+    }
     void tasksMenuDispatchesGlobalCommandsWithoutSelection() {
         FakeService service; service.tasksCapability = true;
         ServiceDownloads model(service.descriptor); QTRY_COMPARE(model.rowCount(), 1);
@@ -321,6 +355,8 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(root, "openMutation", Q_ARG(QString, "download.reset"))); QTRY_VERIFY(mutation->property("visible").toBool()); capture("reset");
         QMetaObject::invokeMethod(mutation, "close"); QTRY_VERIFY(!mutation->property("visible").toBool());
         QVERIFY(QMetaObject::invokeMethod(root, "openMultipleAdd"));
+        root->findChild<QObject *>("multipleAddLinks")->setProperty("text", QString("https://mirror.example.invalid/files/alpha.zip\n").repeated(6000));
+        capture("multiple-too-large");
         root->findChild<QObject *>("multipleAddLinks")->setProperty("text", "https://mirror.example.invalid/files/alpha.zip\nhttps://mirror.example.invalid/files/beta-release-notes.txt\nhttps://mirror.example.invalid/files/gamma.iso");
         capture("multiple-entry");
         QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject *>("reviewMultipleLinks"), "clicked"));
