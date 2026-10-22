@@ -68,7 +68,7 @@ Item {
                     width: parent.width; spacing: Tokens.contentSpacing
                     Body {
                         tone: "secondary"; visible: pages.currentIndex === 0 && root.targetId !== ""
-                        text: qsTr("Pause the download and stop its queues before editing. Applying changes keeps it paused; files are not moved or reset.")
+                        text: qsTr("Pause the download before editing.")
                     }
                     FormGrid {
                         visible: pages.currentIndex === 0
@@ -86,7 +86,7 @@ Item {
                     }
                     Body {
                         visible: pages.currentIndex !== 0; tone: "secondary"
-                        text: root.targetId ? qsTr("Stored values are never displayed. Leave replacement off to keep them. Enabling it with blank fields clears all stored authentication and headers.") : qsTr("Enable custom values above to send authentication or headers. Only enter credentials for a trusted server.")
+                        text: root.targetId ? qsTr("Saved values are hidden. Leave this off to keep them.") : qsTr("Only enter credentials for servers you trust.")
                     }
                     FormGrid {
                         visible: pages.currentIndex === 1

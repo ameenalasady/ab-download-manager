@@ -115,6 +115,7 @@ Item {
         if (!downloads.selectedId || (live && !downloads.canRemove)) return
         removeDialog.targetId = downloads.selectedId; removeDialog.targetIds = downloads.selectedIds.slice()
         removeDialog.targetName = downloads.selectionCount > 1 ? qsTr("%1 downloads").arg(downloads.selectionCount) : downloads.selectedName
+        removeDeleteFiles.checked = false
         removeDialog.open()
     }
     readonly property var workflows: workflowLoader.item
@@ -540,8 +541,8 @@ Item {
                         }
                         Body {
                             tone: "secondary"; horizontalAlignment: Text.AlignHCenter
-                            text: ({connecting: qsTr("Downloads appear when the private service responds."),
-                                    disconnected: qsTr("Waiting for the service. Last known data is retained while disconnected."),
+                            text: ({connecting: qsTr("Connecting to the download service…"),
+                                    disconnected: qsTr("Waiting for the download service…"),
                                     filtered: qsTr("Change the search text or choose another category."),
                                     empty: qsTr("Use New Download to add a link.")})[parent.state]
                         }
@@ -637,8 +638,7 @@ Item {
         contentItem: ColumnLayout {
             spacing: Tokens.contentSpacing
             SectionHeading { level: Tokens.headingHero; text: qsTr("AB Download Manager") }
-            Body { text: root.live ? qsTr("Qt / KDE migration preview. Uses the original download engine through a private local service. Not a production replacement.") : qsTr("Qt / KDE interface preview with generated example data. No service, network requests or files are created.") }
-            Body { tone: "secondary"; text: root.live ? qsTr("Closing this window keeps transfers running; when the system tray is enabled it hides the window. Use the tray's Exit and Stop Service to request a joined shutdown. Existing-profile import and automatic updates remain disabled.") : qsTr("Closing this window discards the examples. Existing-profile import, desktop integrations and automatic updates are disabled.") }
+            Body { text: root.live ? qsTr("Qt / KDE edition, using the original download engine.") : qsTr("Qt / KDE interface preview with example data.") }
         }
         footer: DialogFooter {
             UiButton { text: qsTr("Close"); icon.name: "dialog-close"; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.RejectRole; onClicked: aboutDialog.close() }
@@ -649,21 +649,34 @@ Item {
         title: root.live ? qsTr("New Download") : qsTr("Add Example Download")
         preferredWidth: Tokens.dialogWidthMedium
         onClosed: { root.addOptions = ({}); sourceInput.text = ""; nameInput.text = "" }
+        // Known duplicates are shown while typing, before Download is pressed. The lookups
+        // are synchronous, so they run once typing pauses rather than on every key.
+        property var existing: null
+        property bool fileExists: false
+        function checkExisting(): void {
+            if (!root.live || !visible || sourceInput.text.trim() === "") { existing = null; fileExists = false; return }
+            const folder = root.explicitRuntime ? locationInput.text : root.downloads.runtime.destination
+            const matches = root.downloads.findDuplicates(sourceInput.text, nameInput.text, folder)
+            existing = matches.length ? matches[0] : null
+            fileExists = root.downloads.destinationExists(folder, nameInput.text)
+        }
+        Timer { id: existingCheck; interval: 250; onTriggered: addDialog.checkExisting() }
         contentItem: ColumnLayout {
             spacing: Tokens.contentSpacing
             FormGrid {
                 FormLabel { text: qsTr("Download link:") }
-                FormField { id: sourceInput; objectName: "exampleUrlInput"; Layout.fillWidth: true; Accessible.name: qsTr("Download link"); maximumLength: 2048; placeholderText: root.live && !root.explicitRuntime ? "http://127.0.0.1:PORT/file" : "https://" }
+                FormField { id: sourceInput; objectName: "exampleUrlInput"; Layout.fillWidth: true; Accessible.name: qsTr("Download link"); maximumLength: 2048; placeholderText: root.live && !root.explicitRuntime ? "http://127.0.0.1:PORT/file" : "https://"; onTextChanged: existingCheck.restart() }
                 FormLabel { text: qsTr("File name:") }
-                FormField { id: nameInput; objectName: "exampleNameInput"; Layout.fillWidth: true; Accessible.name: qsTr("File name"); maximumLength: 180; onAccepted: addExample.clicked() }
+                FormField { id: nameInput; objectName: "exampleNameInput"; Layout.fillWidth: true; Accessible.name: qsTr("File name"); maximumLength: 180; onAccepted: addExample.clicked(); onTextChanged: existingCheck.restart() }
                 FormLabel { text: qsTr("Save in:") }
                 FormField {
                     id: locationInput; objectName: "addDownloadLocation"; Layout.fillWidth: true; readOnly: !root.explicitRuntime
                     color: readOnly ? theme.secondary : theme.text; Accessible.name: qsTr("Download location")
                     Accessible.description: readOnly ? qsTr("Fixed by the test profile") : ""
+                    onTextChanged: existingCheck.restart()
                 }
                 FormLabel { text: qsTr("Category:") }
-                QQC2.ComboBox { id: addCategory; objectName: "addCategorySelection"; Layout.fillWidth: true; enabled: root.live && root.downloads.capabilities.indexOf("category.create") >= 0; model: addDialog.categoryChoices; textRole: "name"; Accessible.name: qsTr("Download category") }
+                UiComboBox { id: addCategory; objectName: "addCategorySelection"; Layout.fillWidth: true; enabled: root.live && root.downloads.capabilities.indexOf("category.create") >= 0; model: addDialog.categoryChoices; textRole: "name"; Accessible.name: qsTr("Download category") }
                 Item { implicitWidth: 1; visible: root.live }
                 UiButton {
                     objectName: "openAddHttpOptions"; text: qsTr("Connection && Authentication…"); icon.name: "configure"; visible: root.live
@@ -672,9 +685,22 @@ Item {
                     onClicked: { if (httpOptionsLoader.item) (httpOptionsLoader.item as HttpOptions).openOptions("", "", root.addOptions) }
                 }
             }
+            Kirigami.InlineMessage {
+                objectName: "addExistingWarning"
+                Layout.fillWidth: true
+                type: Kirigami.MessageType.Warning
+                visible: Boolean(addDialog.existing) || addDialog.fileExists
+                text: addDialog.existing ? qsTr("“%1” is already in your downloads.").arg(addDialog.existing.name) : qsTr("A file with this name already exists here.")
+                actions: [
+                    Kirigami.Action {
+                        text: qsTr("Show Existing"); visible: Boolean(addDialog.existing)
+                        onTriggered: { root.showDownloadWindow(addDialog.existing.id, false); addDialog.close() }
+                    }
+                ]
+            }
             Body {
-                tone: "secondary"
-                text: root.live ? (root.explicitRuntime ? qsTr("HTTP(S) links only. Choose an existing folder within the approved destination roots.") : qsTr("Only loopback HTTP fixtures with an explicit port are allowed. Files stay in the test profile.")) : qsTr("Example data only. No network requests or files are created.")
+                tone: "secondary"; visible: !root.explicitRuntime
+                text: root.live ? qsTr("Only loopback HTTP test links with a port are allowed.") : qsTr("Example data only. No files are created.")
             }
             StatusMessage { type: Kirigami.MessageType.Error; message: root.downloads.errorMessage }
         }
@@ -696,28 +722,26 @@ Item {
         preferredWidth: Tokens.dialogWidthMedium
         contentItem: ColumnLayout {
             spacing: Tokens.contentSpacing
-            Body { text: duplicateDialog.existing ? qsTr("An existing download matches this link or destination: “%1” (%2).").arg(duplicateDialog.existing.name).arg(root.stateLabel(duplicateDialog.existing.state)) : qsTr("A file already exists at this destination.") }
-            Body { tone: "secondary"; text: qsTr("Add New keeps existing downloads and files and chooses a numbered name. Overwrite removes only records at this exact destination and their files; it is never automatic. Active downloads must be stopped first.") }
-            RowLayout {
-                Layout.fillWidth: true
-                UiButton {
-                    text: qsTr("Show Existing"); icon.name: "window-new"; visible: Boolean(duplicateDialog.existing)
-                    onClicked: { root.showDownloadWindow(duplicateDialog.existing.id, false); duplicateDialog.close(); addDialog.close() }
-                }
-                UiButton {
-                    text: qsTr("Open File"); icon.name: "document-open"
-                    visible: Boolean(duplicateDialog.existing && duplicateDialog.existing.fileUrl.toString() !== "")
-                    onClicked: DesktopOpener.openFile(duplicateDialog.existing.fileUrl, root.Window.window)
-                }
-                UiButton {
-                    text: qsTr("Resume Existing"); icon.name: "media-playback-start"
-                    visible: Boolean(duplicateDialog.existing && ["paused", "failed"].indexOf(duplicateDialog.existing.state) >= 0)
-                    onClicked: { if (root.downloads.resumeDownload(duplicateDialog.existing.id)) { duplicateDialog.close(); addDialog.close() } }
-                }
-            }
+            Body { text: duplicateDialog.existing ? qsTr("“%1” is already in your downloads.").arg(duplicateDialog.existing.name) : qsTr("A file with this name already exists here.") }
             StatusMessage { type: Kirigami.MessageType.Error; message: root.downloads.errorMessage }
         }
         footer: DialogFooter {
+            leading: [
+                UiButton {
+                    text: qsTr("Show Existing"); flat: true; visible: Boolean(duplicateDialog.existing)
+                    onClicked: { root.showDownloadWindow(duplicateDialog.existing.id, false); duplicateDialog.close(); addDialog.close() }
+                },
+                UiButton {
+                    text: qsTr("Open File"); flat: true
+                    visible: Boolean(duplicateDialog.existing && duplicateDialog.existing.fileUrl.toString() !== "")
+                    onClicked: { DesktopOpener.openFile(duplicateDialog.existing.fileUrl, root.Window.window); duplicateDialog.close() }
+                },
+                UiButton {
+                    text: qsTr("Resume Existing"); flat: true
+                    visible: Boolean(duplicateDialog.existing && ["paused", "failed"].indexOf(duplicateDialog.existing.state) >= 0)
+                    onClicked: { if (root.downloads.resumeDownload(duplicateDialog.existing.id)) { duplicateDialog.close(); addDialog.close() } }
+                }
+            ]
             UiButton { objectName: "duplicateAddNew"; text: qsTr("Add New"); icon.name: "list-add"; highlighted: true; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.AcceptRole; onClicked: { if (root.sendDownload(duplicateDialog.start, "numbered")) { duplicateDialog.close(); addDialog.accept() } } }
             UiButton { objectName: "duplicateOverwrite"; text: qsTr("Overwrite"); icon.name: "edit-delete"; enabled: duplicateDialog.canReplace; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.DestructiveRole; onClicked: { if (root.sendDownload(duplicateDialog.start, "overwrite")) { duplicateDialog.close(); addDialog.accept() } } }
             UiButton { text: qsTr("Cancel"); icon.name: "dialog-cancel"; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.RejectRole; onClicked: duplicateDialog.reject() }
@@ -726,26 +750,31 @@ Item {
     UiDialog {
         id: removeDialog; objectName: "removeExampleDialog"
         property string targetId: ""; property string targetName: ""; property var targetIds: []
-        title: root.live ? qsTr("Remove from List?") : qsTr("Remove Example?")
+        title: !root.live ? qsTr("Remove Example?") : targetIds.length > 1 ? qsTr("Remove %1 Downloads?").arg(targetIds.length) : qsTr("Remove Download?")
         preferredWidth: Tokens.dialogWidthSmall
         contentItem: ColumnLayout {
             spacing: Tokens.contentSpacing
             Body {
                 objectName: "removeDownloadDescription"
-                text: (root.live ? qsTr("Remove “%1” from the list, queues and categories? All complete and incomplete files will be kept unchanged.") : qsTr("Remove “%1” from this preview? No files will be deleted.")).arg(removeDialog.targetName)
+                text: qsTr("“%1” will be removed from the list.").arg(removeDialog.targetName)
             }
-            Body { visible: root.live; tone: "secondary"; text: qsTr("Retained incomplete files are not finished downloads and cannot be resumed from this list after removal. File deletion is not available.") }
+            QQC2.CheckBox {
+                id: removeDeleteFiles; objectName: "removeDeleteFiles"
+                text: qsTr("Also delete files from disk")
+                visible: root.live && root.downloads.capabilities.indexOf("download.delete") >= 0
+            }
             StatusMessage {
                 type: Kirigami.MessageType.Warning; visible: root.live && root.downloads.connectionState !== "ready"
-                message: qsTr("Disconnected. Removal is disabled; cached information may be stale.")
+                message: qsTr("Disconnected. Removal is unavailable.")
             }
         }
         footer: DialogFooter {
             UiButton {
-                objectName: "confirmRemoveExample"; text: root.live ? qsTr("Remove, Keep Files") : qsTr("Remove Example"); icon.name: "list-remove"
+                objectName: "confirmRemoveExample"; icon.name: removeDeleteFiles.checked ? "edit-delete" : "list-remove"
+                text: !root.live ? qsTr("Remove Example") : removeDeleteFiles.checked ? qsTr("Delete") : qsTr("Remove")
                 QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.AcceptRole
                 enabled: root.live ? !root.downloads.busy && root.downloads.canForgetDownloads(removeDialog.targetIds) : JSON.stringify(root.downloads.selectedIds) === JSON.stringify(removeDialog.targetIds)
-                onClicked: { if (root.live) { if (root.downloads.forgetDownloads(removeDialog.targetIds)) removeDialog.accept() } else if (JSON.stringify(root.downloads.selectedIds) === JSON.stringify(removeDialog.targetIds)) { root.downloads.removeSelected(); removeDialog.accept() } }
+                onClicked: { if (root.live) { if (root.downloads.forgetDownloads(removeDialog.targetIds, removeDeleteFiles.visible && removeDeleteFiles.checked)) removeDialog.accept() } else if (JSON.stringify(root.downloads.selectedIds) === JSON.stringify(removeDialog.targetIds)) { root.downloads.removeSelected(); removeDialog.accept() } }
             }
             UiButton { text: qsTr("Cancel"); icon.name: "dialog-cancel"; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.RejectRole; onClicked: removeDialog.reject() }
         }

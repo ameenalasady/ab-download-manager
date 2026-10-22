@@ -85,7 +85,6 @@ class DownloadForgetTest {
             val id = add(engine, "kept.zip")
             engine.command(command("queue.add", "queueId" to JsonPrimitive("0"), "id" to JsonPrimitive(id)))
             assertFails { engine.command(command("download.forget", "id" to JsonPrimitive(id))) }
-            assertFails { engine.command(command("download.forget", "id" to JsonPrimitive(id), "keepFiles" to JsonPrimitive(false))) }
             val output = root.resolve("Downloads/kept.zip").toFile().apply { writeText("keep me") }
             val temporary = root.resolve("Downloads/kept.zip.abdmtemp").toFile().apply { writeText("keep me too") }
             forget(engine, id)
@@ -156,5 +155,24 @@ class DownloadForgetTest {
             }
             withContext(owner) { assertTrue(started.isEmpty()) }
         } finally { scope.coroutineContext.job.cancelAndJoin(); owner.close() }
+    }
+
+    @Test fun serviceRemovalCanAlsoDeleteFiles() = runBlocking {
+        val root = Files.createTempDirectory("abdm-forget-delete-")
+        val lifecycle = ServiceLifecycle(root)
+        try {
+            var engine = lifecycle.start()
+            assertTrue("download.delete" in EngineSession.capabilities)
+            val id = add(engine, "deleted.zip")
+            val kept = add(engine, "kept.zip")
+            val output = root.resolve("Downloads/deleted.zip").toFile().apply { writeText("delete me") }
+            val unrelated = root.resolve("Downloads/kept.zip").toFile().apply { writeText("keep me") }
+            engine.command(command("download.forget", "id" to JsonPrimitive(id), "keepFiles" to JsonPrimitive(false)))
+            assertEquals(listOf(kept), engine.snapshot().getValue("rows").jsonArray.map { it.jsonObject.getValue("id").jsonPrimitive.content })
+            assertFalse(output.exists())
+            assertEquals("keep me", unrelated.readText())
+            lifecycle.stop(); engine = lifecycle.start()
+            assertEquals(listOf(kept), engine.snapshot().getValue("rows").jsonArray.map { it.jsonObject.getValue("id").jsonPrimitive.content })
+        } finally { lifecycle.stop(); root.toFile().deleteRecursively() }
     }
 }

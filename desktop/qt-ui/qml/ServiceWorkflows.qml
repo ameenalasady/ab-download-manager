@@ -117,8 +117,8 @@ Item {
                         Body {
                             tone: "secondary"; visible: settingsDialog.page === 2
                             text: (root.browserSettings || root.integrationSettings) && root.explicitRuntime
-                                  ? qsTr("The browser extension uses the local API and native host. Clipboard import is explicit only; the clipboard is never monitored. Power actions remain disabled.")
-                                  : qsTr("Desktop and browser integration are disabled in this preview. No tray, clipboard monitor, native-host registration, notifications, autostart or power actions are enabled.")
+                                  ? qsTr("Clipboard links are only imported when you ask.")
+                                  : qsTr("Desktop and browser integration are off in this preview.")
                         }
                         Section {
                             visible: settingsDialog.page === 2 && root.integrationSettings && (root.explicitRuntime || root.windowSettings)
@@ -134,11 +134,7 @@ Item {
                             Check { id: completionWindow; objectName: "settingsCompletionWindow"; visible: root.windowSettings; Accessible.name: qsTr("Open a window when a download you started finishes or fails") }
                             Note {
                                 visible: root.explicitRuntime
-                                text: qsTr("Start On Boot uses the installed background entry. Closing the window keeps downloads running; use the tray’s Exit and Stop Service to stop them. Custom sound files are not supported.")
-                            }
-                            Note {
-                                visible: root.windowSettings
-                                text: qsTr("At most three download windows open automatically, for downloads you start or resume. Queue starts do not open windows. Desktop notifications are independent of these options.")
+                                text: qsTr("Closing the window keeps downloads running in the tray.")
                             }
                             SectionApply {
                                 objectName: "applyDesktopIntegration"
@@ -160,7 +156,7 @@ Item {
                                 objectName: "browserIntegrationStatus"; Layout.columnSpan: 2
                                 tone: browserFields.status.state === "failed" ? "error" : "secondary"
                                 text: ({listening: qsTr("Listening on 127.0.0.1:%1.").arg(browserFields.status.port), starting: qsTr("Starting…"),
-                                        disabled: qsTr("Off. The extension can still hand off links through native messaging when the service runs."),
+                                        disabled: qsTr("Off"),
                                         unavailable: qsTr("Not available for this profile."),
                                         failed: browserFields.status.error || qsTr("Could not start.")})[browserFields.status.state] || ""
                                 Accessible.role: browserFields.status.state === "failed" ? Accessible.AlertMessage : Accessible.StaticText
@@ -181,27 +177,24 @@ Item {
                                 validator: RegularExpressionValidator { regularExpression: /\S{0,256}/ }
                             }
                             Note {
-                                text: qsTr("Use the same port and key in the extension's options. Only requests from 127.0.0.1 are accepted; web pages are refused.")
+                                text: qsTr("Use the same port and key in the browser extension.")
                             }
                         }
                         Section {
                             visible: settingsDialog.page === 0 && root.displaySettings
                             RowLabel { text: qsTr("Download Size Unit") }
-                            QQC2.ComboBox {
+                            UiComboBox {
                                 id: sizeUnit; objectName: "settingsSizeUnit"; Layout.preferredWidth: root.controlWidth
                                 model: settingsDialog.sizeChoices.map(u => root.unitTitle(u, false)); Accessible.name: qsTr("Download size unit")
                             }
                             RowLabel { text: qsTr("Download Speed Unit") }
-                            QQC2.ComboBox {
+                            UiComboBox {
                                 id: speedUnit; objectName: "settingsSpeedUnit"; Layout.preferredWidth: root.controlWidth
                                 model: settingsDialog.speedChoices.map(u => root.unitTitle(u, true)); Accessible.name: qsTr("Download speed unit")
                             }
                         }
                         Section {
                             visible: settingsDialog.page === 2 && root.policySettings
-                            Note {
-                                text: qsTr("Stored in this profile and kept unchanged. Paths, keys and sound files are not shown.")
-                            }
                             Repeater {
                                 model: [{policy: "platform", title: qsTr("Not Active in This Preview")},
                                         {policy: "runtime-override", title: qsTr("Replaced by the Explicit Runtime Policy")}]
@@ -232,15 +225,14 @@ Item {
                             title: qsTr("New Downloads")
                             RowLabel { text: qsTr("Default Download Folder"); visible: root.service.capabilities.indexOf("settings.folder") >= 0 }
                             Field { id: defaultFolder; objectName: "settingsDefaultFolder"; maximumLength: 4096; visible: root.service.capabilities.indexOf("settings.folder") >= 0; Accessible.name: qsTr("Default download folder"); placeholderText: qsTr("Runtime default") }
-                            Note { visible: defaultFolder.visible; text: qsTr("Use an existing folder within the approved destination roots. Leave empty to reset to the runtime default.") }
+                            Note { visible: defaultFolder.visible; text: qsTr("Leave empty to use the default folder.") }
                             RowLabel { text: qsTr("Duplicate Links"); visible: root.service.capabilities.indexOf("settings.duplicates") >= 0 }
-                            QQC2.ComboBox {
+                            UiComboBox {
                                 id: duplicateAction; objectName: "settingsDuplicateAction"; Layout.preferredWidth: root.controlWidth
                                 visible: root.service.capabilities.indexOf("settings.duplicates") >= 0
                                 model: [qsTr("Ask what to do"), qsTr("Add a numbered copy"), qsTr("Show existing download")]
                                 Accessible.name: qsTr("Default duplicate-link action")
                             }
-                            Note { visible: duplicateAction.visible; text: qsTr("Overwrite is never automatic. Showing an existing download does not start it or open its file.") }
                         }
                         Section {
                             id: engineFields
@@ -263,7 +255,7 @@ Item {
                             RowLabel { text: qsTr("Use Average Speed"); visible: engineFields.speed }
                             Check { id: average; objectName: "settingsAverageSpeed"; Accessible.name: qsTr("Use average speed"); visible: engineFields.speed }
                             RowLabel { text: qsTr("Global Speed Limit"); visible: engineFields.speed }
-                            QQC2.ComboBox {
+                            UiComboBox {
                                 id: speedMode; objectName: "settingsSpeedMode"; Layout.preferredWidth: root.controlWidth; visible: engineFields.speed
                                 // A configured adapter can be selected before its first idle/input report.
                                 model: root.service.settingsPolicy.activityAdapter || settingsDialog.storedSpeedMode === "EnabledWhenBessy" ? [qsTr("Disabled"), qsTr("Enabled"), qsTr("Enabled When Busy")] : [qsTr("Disabled"), qsTr("Enabled")]
@@ -283,12 +275,8 @@ Item {
                             objectName: "settingsBusyModeNotice"; type: Kirigami.MessageType.Warning
                             visible: settingsDialog.page === 1 && speedMode.currentIndex === 2
                             message: root.service.settingsPolicy.activityAdapter
-                                ? qsTr("Limits speed while system input is active and this window is in the background. The idle threshold is 30 seconds. Until the monitor reports input, or if it is unavailable, no activity-dependent limit is applied.")
-                                : qsTr("“Enabled When Busy” is kept from this profile, but no system activity adapter is configured, so no activity-dependent limit is applied.")
-                        }
-                        Body {
-                            visible: settingsDialog.page === 1; tone: "secondary"
-                            text: qsTr("Per-host settings are unavailable. Proxies are configured by the runtime policy.")
+                                ? qsTr("Limits speed while you are using the computer.")
+                                : qsTr("“Enabled When Busy” needs system activity monitoring, which is unavailable.")
                         }
                     }
                 }
@@ -296,7 +284,7 @@ Item {
             StatusMessage {
                 objectName: "corruptSettingsNotice"; type: Kirigami.MessageType.Warning
                 visible: (root.service.settingsPolicy.corrupt || []).length > 0
-                message: qsTr("Defaults are in use for invalid settings: %1. Stored values are kept until you explicitly apply those fields.").arg((root.service.settingsPolicy.corrupt || []).join(", "))
+                message: qsTr("Some settings are invalid and use defaults: %1").arg((root.service.settingsPolicy.corrupt || []).join(", "))
             }
             StatusMessage { type: Kirigami.MessageType.Error; message: root.service.errorMessage }
         }
@@ -428,7 +416,6 @@ Item {
                                 title: qsTr("On Completion")
                                 RowLabel { text: qsTr("Automatic Stop") }
                                 Check { id: stopOnEmpty; Accessible.name: qsTr("Stop queue when empty") }
-                                Note { text: qsTr("System power actions are disabled in this preview.") }
                             }
                             UiButton {
                                 objectName: "applyQueueSettings"; text: qsTr("Apply General Settings"); icon.name: "dialog-ok-apply"; Layout.alignment: Qt.AlignRight
@@ -461,7 +448,6 @@ Item {
                                         }
                                     }
                                 }
-                                Note { text: qsTr("Local system time.") }
                                 SectionApply {
                                     objectName: "applyQueueSchedule"; text: qsTr("Apply Schedule")
                                     enabled: !root.service.busy && queuesDialog.queue !== null && startTime.acceptableInput && endTime.acceptableInput

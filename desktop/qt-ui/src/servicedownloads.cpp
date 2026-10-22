@@ -820,10 +820,10 @@ bool ServiceDownloads::destinationExists(const QString &folder, const QString &n
 bool ServiceDownloads::canForgetDownloads(const QStringList &ids) const {
     return !ids.isEmpty() && std::all_of(ids.cbegin(), ids.cend(), [this](const QString &id) { return canForgetDownload(id); });
 }
-bool ServiceDownloads::forgetDownloads(const QStringList &ids) {
+bool ServiceDownloads::forgetDownloads(const QStringList &ids, bool deleteFiles) {
     if (!canForgetDownloads(ids)) return false;
     QList<QJsonObject> commands;
-    for (const auto &id : ids) commands.append({{"op", "download.forget"}, {"id", id}, {"keepFiles", true}});
+    for (const auto &id : ids) commands.append({{"op", "download.forget"}, {"id", id}, {"keepFiles", !deleteFiles}});
     return commandBatch(commands);
 }
 bool ServiceDownloads::canForgetDownload(const QString &id) const {
@@ -838,8 +838,8 @@ bool ServiceDownloads::canForgetDownload(const QString &id) const {
     }
     return false;
 }
-bool ServiceDownloads::forgetDownload(const QString &id) {
-    return canForgetDownload(id) && command({{"op", "download.forget"}, {"id", id}, {"keepFiles", true}});
+bool ServiceDownloads::forgetDownload(const QString &id, bool deleteFiles) {
+    return canForgetDownload(id) && command({{"op", "download.forget"}, {"id", id}, {"keepFiles", !deleteFiles}});
 }
 bool ServiceDownloads::updateSettings(const QVariantMap &settings) {
     return command({{"op", "settings.update"}, {"settings", QJsonObject::fromVariantMap(settings)}});

@@ -295,20 +295,32 @@ void DownloadsViewTest::buttonsKeepKeyboardFocusWithoutNativeTextRectangle()
     auto *button = qobject_cast<QQuickItem *>(child(view, "confirmAddExample"));
     QVERIFY(window && button);
     QVERIFY(QTest::qWaitForWindowExposed(window));
-    auto *background = qvariant_cast<QQuickItem *>(button->property("background"));
     auto *outline = button->findChild<QQuickItem *>("buttonKeyboardFocusFrame");
-    QVERIFY(background && outline);
+    QVERIFY(outline);
+    // The desktop StyleItem used activeFocus OR highlighted as its paint hint, painting
+    // a label box. A primary (highlighted, here in preview mode) button has its own accent
+    // frame with no native focus paint; any native frame must keep the hint off.
+    const auto noNativeFocusPaint = [&] {
+        auto *current = qvariant_cast<QQuickItem *>(button->property("background"));
+        return current && (current->objectName() == QLatin1String("buttonPrimaryFrame")
+            || current->property("hasFocus") == QVariant(false));
+    };
+    // A primary (highlighted) button paints its own accent frame with no native focus
+    // paint; switching emphasis off restores the native frame with the hint still off.
     button->setProperty("highlighted", true);
-    QVERIFY(button->property("highlighted").toBool());
-    // The desktop StyleItem used activeFocus OR highlighted as its paint hint.
-    // Neither pointer/default emphasis nor keyboard focus may revive the label box.
-    QCOMPARE(background->property("hasFocus"), QVariant(false));
+    QTRY_COMPARE(qvariant_cast<QQuickItem *>(button->property("background"))->objectName(), QStringLiteral("buttonPrimaryFrame"));
+    QVERIFY(noNativeFocusPaint());
+    button->setProperty("highlighted", false);
+    QTRY_VERIFY(qvariant_cast<QQuickItem *>(button->property("background"))->objectName() != QStringLiteral("buttonPrimaryFrame"));
     button->forceActiveFocus(Qt::TabFocusReason);
     QTRY_VERIFY(button->hasActiveFocus());
     QTRY_VERIFY(button->property("visualFocus").toBool());
     QTRY_VERIFY(outline->isVisible());
     QCOMPARE(outline->size(), button->size());
-    QCOMPARE(background->property("hasFocus"), QVariant(false));
+    QVERIFY(noNativeFocusPaint());
+    button->setProperty("highlighted", true);
+    QTRY_COMPARE(qvariant_cast<QQuickItem *>(button->property("background"))->objectName(), QStringLiteral("buttonPrimaryFrame"));
+    QCOMPARE(outline->size(), button->size());
     auto *accessible = QAccessible::queryAccessibleInterface(button);
     QVERIFY(accessible && !accessible->text(QAccessible::Name).isEmpty());
     QVERIFY(!accessible->state().disabled);

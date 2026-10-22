@@ -65,7 +65,10 @@ Item {
       QQC2.ApplicationWindow {
         id: dialog; objectName: downloadId === "" ? "browserRequestDialog" : "downloadWindow-" + downloadId
         transientParent: null; flags: Qt.Window
-        minimumWidth: Tokens.windowMinimumWidth
+        // Width is pinned during the first configure like height, so KWin's remembered
+        // geometry from another app window cannot resize the review.
+        minimumWidth: initialConfigure ? targetWidth() : Tokens.windowMinimumWidth
+        maximumWidth: initialConfigure ? targetWidth() : Tokens.windowMaximumHeight
         // The review page keeps the shared window minimum; a completed progress page on the
         // same surface is genuinely content-sized and may be smaller, as in its own toplevel.
         minimumHeight: completedView
@@ -80,7 +83,9 @@ Item {
         // The window is mapped only after its page has been measured, so the first frame
         // the compositor displays is already the natural size, not the review default.
         property bool fitting: false
-        color: material.background
+        // Item-painted material, not a translucent clear color (see DownloadWindow).
+        color: "transparent"
+        background: Rectangle { color: material.background }
         NativeWindowStyle { id: material; window: dialog; maximumOpacity: Tokens.materialOpacity }
         function activate(token: string) { fitContentSize(); material.activate(token) }
         function open() { activate("") }
@@ -106,7 +111,8 @@ Item {
         // is shown, clamp to the usable screen and re-measure a couple of times because
         // scroll bars and text wrapping change the measurement itself.
         function targetWidth(): int {
-            return downloadId !== "" || items.length <= 1 ? Tokens.downloadWindowWidth : Tokens.reviewWindowWidth
+            if (downloadId !== "") return progressContent ? progressContent.preferredWidth : Tokens.downloadWindowWidth
+            return items.length <= 1 ? Tokens.downloadWindowWidth : Tokens.reviewWindowWidth
         }
         function measuredHeight(): real {
             if (downloadId !== "" && progressReady) return progressContent.contentHeight
@@ -150,8 +156,8 @@ Item {
                     dialog.ensureMeasured()
                     const measured = Math.ceil(measuredHeight())
                     if (!(measured > 0)) break
-                    const floor = dialog.completedView
-                        ? Tokens.dialogPadding + Tokens.rowHeight : Tokens.windowMinimumHeight
+                    // Content-sized on every page: a short single-link review has no filler gap.
+                    const floor = Tokens.dialogPadding + Tokens.rowHeight
                     const target = Math.max(floor, Math.min(measured, heightLimit()))
                     if (dialog.height === target) break
                     dialog.height = target
@@ -168,7 +174,7 @@ Item {
         }
         onCompletedViewChanged: {
             dialog.ensureMeasured()
-            dialog.fitContentHeight()
+            dialog.fitContentSize()
             contentFitTimer.restart()
         }
         // Let the first compositor configure settle before re-fitting the mapped surface.
@@ -219,6 +225,16 @@ Item {
             // Measure and map in one turn: the review is first shown at its natural size.
             dialog.fitContentSize()
         }
+        // Existing downloads/files per link, known before Download is pressed. Names are
+        // edited in place (keeping focus), so edits bump a revision to re-evaluate.
+        property int nameRevision: 0
+        function existingFor(item: var): var {
+            const folder = location.text || (root.service.runtime || {}).destination || ""
+            const matches = root.service.findDuplicates(item.url, item.name, folder)
+            return {match: matches.length ? matches[0] : null, fileExists: root.service.destinationExists(folder, item.name)}
+        }
+        readonly property var existing: { nameRevision; return items.map(item => existingFor(item)) }
+        readonly property var singleExisting: downloadId === "" && items.length === 1 && existing.length === 1 ? existing[0] : null
         property var duplicateMatches: []
         property var pendingChosen: []
         property bool pendingStart: false
@@ -253,17 +269,15 @@ Item {
                 && !dialog.duplicateMatches.some(m => m.sameDestination && ["downloading", "queued"].indexOf(m.state) >= 0)
             contentItem: ColumnLayout {
                 spacing: Tokens.contentSpacing
-                TextBlock { colors: theme; text: duplicates.existing ? qsTr("These links match an existing download: “%1”.").arg(duplicates.existing.name) : qsTr("A file already exists at the selected destination.") }
-                TextBlock { colors: theme; tone: "secondary"; text: qsTr("Add New chooses numbered names and keeps existing files. Overwrite deletes records and files at the same destination only and must be reviewed one link at a time. You can also cancel and uncheck matching links.") }
-                RowLayout {
-                    Layout.fillWidth: true
-                    UiButton { text: qsTr("Show Existing"); icon.name: "window-new"; visible: Boolean(duplicates.existing); onClicked: root.existingRequested(duplicates.existing.id) }
-                    UiButton { text: qsTr("Open File"); icon.name: "document-open"; visible: Boolean(duplicates.existing && duplicates.existing.fileUrl.toString() !== ""); onClicked: DesktopOpener.openFile(duplicates.existing.fileUrl, dialog) }
-                    UiButton { text: qsTr("Resume Existing"); icon.name: "media-playback-start"; visible: Boolean(duplicates.existing && ["paused", "failed"].indexOf(duplicates.existing.state) >= 0); enabled: !root.service.busy; onClicked: root.service.resumeDownload(duplicates.existing.id) }
-                }
+                TextBlock { colors: theme; text: duplicates.existing ? qsTr("“%1” is already in your downloads.").arg(duplicates.existing.name) : qsTr("A file with this name already exists here.") }
                 StatusMessage { type: Kirigami.MessageType.Error; message: root.service.errorMessage }
             }
             footer: DialogFooter {
+                leading: [
+                    UiButton { text: qsTr("Show Existing"); flat: true; visible: Boolean(duplicates.existing); onClicked: { root.existingRequested(duplicates.existing.id); duplicates.close() } },
+                    UiButton { text: qsTr("Open File"); flat: true; visible: Boolean(duplicates.existing && duplicates.existing.fileUrl.toString() !== ""); onClicked: { DesktopOpener.openFile(duplicates.existing.fileUrl, dialog); duplicates.close() } },
+                    UiButton { text: qsTr("Resume Existing"); flat: true; visible: Boolean(duplicates.existing && ["paused", "failed"].indexOf(duplicates.existing.state) >= 0); enabled: !root.service.busy; onClicked: { if (root.service.resumeDownload(duplicates.existing.id)) { duplicates.close(); dialog.close() } } }
+                ]
                 UiButton { objectName: "browserDuplicateAddNew"; text: qsTr("Add New"); icon.name: "list-add"; highlighted: true; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.AcceptRole; onClicked: { dialog.acceptChosen(dialog.pendingChosen, dialog.pendingStart, "numbered"); if (dialog.submitting) duplicates.close() } }
                 UiButton { objectName: "browserDuplicateOverwrite"; text: qsTr("Overwrite"); icon.name: "edit-delete"; enabled: duplicates.canReplace && !root.service.busy; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.DestructiveRole; onClicked: { dialog.acceptChosen(dialog.pendingChosen, dialog.pendingStart, "overwrite"); if (dialog.submitting) duplicates.close() } }
                 UiButton { text: qsTr("Cancel"); icon.name: "dialog-cancel"; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.RejectRole; onClicked: duplicates.reject() }
@@ -289,7 +303,7 @@ Item {
             StatusMessage {
                 objectName: "browserRequestUnknown"
                 visible: dialog.outcomeUnknown; type: Kirigami.MessageType.Warning
-                message: qsTr("A previous acceptance may have added some or all of these links. Inspect downloads before discarding this review record. It cannot be accepted again and nothing is replayed automatically.")
+                message: qsTr("Some of these links may already have been added. Check your downloads before discarding.")
             }
             RowLayout {
                 Layout.fillWidth: true; visible: dialog.items.length > 1; spacing: Tokens.spacingS
@@ -344,12 +358,25 @@ Item {
                                         Layout.fillWidth: true; text: entry.modelData.name; maximumLength: 180
                                         Accessible.name: qsTr("File name")
                                         // Edit in place without rebuilding the model (keeps focus/cursor).
-                                        onTextEdited: dialog.items[entry.index].name = text
+                                        onTextEdited: { dialog.items[entry.index].name = text; dialog.nameRevision++ }
                                     }
                                     QQC2.Label {
                                         Layout.fillWidth: true; elide: Text.ElideMiddle; textFormat: Text.PlainText; color: theme.secondary
                                         font: Tokens.smallFont
                                         text: entry.modelData.url; Accessible.name: qsTr("Link: %1").arg(entry.modelData.url)
+                                    }
+                                    RowLayout {
+                                        readonly property var info: dialog.existing[entry.index] || null
+                                        objectName: "browserRequestItemExisting"
+                                        Layout.fillWidth: true; spacing: Tokens.spacingXS
+                                        // A single link gets the fuller banner below instead.
+                                        visible: dialog.items.length > 1 && Boolean(info && (info.match || info.fileExists))
+                                        Kirigami.Icon { implicitWidth: Tokens.iconSmall; implicitHeight: implicitWidth; source: "data-warning"; Accessible.ignored: true }
+                                        QQC2.Label {
+                                            Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText
+                                            font: Tokens.smallFont; color: theme.warning
+                                            text: parent.info && parent.info.match ? qsTr("Already in your downloads") : qsTr("A file with this name already exists")
+                                        }
                                     }
                                 }
                                 // Fixed slot whenever any link has credentials, so name fields align.
@@ -362,13 +389,33 @@ Item {
                                         Accessible.role: Accessible.StaticText; Accessible.name: qsTr("Uses captured cookies, headers or credentials")
                                         HoverHandler { id: lockHover }
                                         QQC2.ToolTip.visible: lockHover.hovered; QQC2.ToolTip.delay: Tokens.toolTipDelay
-                                        QQC2.ToolTip.text: qsTr("Uses cookies, headers or credentials captured with this link. They are kept by the service and not shown.")
+                                        QQC2.ToolTip.text: qsTr("Uses cookies or credentials captured from the browser.")
                                     }
                                 }
                             }
                         }
                     }
                 }
+            }
+            // Single-link review: show warning if link already exists
+            Kirigami.InlineMessage {
+                objectName: "browserRequestExisting"
+                Layout.fillWidth: true
+                type: Kirigami.MessageType.Warning
+                readonly property var match: dialog.singleExisting ? dialog.singleExisting.match : null
+                visible: Boolean(dialog.singleExisting && (match || dialog.singleExisting.fileExists))
+                text: match ? qsTr("“%1” is already in your downloads.").arg(match.name) : qsTr("A file with this name already exists here.")
+                actions: [
+                    Kirigami.Action {
+                        text: qsTr("Show Existing"); visible: Boolean(dialog.singleExisting && dialog.singleExisting.match)
+                        onTriggered: root.existingRequested(dialog.singleExisting.match.id)
+                    },
+                    Kirigami.Action {
+                        text: qsTr("Open File")
+                        visible: Boolean(dialog.singleExisting && dialog.singleExisting.match && dialog.singleExisting.match.fileUrl.toString() !== "")
+                        onTriggered: DesktopOpener.openFile(dialog.singleExisting.match.fileUrl, dialog)
+                    }
+                ]
             }
             FormGrid {
                 FormLabel { text: qsTr("Save in:") }
@@ -378,8 +425,8 @@ Item {
                     Accessible.name: qsTr("Download location")
                 }
                 FormLabel { text: qsTr("Category:") }
-                QQC2.ComboBox {
-                    id: category; Layout.fillWidth: true; model: dialog.categoryChoices; textRole: "name"
+                UiComboBox {
+                    id: category; objectName: "browserRequestCategory"; Layout.fillWidth: true; model: dialog.categoryChoices; textRole: "name"
                     enabled: root.service.capabilities.indexOf("category.create") >= 0; Accessible.name: qsTr("Download category")
                 }
             }
@@ -402,6 +449,12 @@ Item {
             WindowFooter {
               id: reviewActions
               anchors { left: parent.left; right: parent.right; top: parent.top }
+              leading: UiButton {
+                  objectName: "dismissBrowserRequest"; flat: true
+                  text: qsTr("Discard"); icon.name: "edit-delete-remove"; enabled: !root.service.busy && !dialog.submitting
+                  QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.DestructiveRole
+                  onClicked: { if (root.service.dismissBrowserRequest(dialog.requestId)) dialog.submitting = true }
+              }
             UiButton {
                 objectName: "acceptBrowserRequest"; text: qsTr("Download"); icon.name: "download"; highlighted: true
                 enabled: !root.service.busy && !dialog.submitting && !dialog.outcomeUnknown && dialog.checkedCount > 0; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.AcceptRole
@@ -411,11 +464,6 @@ Item {
                 objectName: "pauseBrowserRequest"; text: qsTr("Add Paused"); icon.name: "list-add"; enabled: !root.service.busy && !dialog.submitting && !dialog.outcomeUnknown && dialog.checkedCount > 0
                 QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.AlternateRole
                 onClicked: dialog.submit(false)
-            }
-            UiButton {
-                objectName: "dismissBrowserRequest"; text: qsTr("Discard"); icon.name: "edit-delete-remove"; enabled: !root.service.busy && !dialog.submitting
-                QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.DestructiveRole
-                onClicked: { if (root.service.dismissBrowserRequest(dialog.requestId)) dialog.submitting = true }
             }
             UiButton {
                 objectName: "laterBrowserRequest"; text: qsTr("Later"); icon.name: "chronometer"; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.RejectRole

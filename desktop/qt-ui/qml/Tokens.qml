@@ -69,6 +69,7 @@ QtObject {
     readonly property int initialConfigureGuardMs: 1800
     readonly property int windowHydrationTimeoutMs: 1000
     readonly property int downloadWindowWidth: 560
+    readonly property int completionWindowWidth: 440
     readonly property int downloadWindowHeight: 760 // progress + eight part rows before scrolling
     readonly property int reviewWindowWidth: 720
     readonly property int reviewWindowHeight: 580

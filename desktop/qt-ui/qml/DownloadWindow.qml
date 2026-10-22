@@ -14,7 +14,9 @@ QQC2.ApplicationWindow {
     objectName: "downloadWindow-" + downloadId
     transientParent: null
     flags: Qt.Window
-    minimumWidth: Tokens.windowMinimumWidth
+    // Pinned to the page's own width while KWin may still apply remembered geometry
+    // (e.g. a just-closed compact completion window's), then freely resizable.
+    minimumWidth: initialConfigure ? content.preferredWidth : Tokens.windowMinimumWidth
     // Usable screen height for a window of this role; also what a fit is clamped to.
     readonly property real availableHeight: screen
         ? Math.max(Tokens.windowMinimumHeight, screen.desktopAvailableHeight - Tokens.dialogScreenMargin)
@@ -31,9 +33,14 @@ QQC2.ApplicationWindow {
     // after the bounded first-configure period; the content minimum remains.
     property bool initialConfigure: true
     maximumHeight: initialConfigure ? minimumHeight : Tokens.windowMaximumHeight
+    maximumWidth: initialConfigure ? content.preferredWidth : Tokens.windowMaximumHeight
     Timer { id: configureGuard; interval: Tokens.initialConfigureGuardMs; onTriggered: downloadWindow.initialConfigure = false }
     width: Tokens.downloadWindowWidth; height: Tokens.downloadWindowHeight
-    color: material.background
+    // Paint the material as an item, like the main view and dialogs. A translucent window
+    // clear color reaches the compositor unpremultiplied and reads lighter than the
+    // titlebar, visibly detaching it from the client area.
+    color: "transparent"
+    background: Rectangle { color: material.background }
     title: content.windowTitle
     // Compatibility/read-only state for adapter assertions; all actions live in content.
     readonly property var row: content.row
@@ -64,7 +71,7 @@ QQC2.ApplicationWindow {
     // rewrap a label.
     function fitContent(): void {
         if (fitWidthPending) {
-            width = Tokens.downloadWindowWidth
+            width = content.preferredWidth
             fitWidthPending = false
         }
         for (let pass = 0; pass < 3; ++pass) {
@@ -133,6 +140,9 @@ QQC2.ApplicationWindow {
     Connections {
         target: content
         function onPartsChanged() { if (downloadWindow.presentationPending) Qt.callLater(downloadWindow.present) }
+        // A window opened on an already-completed download learns that only once its row
+        // binds; adopt the compact completion width then, not just on state transitions.
+        function onPreferredWidthChanged() { downloadWindow.fitWidthPending = true; downloadWindow.fitContent() }
         function onContentHeightChanged() {
             if (downloadWindow.presentationPending) Qt.callLater(downloadWindow.present)
             else { contentFitTimer.restart(); fitTimer.restart() }

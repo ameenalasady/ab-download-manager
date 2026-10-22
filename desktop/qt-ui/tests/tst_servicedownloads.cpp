@@ -91,7 +91,7 @@ public:
                     if (monitorCapability) caps.append("monitor.stats");
                     if (policyCapability) { caps.append("settings.display"); caps.append("settings.policy"); caps.append("settings.speed"); }
                     if (detailsCapability) caps.append("download.details");
-                    if (forgetCapability) caps.append("download.forget");
+                    if (forgetCapability) { caps.append("download.forget"); caps.append("download.delete"); }
                     if (runtimeCapability) caps.append("runtime.policy");
                     if (httpCapability) { caps.append("download.edit"); caps.append("download.http-options"); }
                     if (browserCapability) for (const auto &op : {"browser.integration", "browser.intake", "browser.accept", "browser.dismiss", "browser.settings"}) caps.append(op);
@@ -459,6 +459,50 @@ private slots:
         FakeService missing; missing.detailsCapability = true;
         ServiceDownloads refused(missing.descriptor);
         QTRY_VERIFY(refused.errorMessage().contains("Invalid service response")); QCOMPARE(refused.rowCount(), 0);
+    }
+    void forgetCanAlsoDeleteFiles() {
+        FakeService service; service.forgetCapability = true;
+        auto row = service.rows[0].toObject(); row["state"] = "paused"; service.rows[0] = row;
+        ServiceDownloads model(service.descriptor);
+        QTRY_COMPARE(model.rowCount(), 1);
+        QVERIFY(model.canDeleteFiles());
+        QVERIFY(model.forgetDownloads({row["id"].toString()}, true));
+        QTRY_COMPARE(service.commands, 1);
+        QCOMPARE(service.lastCommand["op"].toString(), "download.forget");
+        QCOMPARE(service.lastCommand["keepFiles"], QJsonValue(false));
+        QTRY_COMPARE(model.rowCount(), 0);
+    }
+    void removeDialogDeletesFilesOnlyWhenChecked() {
+        FakeService service; service.forgetCapability = true;
+        auto row = service.rows[0].toObject(); row["state"] = "paused"; service.rows[0] = row;
+        auto second = row; second["id"] = "9007199254740995"; service.rows.append(second);
+        PreviewDownloads resources;
+        ServiceDownloads model(service.descriptor);
+        QQuickView view; view.setResizeMode(QQuickView::SizeRootObjectToView);
+        view.setInitialProperties({{"downloads", QVariant::fromValue(&model)}});
+        view.setSource(QUrl("qrc:/qt-ui/qml/DownloadsView.qml")); view.resize(760, 600); view.show();
+        QCOMPARE(view.status(), QQuickView::Ready);
+        QTRY_COMPARE(model.rowCount(), 2);
+        auto *check = view.rootObject()->findChild<QObject *>("removeDeleteFiles");
+        auto *confirm = view.rootObject()->findChild<QObject *>("confirmRemoveExample");
+        QVERIFY(check && confirm);
+        model.select(model.idAt(0)); QTRY_VERIFY(model.canRemove());
+        QVERIFY(QMetaObject::invokeMethod(view.rootObject(), "openRemoveDialog"));
+        QTRY_VERIFY(check->property("visible").toBool()); QVERIFY(!check->property("checked").toBool());
+        check->setProperty("checked", true);
+        QCOMPARE(confirm->property("text").toString(), QStringLiteral("Delete"));
+        if (const int hold = qBound(0, qEnvironmentVariableIntValue("QT_REMOVE_GALLERY_HOLD_MS"), 10000)) QTest::qWait(hold);
+        QTRY_VERIFY(confirm->property("enabled").toBool());
+        QVERIFY(QMetaObject::invokeMethod(confirm, "clicked"));
+        QTRY_COMPARE(service.commands, 1); QCOMPARE(service.lastCommand["keepFiles"], QJsonValue(false));
+        // Reopening resets the choice: deletion is never carried over to the next removal.
+        QTRY_COMPARE(model.rowCount(), 1); model.select(model.idAt(0)); QTRY_VERIFY(model.canRemove());
+        QVERIFY(QMetaObject::invokeMethod(view.rootObject(), "openRemoveDialog"));
+        QVERIFY(!check->property("checked").toBool());
+        QCOMPARE(confirm->property("text").toString(), QStringLiteral("Remove"));
+        QTRY_VERIFY(confirm->property("enabled").toBool());
+        QVERIFY(QMetaObject::invokeMethod(confirm, "clicked"));
+        QTRY_COMPARE(service.commands, 2); QCOMPARE(service.lastCommand["keepFiles"], QJsonValue(true));
     }
     void forgetKeepsCapturedIdPlainTextAndNeverReplays() {
         FakeService service; service.forgetCapability = true;
@@ -1079,10 +1123,16 @@ private slots:
             object("exampleUrlInput")->setProperty("text", link);
             object("exampleNameInput")->setProperty("text", "archive.zip");
         };
-        openAdd(); QVERIFY(QMetaObject::invokeMethod(object("confirmAddExample"), "clicked"));
+        // Optional compositor gallery: holds each state on screen for decorated captures.
+        const int galleryHold = qBound(0, qEnvironmentVariableIntValue("QT_DUPLICATE_GALLERY_HOLD_MS"), 10000);
+        openAdd();
+        QTRY_VERIFY(object("addExistingWarning")->property("visible").toBool());
+        if (galleryHold) QTest::qWait(galleryHold);
+        QVERIFY(QMetaObject::invokeMethod(object("confirmAddExample"), "clicked"));
         auto *duplicate = object("duplicateDownloadDialog"); QVERIFY(duplicate);
         QTRY_VERIFY(duplicate->property("visible").toBool()); QCOMPARE(service.commands, 0);
         QVERIFY(object("duplicateOverwrite")->property("enabled").toBool());
+        if (galleryHold) QTest::qWait(galleryHold);
         const auto capture = qEnvironmentVariable("QT_ADAPTER_CAPTURE_DIR");
         if (!capture.isEmpty()) {
             auto *content = qvariant_cast<QQuickItem *>(duplicate->property("contentItem")); QVERIFY(content && content->window());
@@ -1097,16 +1147,21 @@ private slots:
         openAdd(); QVERIFY(QMetaObject::invokeMethod(object("confirmAddExample"), "clicked"));
         QTRY_VERIFY(!view.rootObject()->property("addDialogVisible").toBool());
         QCOMPARE(service.commands, 1); QVERIFY(downloadWindow(view, id));
+        if (galleryHold) { view.hide(); QTest::qWait(galleryHold); downloadWindow(view, id)->close(); view.show(); }
         // Browser intake uses the same safe numbered policy only after a review choice.
         settings["qtDuplicateAction"] = "ask"; service.extensionSnapshot["settings"] = settings;
         service.extensionSnapshot["browserRequests"] = QJsonArray{QJsonObject{{"id", "duplicate-browser"}, {"outcomeUnknown", false},
             {"items", QJsonArray{QJsonObject{{"url", link}, {"name", "archive.zip"}, {"hasHeaders", false}, {"downloadPage", QJsonValue::Null}}}}}};
         QQuickWindow *review = nullptr;
         QTRY_VERIFY((review = view.rootObject()->findChild<QQuickWindow *>("browserRequestDialog")) && review->isVisible());
+        // The review already says the link exists, before Download is pressed.
+        QTRY_VERIFY(review->findChild<QObject *>("browserRequestExisting")->property("visible").toBool());
+        if (galleryHold) { view.hide(); QTest::qWait(galleryHold); }
         auto *accept = review->findChild<QObject *>("acceptBrowserRequest"); QVERIFY(accept);
         QVERIFY(QMetaObject::invokeMethod(accept, "clicked"));
         auto *browserDuplicate = review->findChild<QObject *>("browserDuplicateDialog"); QVERIFY(browserDuplicate);
         QTRY_VERIFY(browserDuplicate->property("visible").toBool()); QCOMPARE(service.commands, 1);
+        if (galleryHold) QTest::qWait(galleryHold);
         service.commandResult = QJsonObject{{"ok", true}, {"id", id}, {"ids", QJsonArray{id}}};
         QVERIFY(QMetaObject::invokeMethod(review->findChild<QObject *>("browserDuplicateAddNew"), "clicked"));
         QTRY_COMPARE(service.commands, 2);
@@ -1425,6 +1480,10 @@ private slots:
             view->hide();
             if (qEnvironmentVariableIsSet("QT_CAPTURE_KEYBOARD_FOCUS"))
                 qobject_cast<QQuickItem *>(accept)->forceActiveFocus(Qt::TabFocusReason);
+            if (qEnvironmentVariableIsSet("QT_CAPTURE_OPEN_COMBO")) {
+                auto *combo = review->findChild<QObject *>("browserRequestCategory"); QVERIFY(combo);
+                QTimer::singleShot(1500, combo, [combo] { combo->property("popup").value<QObject *>()->setProperty("visible", true); });
+            }
             QTest::qWait(chromeHold);
         }
         const auto capture = qEnvironmentVariable("QT_ADAPTER_CAPTURE_DIR");
@@ -2169,5 +2228,6 @@ private slots:
         QVERIFY(model.errorMessage().isEmpty());
     }
 };
+
 QTEST_MAIN(ServiceDownloadsTest)
 #include "tst_servicedownloads.moc"

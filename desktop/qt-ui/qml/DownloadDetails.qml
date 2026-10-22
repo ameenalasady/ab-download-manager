@@ -56,11 +56,11 @@ Item {
                     PlainText { visible: Boolean(dialog.reason); text: dialog.reason ? dialog.reason.suggestion : "" }
                     StatusMessage {
                         type: Kirigami.MessageType.Warning; visible: dialog.row.state === "failed" && !dialog.reason
-                        message: qsTr("The previous error reason is unavailable. Error details are kept in memory only and do not survive service restart.")
+                        message: qsTr("The error reason is unavailable.")
                     }
                     StatusMessage {
                         type: Kirigami.MessageType.Warning; visible: root.service.connectionState !== "ready"
-                        message: qsTr("Disconnected · Cached details may be stale. Retry is disabled until synchronization.")
+                        message: qsTr("Disconnected. Details may be outdated.")
                     }
                     StatusMessage { type: Kirigami.MessageType.Error; message: root.service.errorMessage }
                 }

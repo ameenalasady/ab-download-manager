@@ -130,8 +130,9 @@ public:
     bool canRemove() const { return canForgetDownloads(selectedIds()); }
     Q_INVOKABLE bool canForgetDownload(const QString &id) const;
     Q_INVOKABLE bool canForgetDownloads(const QStringList &ids) const;
-    Q_INVOKABLE bool forgetDownload(const QString &id);
-    Q_INVOKABLE bool forgetDownloads(const QStringList &ids);
+    Q_INVOKABLE bool canDeleteFiles() const { return m_capabilities.contains("download.delete"); }
+    Q_INVOKABLE bool forgetDownload(const QString &id, bool deleteFiles = false);
+    Q_INVOKABLE bool forgetDownloads(const QStringList &ids, bool deleteFiles = false);
     Q_INVOKABLE bool removeSelected() { return forgetDownloads(selectedIds()); }
     Q_INVOKABLE void clearError();
     QString errorMessage() const { return m_error; }

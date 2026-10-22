@@ -30,6 +30,8 @@ Item {
     readonly property bool available: row.available === true
     readonly property string transferState: available ? row.state : ""
     readonly property bool completed: transferState === "completed"
+    // The completion summary is compact; progress needs room for the part table.
+    readonly property int preferredWidth: completed ? Tokens.completionWindowWidth : Tokens.downloadWindowWidth
     readonly property bool connected: service.connectionState === "ready"
     readonly property bool controlsEnabled: available && connected && !service.busy
     readonly property var reason: row.error || null
@@ -181,12 +183,12 @@ Item {
             Flow {
                 id: actions; Layout.fillWidth: true; spacing: Tokens.spacingM
                 UiButton {
-                    objectName: "downloadWindowPause"; text: qsTr("Pause"); icon.name: "media-playback-pause"
+                    objectName: "downloadWindowPause"; highlighted: true; text: qsTr("Pause"); icon.name: "media-playback-pause"
                     visible: pane.transferState === "downloading" || (pane.transferState === "queued" && pane.row.waiting === true)
                     enabled: pane.controlsEnabled; onClicked: pane.service.pauseDownload(pane.downloadId)
                 }
                 UiButton {
-                    objectName: "downloadWindowResume"; icon.name: "media-playback-start"
+                    objectName: "downloadWindowResume"; highlighted: true; icon.name: "media-playback-start"
                     text: pane.transferState === "failed" ? qsTr("Retry") : pane.transferState === "paused" ? qsTr("Resume") : qsTr("Start")
                     visible: pane.transferState === "paused" || pane.transferState === "failed" || (pane.transferState === "queued" && pane.row.waiting !== true)
                     enabled: pane.controlsEnabled; onClicked: pane.service.resumeDownload(pane.downloadId)
@@ -199,7 +201,7 @@ Item {
             }
             StatusMessage {
                 type: Kirigami.MessageType.Warning; visible: !pane.completed && pane.parts.resumeSupport === false
-                message: qsTr("The server does not support resuming. Resuming after a pause may restart the transfer.")
+                message: qsTr("This server can't resume downloads. Pausing will restart it.")
             }
             // Engine parts, always shown while the transfer is not finished. No heading:
             // the piece bar and the column captions already identify the table.
@@ -225,10 +227,10 @@ Item {
                 Body {
                     tone: "secondary"
                     visible: !pane.partsWatched || pane.parts.available !== true
-                    text: !pane.partsWatched ? qsTr("Part detail window limit reached (16). Close another window to inspect parts.")
+                    text: !pane.partsWatched ? qsTr("Too many detail windows are open. Close one to see parts.")
                         : qsTr("No engine part information available yet.")
                 }
-                StatusMessage { type: Kirigami.MessageType.Warning; visible: pane.parts.truncated === true; message: qsTr("Showing the first 256 parts. The engine owns the remaining parts.") }
+                StatusMessage { type: Kirigami.MessageType.Warning; visible: pane.parts.truncated === true; message: qsTr("Showing the first 256 parts.") }
                 RowLayout {
                     Layout.fillWidth: true; Layout.leftMargin: Tokens.cellPadding; Layout.rightMargin: Tokens.cellPadding
                     spacing: Tokens.spacingS; visible: partList.count > 0
@@ -273,7 +275,7 @@ Item {
             }
             StatusMessage {
                 type: Kirigami.MessageType.Warning; visible: pane.transferState === "failed" && pane.reason === null
-                message: qsTr("The error reason is unavailable. Error details are kept in memory only and do not survive a service restart.")
+                message: qsTr("The error reason is unavailable.")
             }
             StatusMessage {
                 objectName: "downloadWindowCommandError"; type: Kirigami.MessageType.Error
@@ -282,12 +284,12 @@ Item {
             StatusMessage {
                 objectName: "downloadWindowStale"; type: Kirigami.MessageType.Warning
                 visible: !pane.connected
-                message: qsTr("Not connected to the download service. This is the last known state; controls are disabled until it reconnects. Closing this window does not stop the download.")
+                message: qsTr("Disconnected. Showing the last known state.")
             }
             StatusMessage {
                 type: Kirigami.MessageType.Information
                 visible: !pane.available && pane.connected
-                message: qsTr("This download was removed from the list. Its files were not changed.")
+                message: qsTr("This download was removed.")
             }
             Item { implicitHeight: Tokens.dialogPadding - Tokens.contentSpacing; Layout.fillWidth: true }
         }

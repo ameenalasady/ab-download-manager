@@ -148,7 +148,7 @@ class PrivateIpcServer(private val profile: Path, private val engine: EngineSess
         catch (e: Exception) { buildJsonObject { put("ok", false)
             put("code", when {
                 e is DownloadAddedButCategoryFailed -> "add-partially-applied"
-                e is DownloadForgetPartiallyApplied -> "remove-partially-applied"
+                e is DownloadForgetPartiallyApplied || e is DownloadDeletePartiallyApplied -> "remove-partially-applied"
                 e is DownloadEditPartiallyApplied -> "edit-partially-applied"
                 e is QueueDeletePartiallyApplied -> "queue-delete-partially-applied"
                 e is BrowserAddPartiallyApplied -> "browser-add-partially-applied"
@@ -158,6 +158,7 @@ class PrivateIpcServer(private val profile: Path, private val engine: EngineSess
             })
             if (e is DownloadAddedButCategoryFailed) put("id", e.downloadId.toString())
             if (e is DownloadForgetPartiallyApplied) put("id", e.downloadId.toString())
+            if (e is DownloadDeletePartiallyApplied) put("id", e.downloadId.toString())
             if (e is DownloadEditPartiallyApplied) put("id", e.downloadId.toString())
             if (e is DownloadReplacePartiallyApplied) put("id", e.downloadId.toString())
             if (e is QueueDeletePartiallyApplied) put("queueId", e.queueId.toString())

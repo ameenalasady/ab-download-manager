@@ -156,7 +156,7 @@ class EngineSession(
             "settings.display", "settings.policy", "browser.integration", "browser.intake", "browser.add", "browser.accept",
             "browser.dismiss", "browser.settings", "settings.integration", "frontend.activate", "links.import",
             "system.activity", "download.probe", "download.review", "history.page", "history.delta", "download.windows", "download.parts",
-            "download.replace", "settings.folder", "settings.duplicates")
+            "download.replace", "download.delete", "settings.folder", "settings.duplicates")
     }
 
     /** A frontend polled; browser requests then wait for it instead of launching one.
@@ -674,7 +674,7 @@ class EngineSession(
                 }
                 "download.forget" -> {
                     val id = request["id"]?.jsonPrimitive?.content?.toLongOrNull() ?: error("Invalid stable ID")
-                    require(request["keepFiles"]?.jsonPrimitive?.booleanOrNull == true) { "Only keeping ALL files is supported" }
+                    val keepFiles = request["keepFiles"]?.jsonPrimitive?.booleanOrNull ?: error("Missing keepFiles parameter")
                     val item = list.getById(id) ?: error("Download no longer exists")
                     require(item.status != DownloadStatus.Downloading && manager.getJobStatusOf(id) !is DownloadJobStatus.IsActive &&
                         manager.downloadJobs.none { it.id == id && it.isDownloadActive.value }) {
@@ -690,9 +690,16 @@ class EngineSession(
                     try {
                         memberships.forEach { it.persistNow() }
                         categories.persistNow()
-                        facade.forgetDownloadKeepingFiles(id)
+                        if (keepFiles) {
+                            facade.forgetDownloadKeepingFiles(id)
+                        } else {
+                            facade.removeDownload(id, alsoRemoveFile = true, context = EmptyContext)
+                        }
                     } catch (e: CancellationException) { throw e }
-                    catch (e: Exception) { throw DownloadForgetPartiallyApplied(id, e) }
+                    catch (e: Exception) {
+                        if (keepFiles) { throw DownloadForgetPartiallyApplied(id, e) }
+                        else { throw DownloadDeletePartiallyApplied(id, e) }
+                    }
                     finally {
                         // Core drains jobs before deleting metadata. Never save a retired
                         // object at shutdown (or overwrite a replacement after a failed delete).
@@ -901,6 +908,9 @@ class DownloadEditPartiallyApplied(val downloadId: Long, cause: Exception) : Ill
 
 class DownloadForgetPartiallyApplied(val downloadId: Long, cause: Exception) : IllegalStateException(
     "Removal may be partially applied. All payload files were kept. Inspect the refreshed list and queue/category membership before retrying.", cause)
+
+class DownloadDeletePartiallyApplied(val downloadId: Long, cause: Exception) : IllegalStateException(
+    "Removal may be partially applied: the download or its files may already be deleted. Check the list before retrying.", cause)
 
 class BrowserAddPartiallyApplied(val added: Int, val total: Int, cause: Exception) : IllegalStateException(
     "$added of $total browser links were added before an error. Inspect the refreshed list; the rest were not added and are not retried automatically.", cause)
