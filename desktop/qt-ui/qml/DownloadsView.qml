@@ -17,7 +17,7 @@ Item {
     readonly property bool removeDialogVisible: removeDialog.visible
     readonly property bool actionsMenuVisible: actionsMenu.visible
     // Every dialog except the browser review, which waits for these to close.
-    readonly property bool mainModalOpen: multipleAddDialog.visible || mutationDialog.visible || addDialog.visible || duplicateDialog.visible || removeDialog.visible || aboutDialog.visible || Boolean(workflows && workflows.modalOpen) || Boolean(categoryWorkflows && categoryWorkflows.modalOpen) || Boolean(detailsLoader.item && detailsLoader.item.modalOpen) || Boolean(httpOptionsLoader.item && httpOptionsLoader.item.modalOpen)
+    readonly property bool mainModalOpen: exitDialog.visible || multipleAddDialog.visible || mutationDialog.visible || addDialog.visible || duplicateDialog.visible || removeDialog.visible || aboutDialog.visible || Boolean(workflows && workflows.modalOpen) || Boolean(categoryWorkflows && categoryWorkflows.modalOpen) || Boolean(detailsLoader.item && detailsLoader.item.modalOpen) || Boolean(httpOptionsLoader.item && httpOptionsLoader.item.modalOpen)
     readonly property bool modalOpen: mainModalOpen || Boolean(browserLoader.item && browserLoader.item.modalOpen)
     PreviewTheme { id: theme }
     NativeWindowStyle { id: material; window: root.Window.window; maximumOpacity: Tokens.materialOpacity }
@@ -250,6 +250,14 @@ Item {
     function openHttpEdit() {
         const row = downloads.downloadDetails(downloads.selectedId)
         if (httpOptionsLoader.item && row.details) (httpOptionsLoader.item as HttpOptions).openOptions(downloads.selectedId, row.details.url, row.details)
+    }
+    // File → Exit and the tray's Exit stop the service and every frontend window. Like the
+    // original, confirm only while something is downloading or a queue is running.
+    function requestExit() {
+        if (!live || downloads.capabilities.indexOf("service.shutdown") < 0) return
+        const stats = downloads.statistics
+        if (stats.activeCount > 0 || stats.activeQueues > 0 || stats.queuedCount > 0) exitDialog.open()
+        else downloads.shutdownService()
     }
     function openActionsMenu() {
         const p = actionsButton.mapToItem(root, 0, actionsButton.height)
@@ -621,6 +629,13 @@ Item {
             enabled: root.explicitRuntime && !root.downloads.busy
             onTriggered: root.downloads.importFromClipboard()
         }
+        QQC2.MenuSeparator { visible: exitItem.visible }
+        QQC2.MenuItem {
+            id: exitItem; objectName: "exitApplication"; text: qsTr("E&xit"); icon.name: "application-exit"
+            visible: root.live && root.downloads.capabilities.indexOf("service.shutdown") >= 0
+            enabled: !root.downloads.busy
+            onTriggered: root.requestExit()
+        }
     }
     MenuSurface {
         id: tasksMenu; objectName: "tasksMenu"
@@ -693,6 +708,21 @@ Item {
     MenuSurface {
         id: helpMenu; objectName: "helpMenu"
         QQC2.MenuItem { text: qsTr("&About Download Manager"); icon.name: "help-about"; onTriggered: aboutDialog.open() }
+    }
+    UiDialog {
+        id: exitDialog; objectName: "confirmExitDialog"
+        title: qsTr("Confirm Exit"); preferredWidth: Tokens.dialogWidthSmall
+        contentItem: ColumnLayout {
+            Body { text: qsTr("Active downloads and queues will stop."); Layout.fillWidth: true }
+        }
+        footer: DialogFooter {
+            UiButton {
+                objectName: "confirmExit"; text: qsTr("Exit"); icon.name: "application-exit"
+                QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.AcceptRole; enabled: !root.downloads.busy
+                onClicked: { if (root.downloads.shutdownService()) exitDialog.close() }
+            }
+            UiButton { text: qsTr("Cancel"); icon.name: "dialog-cancel"; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.RejectRole; onClicked: exitDialog.close() }
+        }
     }
     UiDialog {
         id: multipleAddDialog; objectName: "multipleAddDialog"

@@ -34,7 +34,8 @@ DesktopAdapters::DesktopAdapters(QQuickView *window, ServiceDownloads *service)
         m_service->updateSettings({{"useSpeedLimit", enabled ? "Enabled" : "Disabled"}});
     });
     connect(m_settings, &QAction::triggered, this, [this] { activate(); invoke("openSettings"); });
-    connect(m_exit, &QAction::triggered, this, [this] { m_service->shutdownService(); });
+    // Same confirmation as File → Exit while downloads or queues are running.
+    connect(m_exit, &QAction::triggered, this, [this] { activate(); invoke("requestExit"); });
     connect(service, &ServiceDownloads::serviceStopped, qApp, &QCoreApplication::quit);
     connect(service, &ServiceDownloads::activationRequested, this,
         [this](const QString &token, const QString &action, const QString &downloadId) {

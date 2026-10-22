@@ -339,6 +339,41 @@ private slots:
         QTRY_COMPARE(model.errorMessage(), "Invalid service response. Connection closed.");
         view.close(); view.setSource(QUrl()); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     }
+    void exitConfirmsOnlyWhileDownloadsOrQueuesRun() {
+        FakeService service; service.desktopCapability = true; // Default row is downloading.
+        service.extensionSnapshot = {{"queues", QJsonArray{}}, {"settings", basicSettings()},
+            {"integration", QJsonObject{{"autoStartOnBoot", false}, {"useSystemTray", false}, {"notificationSound", false}, {"notifications", true}}}};
+        ServiceDownloads model(service.descriptor); QTRY_COMPARE(model.rowCount(), 1);
+        QSignalSpy stopped(&model, &ServiceDownloads::serviceStopped);
+        QQuickView view; view.setResizeMode(QQuickView::SizeRootObjectToView); view.resize(1000, 700);
+        view.setInitialProperties({{"downloads", QVariant::fromValue(&model)}});
+        view.setSource(QUrl("qrc:/qt-ui/qml/DownloadsView.qml")); view.show(); QCOMPARE(view.status(), QQuickView::Ready);
+        auto *root = view.rootObject();
+        QVERIFY(QMetaObject::invokeMethod(root, "openMenu", Q_ARG(QString, "File")));
+        auto *fileMenu = root->findChild<QObject *>("fileMenu"); QTRY_VERIFY(fileMenu->property("visible").toBool());
+        auto *exit = root->findChild<QObject *>("exitApplication"); QVERIFY(exit);
+        QTRY_VERIFY(exit->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(exit, "triggered"));
+        auto *dialog = root->findChild<QObject *>("confirmExitDialog"); QVERIFY(dialog);
+        QTRY_VERIFY(dialog->property("visible").toBool());
+        QVERIFY(root->property("mainModalOpen").toBool());
+        QTest::qWait(100); QCOMPARE(service.commands, 0); // Nothing stops before confirmation.
+        QVERIFY(QMetaObject::invokeMethod(dialog, "close")); QTRY_VERIFY(!dialog->property("visible").toBool());
+        QCOMPARE(service.commands, 0);
+        QVERIFY(QMetaObject::invokeMethod(root, "requestExit")); QTRY_VERIFY(dialog->property("visible").toBool());
+        auto *confirm = root->findChild<QObject *>("confirmExit"); QVERIFY(confirm);
+        QTRY_VERIFY(confirm->property("highlighted").toBool());
+        QVERIFY(QMetaObject::invokeMethod(confirm, "clicked"));
+        QTRY_COMPARE(service.lastCommand["op"].toString(), "service.shutdown");
+        QTRY_COMPARE(stopped.count(), 1); QTRY_VERIFY(!dialog->property("visible").toBool());
+        // Nothing running: exit stops the service at once.
+        auto row = service.rows[0].toObject(); row["state"] = "paused"; service.rows[0] = row;
+        QTRY_COMPARE(model.statistics()["activeCount"].toInt(), 0);
+        QVERIFY(QMetaObject::invokeMethod(root, "requestExit"));
+        QTRY_COMPARE(service.commands, 2); QCOMPARE(service.lastCommand["op"].toString(), "service.shutdown");
+        QVERIFY(!dialog->property("visible").toBool());
+        view.close(); view.setSource(QUrl()); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    }
     void tasksMenuDispatchesGlobalCommandsWithoutSelection() {
         FakeService service; service.tasksCapability = true;
         ServiceDownloads model(service.descriptor); QTRY_COMPARE(model.rowCount(), 1);
@@ -368,9 +403,10 @@ private slots:
         QVERIFY(QDir().mkpath(dir));
         FakeService service;
         service.sortCapability = service.monitorCapability = service.tasksCapability = service.actionsCapability = service.detailsCapability = true;
-        service.reviewCapability = service.browserCapability = service.runtimeCapability = true;
+        service.reviewCapability = service.browserCapability = service.runtimeCapability = service.desktopCapability = true;
         auto settings = basicSettings(); settings["qtSortColumn"] = "name"; settings["qtSortDescending"] = false;
         service.extensionSnapshot = {{"queues", QJsonArray{}}, {"manualPending", QJsonArray{"9007199254740995"}}, {"settings", settings}, {"browserRequests", QJsonArray{}},
+            {"integration", QJsonObject{{"autoStartOnBoot", false}, {"useSystemTray", false}, {"notificationSound", false}, {"notifications", true}}},
             {"browserIntegration", QJsonObject{{"state", "disabled"}, {"error", QJsonValue::Null}, {"enabled", false}, {"port", 15151}, {"auth", false}}},
             {"runtime", QJsonObject{{"mode", "explicit-runtime"}, {"destination", "/downloads"}, {"destinationRoots", QJsonArray{"/downloads"}}, {"redirects", true}, {"proxy", "direct"}}}};
         const auto details = [](const QString &name) { return QJsonObject{{"url", "https://example.invalid/" + name}, {"folder", "/downloads"},
@@ -408,6 +444,9 @@ private slots:
         QMetaObject::invokeMethod(root->findChild<QObject *>("fileMenu"), "close"); QTest::qWait(200);
         QVERIFY(QMetaObject::invokeMethod(root, "openMenu", Q_ARG(QString, "Tasks"))); capture("tasks-menu");
         QMetaObject::invokeMethod(root->findChild<QObject *>("tasksMenu"), "close"); QTest::qWait(200);
+        auto *exitDialog = root->findChild<QObject *>("confirmExitDialog"); QVERIFY(exitDialog);
+        QVERIFY(QMetaObject::invokeMethod(root, "requestExit")); QTRY_VERIFY(exitDialog->property("visible").toBool()); capture("exit-confirm");
+        QMetaObject::invokeMethod(exitDialog, "close"); QTRY_VERIFY(!exitDialog->property("visible").toBool());
         auto *mutation = root->findChild<QObject *>("downloadMutationDialog"); QVERIFY(mutation);
         QVERIFY(QMetaObject::invokeMethod(root, "openMutation", Q_ARG(QString, "download.move"))); QTRY_VERIFY(mutation->property("visible").toBool()); capture("move");
         QMetaObject::invokeMethod(mutation, "close"); QTRY_VERIFY(!mutation->property("visible").toBool());

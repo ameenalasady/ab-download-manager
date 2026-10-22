@@ -687,11 +687,11 @@ bool ServiceDownloads::sortBy(const QString &column) {
     return updateSettings({{"qtSortColumn", column}, {"qtSortDescending", column == sortColumn() ? !sortDescending() : column == "dateAdded"}});
 }
 QVariantMap ServiceDownloads::statistics() const {
-    qint64 selectedBytes = 0, speed = 0; int unknown = 0, queued = 0;
+    qint64 selectedBytes = 0, speed = 0; int unknown = 0, queued = 0, active = 0, activeQueues = 0;
     QSet<QString> waiting = m_manualPending;
     for (const auto &value : m_queues) {
         const auto queue = value.toMap();
-        if (queue["active"].toBool()) for (const auto &id : queue["items"].toList()) waiting.insert(id.toString());
+        if (queue["active"].toBool()) { ++activeQueues; for (const auto &id : queue["items"].toList()) waiting.insert(id.toString()); }
     }
     auto add = [](qint64 &total, qint64 value) { total += std::min(std::max(qint64(0), value), std::numeric_limits<qint64>::max() - total); };
     for (const auto &row : m_rows) {
@@ -700,10 +700,11 @@ QVariantMap ServiceDownloads::statistics() const {
             const auto size = row["size"].toString().toLongLong();
             if (size < 0) ++unknown; else add(selectedBytes, size);
         }
-        if (state == "downloading") add(speed, row["speed"].toString().toLongLong());
+        if (state == "downloading") { ++active; add(speed, row["speed"].toString().toLongLong()); }
         else if (state != "completed" && waiting.contains(id)) ++queued;
     }
     return {{"selectedBytes", QString::number(selectedBytes)}, {"unknownSizes", unknown}, {"queuedCount", queued},
+        {"activeCount", active}, {"activeQueues", activeQueues},
         {"selectedSizeLabel", sizeText(selectedBytes, sizeUnit()) + (unknown ? tr(" + unknown") : QString())},
         {"speedLabel", m_capabilities.contains("monitor.stats") ? sizeText(speed, m_settings.value("speedUnit", "BinaryBytes").toString()) + "/s" : QStringLiteral("—")}};
 }
