@@ -18,7 +18,7 @@ Item {
     readonly property bool removeDialogVisible: removeDialog.visible
     readonly property bool actionsMenuVisible: actionsMenu.visible
     // Every dialog except the browser review, which waits for these to close.
-    readonly property bool mainModalOpen: powerDialog.visible || exitDialog.visible || multipleAddDialog.visible || mutationDialog.visible || addDialog.visible || duplicateDialog.visible || removeDialog.visible || aboutDialog.visible || Boolean(workflows && workflows.modalOpen) || Boolean(categoryWorkflows && categoryWorkflows.modalOpen) || Boolean(detailsLoader.item && detailsLoader.item.modalOpen) || Boolean(checksumLoader.item && checksumLoader.item.modalOpen) || Boolean(httpOptionsLoader.item && httpOptionsLoader.item.modalOpen)
+    readonly property bool mainModalOpen: powerDialog.visible || exitDialog.visible || multipleAddDialog.visible || mutationDialog.visible || addDialog.visible || removeDialog.visible || aboutDialog.visible || Boolean(workflows && workflows.modalOpen) || Boolean(categoryWorkflows && categoryWorkflows.modalOpen) || Boolean(detailsLoader.item && detailsLoader.item.modalOpen) || Boolean(checksumLoader.item && checksumLoader.item.modalOpen) || Boolean(httpOptionsLoader.item && httpOptionsLoader.item.modalOpen)
     readonly property bool modalOpen: mainModalOpen || Boolean(browserLoader.item && browserLoader.item.modalOpen)
     PreviewTheme { id: theme }
     NativeWindowStyle { id: material; window: root.Window.window; maximumOpacity: Tokens.materialOpacity }
@@ -71,14 +71,17 @@ Item {
         const exists = downloads.destinationExists(folder, nameInput.text)
         if (!matches.length && !exists) return sendDownload(start, "numbered")
         const preference = downloads.settings.qtDuplicateAction || "ask"
-        if (preference === "numbered") return sendDownload(start, "numbered")
         if (preference === "existing" && matches.length) {
             showDownloadWindow(matches[0].id, false)
             return true // Never silently resume or execute a file.
         }
-        duplicateDialog.matches = matches; duplicateDialog.fileExists = exists
-        duplicateDialog.start = start; duplicateDialog.open()
-        return false
+        // Duplicates are resolved in the dialog's banner. If the debounced check has not
+        // shown it for these exact inputs yet, show it now and wait for the next click.
+        if (preference !== "numbered" && addDialog.checkedKey !== addDialog.inputKey()) {
+            existingCheck.stop(); addDialog.checkExisting()
+            return false
+        }
+        return sendDownload(start, addDialog.inlinePolicy === "overwrite" && addDialog.replaceable(matches) ? "overwrite" : "numbered")
     }
     function activateDownload(id: string) {
         if (!live || !id) return
@@ -113,7 +116,8 @@ Item {
         sourceInput.text = live ? "" : "https://example.invalid/archive.zip"
         nameInput.text = live ? "" : "archive.zip"
         addDialog.categoryChoices = [{id: "auto", name: qsTr("Automatic")}, {id: "none", name: qsTr("No Category")}].concat(live ? downloads.categories.map(c => ({id: c.id, name: c.name})) : [])
-        addCategory.currentIndex = 0; addDialog.open(); sourceInput.forceActiveFocus()
+        addCategory.currentIndex = 0; addDialog.inlinePolicy = "numbered"; addKeepBoth.checked = true
+        addDialog.open(); sourceInput.forceActiveFocus()
     }
     function openMultipleAdd() {
         if (!live || downloads.capabilities.indexOf("links.review") < 0) return
@@ -965,14 +969,29 @@ Item {
         // Known duplicates are shown while typing, before Download is pressed. The lookups
         // are synchronous, so they run once typing pauses rather than on every key.
         property var existing: null
+        property var matches: []
         property bool fileExists: false
+        // Inputs the banner was computed for; Download only acts on a banner that is current.
+        property string checkedKey: ""
+        property string inlinePolicy: "numbered"
+        function inputKey(): string {
+            return JSON.stringify([sourceInput.text, nameInput.text, root.explicitRuntime ? locationInput.text : (root.downloads.runtime || {}).destination])
+        }
         function checkExisting(): void {
-            if (!root.live || !visible || sourceInput.text.trim() === "") { existing = null; fileExists = false; return }
+            checkedKey = inputKey()
+            if (!root.live || !visible || sourceInput.text.trim() === "") { existing = null; matches = []; fileExists = false; return }
             const folder = root.explicitRuntime ? locationInput.text : root.downloads.runtime.destination
-            const matches = root.downloads.findDuplicates(sourceInput.text, nameInput.text, folder)
+            matches = root.downloads.findDuplicates(sourceInput.text, nameInput.text, folder)
             existing = matches.length ? matches[0] : null
             fileExists = root.downloads.destinationExists(folder, nameInput.text)
         }
+        // Replacing needs a recorded download at the same destination that is not transferring.
+        function replaceable(candidates: var): bool {
+            return root.live && root.downloads.capabilities.indexOf("download.replace") >= 0
+                && candidates.some(m => m.sameDestination)
+                && !candidates.some(m => m.sameDestination && (m.state === "downloading" || m.state === "queued"))
+        }
+        readonly property bool canReplace: replaceable(matches)
         Timer { id: existingCheck; interval: 250; onTriggered: addDialog.checkExisting() }
         contentItem: ColumnLayout {
             spacing: Tokens.contentSpacing
@@ -1007,13 +1026,48 @@ Item {
                 }
             }
             DuplicateNotice {
-                objectName: "addExistingWarning"
+                id: addExistingWarning; objectName: "addExistingWarning"
                 visible: Boolean(addDialog.existing) || addDialog.fileExists
                 title: addDialog.existing ? qsTr("Already in your downloads") : qsTr("File already exists")
                 detail: addDialog.existing ? qsTr("%1 · %2").arg(addDialog.existing.name).arg(root.stateLabel(addDialog.existing.state))
                     : qsTr("“%1” is already in the download folder.").arg(nameInput.text.trim())
+                readonly property bool showsExisting: (root.downloads.settings.qtDuplicateAction || "ask") === "existing" && Boolean(addDialog.existing)
                 hasExisting: Boolean(addDialog.existing)
+                canOpen: Boolean(addDialog.existing && addDialog.existing.fileUrl.toString() !== "")
+                canResume: Boolean(addDialog.existing && ["paused", "failed"].indexOf(addDialog.existing.state) >= 0 && !showsExisting)
                 onShowExisting: { root.showDownloadWindow(addDialog.existing.id, false); addDialog.close() }
+                onOpenFile: DesktopOpener.openFile(addDialog.existing.fileUrl, root.Window.window)
+                onResume: { if (!root.downloads.busy && root.downloads.resumeDownload(addDialog.existing.id)) addDialog.close() }
+                extraVisible: true
+                RowLayout {
+                    objectName: "addDuplicateChoice"
+                    visible: addDialog.canReplace && !addExistingWarning.showsExisting
+                    spacing: Tokens.spacingL
+                    QQC2.RadioButton {
+                        id: addKeepBoth; objectName: "addKeepBoth"
+                        text: qsTr("Keep both"); checked: true
+                        onToggled: if (checked) addDialog.inlinePolicy = "numbered"
+                        QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Tokens.toolTipDelay
+                        QQC2.ToolTip.text: qsTr("Save the new download with a numbered name.")
+                    }
+                    QQC2.RadioButton {
+                        objectName: "addReplace"
+                        text: qsTr("Replace existing")
+                        onToggled: if (checked) addDialog.inlinePolicy = "overwrite"
+                        QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Tokens.toolTipDelay
+                        QQC2.ToolTip.text: qsTr("Remove the existing download and its file, then download again.")
+                    }
+                    Item { Layout.fillWidth: true }
+                }
+                QQC2.Label {
+                    objectName: "addDuplicateHint"
+                    Layout.fillWidth: true
+                    visible: !addDialog.canReplace || addExistingWarning.showsExisting
+                    text: addExistingWarning.showsExisting ? qsTr("Download will show the existing download instead.")
+                        : qsTr("Downloading saves a numbered copy alongside it.")
+                    textFormat: Text.PlainText; wrapMode: Text.Wrap
+                    font: Tokens.smallFont; color: theme.secondary
+                }
             }
             Body {
                 tone: "secondary"; visible: !root.explicitRuntime
@@ -1025,43 +1079,6 @@ Item {
             UiButton { id: startDownloadButton; objectName: "confirmStartDownload"; text: qsTr("Download"); icon.name: "download"; visible: root.live; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.AcceptRole; onClicked: { if (root.submitDownload(true)) addDialog.accept() } }
             UiButton { id: addExample; objectName: "confirmAddExample"; text: root.live ? qsTr("Add Paused") : qsTr("Add"); icon.name: "list-add"; QQC2.DialogButtonBox.buttonRole: root.live ? QQC2.DialogButtonBox.AlternateRole : QQC2.DialogButtonBox.AcceptRole; onClicked: { if (root.submitDownload(false)) addDialog.accept() } }
             UiButton { text: qsTr("Cancel"); icon.name: "dialog-cancel"; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.RejectRole; onClicked: addDialog.reject() }
-        }
-    }
-    UiDialog {
-        id: duplicateDialog; objectName: "duplicateDownloadDialog"
-        property var matches: []
-        property bool fileExists: false
-        property bool start: false
-        readonly property var existing: matches.length ? matches[0] : null
-        readonly property bool canReplace: root.live && root.downloads.capabilities.indexOf("download.replace") >= 0
-            && matches.some(m => m.sameDestination) && !matches.some(m => m.sameDestination && (m.state === "downloading" || m.state === "queued"))
-        title: qsTr("Download Already Exists")
-        preferredWidth: Tokens.dialogWidthMedium
-        contentItem: ColumnLayout {
-            spacing: Tokens.contentSpacing
-            Body { text: duplicateDialog.existing ? qsTr("“%1” is already in your downloads.").arg(duplicateDialog.existing.name) : qsTr("A file with this name already exists here.") }
-            StatusMessage { type: Kirigami.MessageType.Error; message: root.downloads.errorMessage }
-        }
-        footer: DialogFooter {
-            leading: [
-                UiButton {
-                    text: qsTr("Show Existing"); flat: true; visible: Boolean(duplicateDialog.existing)
-                    onClicked: { root.showDownloadWindow(duplicateDialog.existing.id, false); duplicateDialog.close(); addDialog.close() }
-                },
-                UiButton {
-                    text: qsTr("Open File"); flat: true
-                    visible: Boolean(duplicateDialog.existing && duplicateDialog.existing.fileUrl.toString() !== "")
-                    onClicked: { DesktopOpener.openFile(duplicateDialog.existing.fileUrl, root.Window.window); duplicateDialog.close() }
-                },
-                UiButton {
-                    text: qsTr("Resume Existing"); flat: true
-                    visible: Boolean(duplicateDialog.existing && ["paused", "failed"].indexOf(duplicateDialog.existing.state) >= 0)
-                    onClicked: { if (root.downloads.resumeDownload(duplicateDialog.existing.id)) { duplicateDialog.close(); addDialog.close() } }
-                }
-            ]
-            UiButton { id: duplicateAddButton; objectName: "duplicateAddNew"; text: qsTr("Add New"); icon.name: "list-add"; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.AcceptRole; onClicked: { if (root.sendDownload(duplicateDialog.start, "numbered")) { duplicateDialog.close(); addDialog.accept() } } }
-            UiButton { objectName: "duplicateOverwrite"; text: qsTr("Overwrite"); icon.name: "edit-delete"; enabled: duplicateDialog.canReplace; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.DestructiveRole; onClicked: { if (root.sendDownload(duplicateDialog.start, "overwrite")) { duplicateDialog.close(); addDialog.accept() } } }
-            UiButton { text: qsTr("Cancel"); icon.name: "dialog-cancel"; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.RejectRole; onClicked: duplicateDialog.reject() }
         }
     }
     UiDialog {

@@ -1933,7 +1933,7 @@ private slots:
         QCOMPARE(service.commands, 0);
         review->close();
     }
-    void duplicateDialogsRequireAnExplicitChoiceBeforeAdding() {
+    void duplicatesAreChosenInlineBeforeAdding() {
         FakeService service; service.detailsCapability = true; service.runtimeCapability = true;
         service.duplicateCapability = true; service.replaceCapability = true; service.browserCapability = true;
         const QString folder = service.directory.filePath("Downloads"); QVERIFY(QDir().mkpath(folder));
@@ -1960,32 +1960,56 @@ private slots:
         };
         // Optional compositor gallery: holds each state on screen for decorated captures.
         const int galleryHold = qBound(0, qEnvironmentVariableIntValue("QT_DUPLICATE_GALLERY_HOLD_MS"), 10000);
+        auto *addDialog = object("addExampleDialog"); QVERIFY(addDialog);
+        const auto bannerCurrent = [&] {
+            QString key; QMetaObject::invokeMethod(addDialog, "inputKey", Q_RETURN_ARG(QString, key));
+            return addDialog->property("checkedKey").toString() == key;
+        };
+        // A click before the debounced check has shown the banner only shows it: nothing
+        // is added before the duplicate and its choice were visible.
         openAdd();
-        QTRY_VERIFY(object("addExistingWarning")->property("visible").toBool());
+        QVERIFY(!bannerCurrent());
+        QVERIFY(QMetaObject::invokeMethod(object("confirmAddExample"), "clicked"));
+        QVERIFY(bannerCurrent()); QVERIFY(object("addExistingWarning")->property("visible").toBool());
+        QVERIFY(view.rootObject()->property("addDialogVisible").toBool());
+        QTest::qWait(400); QCOMPARE(service.commands, 0);
+        QVERIFY(!object("duplicateDownloadDialog")); // No second dialog any more.
+        QVERIFY(object("addDuplicateChoice")->property("visible").toBool());
+        QVERIFY(!object("addDuplicateHint")->property("visible").toBool());
+        QVERIFY(object("addKeepBoth")->property("checked").toBool());
         if (galleryHold) QTest::qWait(galleryHold);
         if (const auto capture = qEnvironmentVariable("QT_ADAPTER_CAPTURE_DIR"); !capture.isEmpty()) {
             auto *warning = qobject_cast<QQuickItem *>(object("addExistingWarning")); QVERIFY(warning && warning->window());
             QVERIFY(waitForRenderedFrame(warning->window())); QVERIFY(warning->window()->grabWindow().save(capture + "/add-duplicate-banner.png"));
         }
+        // Keep both (the default) adds a numbered copy on the next click.
         QVERIFY(QMetaObject::invokeMethod(object("confirmAddExample"), "clicked"));
-        auto *duplicate = object("duplicateDownloadDialog"); QVERIFY(duplicate);
-        QTRY_VERIFY(duplicate->property("visible").toBool()); QCOMPARE(service.commands, 0);
-        QVERIFY(object("duplicateOverwrite")->property("enabled").toBool());
-        if (galleryHold) QTest::qWait(galleryHold);
-        const auto capture = qEnvironmentVariable("QT_ADAPTER_CAPTURE_DIR");
-        if (!capture.isEmpty()) {
-            auto *content = qvariant_cast<QQuickItem *>(duplicate->property("contentItem")); QVERIFY(content && content->window());
-            QVERIFY(reviewWindow(content->window(), capture + "/duplicate-main.png", QSize(640, 360)));
-        }
-        QVERIFY(QMetaObject::invokeMethod(object("duplicateAddNew"), "clicked"));
         QTRY_COMPARE(service.commands, 1); QCOMPARE(service.lastCommand["duplicatePolicy"].toString(), "numbered");
         QTRY_VERIFY(!model.busy()); QTRY_VERIFY(!view.rootObject()->property("addDialogVisible").toBool());
+        // Replace, chosen with a real click, is sent as overwrite without another dialog.
+        openAdd(); QTRY_VERIFY(bannerCurrent());
+        QVERIFY(object("addKeepBoth")->property("checked").toBool());
+        auto *addReplace = qobject_cast<QQuickItem *>(object("addReplace")); QVERIFY(addReplace && addReplace->window());
+        QTRY_VERIFY(addReplace->isVisible());
+        QVERIFY(QTest::qWaitForWindowExposed(addReplace->window())); QVERIFY(waitForRenderedFrame(addReplace->window()));
+        QTest::mouseClick(addReplace->window(), Qt::LeftButton, Qt::NoModifier,
+            addReplace->mapToScene(QPointF(addReplace->height() / 2, addReplace->height() / 2)).toPoint());
+        QTRY_VERIFY(addReplace->property("checked").toBool());
+        QCOMPARE(addDialog->property("inlinePolicy").toString(), "overwrite");
+        QVERIFY(QMetaObject::invokeMethod(object("confirmStartDownload"), "clicked"));
+        QTRY_COMPARE(service.commands, 2); QCOMPARE(service.lastCommand["duplicatePolicy"].toString(), "overwrite");
+        QTRY_VERIFY(!model.busy()); QTRY_VERIFY(!view.rootObject()->property("addDialogVisible").toBool());
+        // Reopening starts from Keep both again.
+        openAdd(); QVERIFY(object("addKeepBoth")->property("checked").toBool());
+        QCOMPARE(addDialog->property("inlinePolicy").toString(), "numbered");
+        QVERIFY(QMetaObject::invokeMethod(addDialog, "close"));
+        QTRY_VERIFY(!view.rootObject()->property("addDialogVisible").toBool());
         // Existing means show only: no automatic resume, execution or new Add.
         settings["qtDuplicateAction"] = "existing"; service.extensionSnapshot["settings"] = settings;
         QTRY_COMPARE(model.settings()["qtDuplicateAction"].toString(), "existing");
         openAdd(); QVERIFY(QMetaObject::invokeMethod(object("confirmAddExample"), "clicked"));
         QTRY_VERIFY(!view.rootObject()->property("addDialogVisible").toBool());
-        QCOMPARE(service.commands, 1); QVERIFY(downloadWindow(view, id));
+        QCOMPARE(service.commands, 2); QVERIFY(downloadWindow(view, id));
         if (galleryHold) { view.hide(); QTest::qWait(galleryHold); downloadWindow(view, id)->close(); view.show(); }
         // Browser intake uses the same safe numbered policy only after a review choice.
         settings["qtDuplicateAction"] = "ask"; service.extensionSnapshot["settings"] = settings;
@@ -2017,7 +2041,7 @@ private slots:
         // The accepted review closes and destroys itself, its duplicate dialog with it.
         const QPointer<QObject> browserDuplicate = review->findChild<QObject *>("browserDuplicateDialog"); QVERIFY(browserDuplicate);
         QVERIFY(QMetaObject::invokeMethod(accept, "clicked"));
-        QTRY_COMPARE(service.commands, 2);
+        QTRY_COMPARE(service.commands, 3);
         QVERIFY(!browserDuplicate || !browserDuplicate->property("visible").toBool());
         QCOMPARE(service.lastCommand["op"].toString(), "browser.accept");
         QCOMPARE(service.lastCommand["duplicatePolicy"].toString(), "overwrite");
@@ -3351,12 +3375,14 @@ private slots:
         // Wait for the command gate, then click ONCE. Polling a mutating click can
         // duplicate an Add if native dialog-close delivery lags behind the reply.
         QTRY_VERIFY(!model.busy());
-        QVERIFY(QMetaObject::invokeMethod(add, "clicked"));
-        // The fixture URL already belongs to earlier smoke downloads: review it explicitly.
-        auto *duplicate = view.rootObject()->findChild<QObject *>("duplicateDownloadDialog");
-        QVERIFY(duplicate);
-        QTRY_VERIFY(duplicate->property("visible").toBool());
-        QVERIFY(QMetaObject::invokeMethod(view.rootObject()->findChild<QObject *>("duplicateAddNew"), "clicked"));
+        // The fixture URL already belongs to earlier smoke downloads: the inline banner
+        // shows it first (default Keep both), then Add proceeds with a numbered copy.
+        auto *existingWarning = view.rootObject()->findChild<QObject *>("addExistingWarning");
+        QVERIFY(existingWarning);
+        if (!QMetaObject::invokeMethod(add, "clicked") || view.rootObject()->property("addDialogVisible").toBool()) {
+            QTRY_VERIFY(existingWarning->property("visible").toBool());
+            QVERIFY(QMetaObject::invokeMethod(add, "clicked"));
+        }
         QTRY_VERIFY2(!view.rootObject()->property("addDialogVisible").toBool(), modelState(model).constData());
         QTRY_VERIFY_WITH_TIMEOUT(([&] {
             for (int i = 0; i < model.rowCount(); ++i)
@@ -3489,8 +3515,10 @@ private slots:
         QVERIFY(start && start->property("visible").toBool());
         QTRY_VERIFY(!model.busy());
         QVERIFY(QMetaObject::invokeMethod(start, "clicked"));
-        QTRY_VERIFY(duplicate->property("visible").toBool());
-        QVERIFY(QMetaObject::invokeMethod(view.rootObject()->findChild<QObject *>("duplicateAddNew"), "clicked"));
+        if (view.rootObject()->property("addDialogVisible").toBool()) {
+            QTRY_VERIFY(existingWarning->property("visible").toBool());
+            QVERIFY(QMetaObject::invokeMethod(start, "clicked"));
+        }
         QTRY_VERIFY2(!view.rootObject()->property("addDialogVisible").toBool(), modelState(model).constData());
         QTRY_VERIFY2_WITH_TIMEOUT(([&] {
             for (int i = 0; i < model.rowCount(); ++i)
