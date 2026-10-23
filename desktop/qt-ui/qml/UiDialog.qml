@@ -2,12 +2,15 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls as QQC2
 import QtQuick.Layouts
-import org.kde.kirigami as Kirigami
 import Abdm.Desktop
 
 // Shared chrome, native style background/controls, opaque foreground and a real
-// separator instead of a second card. Content owns its scroll area; buttons go in
-// a DialogFooter so every dialog has the same separator, padding and button order.
+// separator instead of a second card. Separator rule across the app: the title is shown
+// once, by the native title bar (no in-window heading or line under it); the only
+// window-level line sits above the button footer; sidebars get a vertical PaneSeparator;
+// content sections are divided by spacing and headings, not lines. Content owns its
+// scroll area; buttons go in a DialogFooter so every dialog has the same separator,
+// padding and button order.
 // Size by role with Tokens.dialogWidth*/dialogHeight*; both are clamped to the window.
 QQC2.Dialog {
     id: dialog
@@ -59,18 +62,4 @@ QQC2.Dialog {
         maximumOpacity: Tokens.materialOpacity
     }
     background: Rectangle { color: material.background }
-    header: ColumnLayout {
-        spacing: 0
-        SectionHeading {
-            Layout.leftMargin: Tokens.dialogPadding
-            Layout.rightMargin: Tokens.dialogPadding
-            Layout.topMargin: Tokens.spacingL
-            Layout.bottomMargin: Tokens.spacingL
-            level: Tokens.headingTitle
-            text: dialog.title
-            wrapMode: Text.NoWrap
-            elide: Text.ElideRight
-        }
-        Kirigami.Separator { Layout.fillWidth: true }
-    }
 }

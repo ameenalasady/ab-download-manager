@@ -81,6 +81,7 @@ Item {
                         IconButton { text: qsTr("Delete category…"); icon.name: "edit-delete"; enabled: !root.service.busy && dialog.category !== null; onClicked: { confirmDelete.targetId = dialog.selectedCategory; confirmDelete.targetName = dialog.category.name; confirmDelete.open() } }
                     }
                 }
+                PaneSeparator {}
                 QQC2.ScrollView {
                     Layout.fillWidth: true; Layout.fillHeight: true; contentWidth: availableWidth; clip: true
                     ColumnLayout {
@@ -141,8 +142,7 @@ Item {
                             visible: root.destinationEditable
                             text: qsTr("Applies to new downloads unless you override Save in. Choose an existing writable folder within the allowed roots. Existing downloads are not moved.")
                         }
-                        Kirigami.Separator { Layout.fillWidth: true; Layout.topMargin: Tokens.spacingM; Layout.bottomMargin: Tokens.spacingS }
-                        SectionHeading { text: qsTr("Selected Download") }
+                        SectionHeading { Layout.topMargin: Tokens.spacingL; text: qsTr("Selected Download") }
                         Hint {
                             wrapMode: Text.NoWrap; elide: Text.ElideMiddle
                             text: root.service.selectedId !== "" ? root.service.selectedName : qsTr("Select a download in the main list to assign it.")

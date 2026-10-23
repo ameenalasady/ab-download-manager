@@ -120,6 +120,7 @@ Item {
                         }
                     }
                 }
+                PaneSeparator {}
                 QQC2.ScrollView {
                     Layout.fillWidth: true; Layout.fillHeight: true; contentWidth: availableWidth; clip: true
                     ColumnLayout {
@@ -417,6 +418,7 @@ Item {
                         }
                     }
                 }
+                PaneSeparator {}
                 ColumnLayout {
                     Layout.fillWidth: true; Layout.fillHeight: true; spacing: Tokens.contentSpacing
                     QQC2.TabBar {

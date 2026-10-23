@@ -50,8 +50,7 @@ Item {
                     PlainText { text: qsTr("Location:"); tone: "secondary" }
                     SelectableText { text: dialog.details.folder || ""; Accessible.name: qsTr("Download location") }
                     PlainText { text: qsTr("Received: %1 bytes · Size: %2").arg(dialog.row.downloaded || "0").arg(dialog.row.size === "-1" ? qsTr("Unknown") : qsTr("%1 bytes").arg(dialog.row.size || "—")) }
-                    Kirigami.Separator { Layout.fillWidth: true; Layout.topMargin: Tokens.spacingS; Layout.bottomMargin: Tokens.spacingS; visible: Boolean(dialog.reason) }
-                    PlainText { objectName: "downloadErrorDescription"; visible: Boolean(dialog.reason); text: dialog.reason ? dialog.reason.description : "" }
+                    PlainText { objectName: "downloadErrorDescription"; Layout.topMargin: Tokens.spacingM; visible: Boolean(dialog.reason); text: dialog.reason ? dialog.reason.description : "" }
                     SectionHeading { Layout.topMargin: Tokens.spacingS; visible: Boolean(dialog.reason); text: qsTr("Suggestion") }
                     PlainText { visible: Boolean(dialog.reason); text: dialog.reason ? dialog.reason.suggestion : "" }
                     StatusMessage {

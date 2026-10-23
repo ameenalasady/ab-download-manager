@@ -51,7 +51,7 @@ Item {
     // report a nonsensical height from text wrapped at zero width.
     readonly property DownloadCompletion completionContent: completion.item as DownloadCompletion
     readonly property real contentHeight: completed ? (completionContent ? completionContent.implicitHeight : 0)
-        : contentColumn.width > 0 ? contentColumn.implicitHeight : 0
+        : contentColumn.width > 0 ? contentColumn.implicitHeight + actions.implicitHeight : 0
     // Layouts only calculate their implicit sizes while they are polished, and a hidden
     // window is never polished by the render loop. Polishing the tree by hand (children
     // first) lets a host adopt the real content size before its first frame; the result
@@ -109,7 +109,8 @@ Item {
         }
     }
     QQC2.ScrollView {
-        id: scroller; anchors.fill: parent; contentWidth: availableWidth; clip: true; visible: !pane.completed
+        id: scroller; contentWidth: availableWidth; clip: true; visible: !pane.completed
+        anchors { left: parent.left; right: parent.right; top: parent.top; bottom: actions.top }
         ColumnLayout {
             id: contentColumn; x: Tokens.dialogPadding
             width: Math.max(0, scroller.availableWidth - 2 * Tokens.dialogPadding)
@@ -180,27 +181,6 @@ Item {
                 FieldValue { objectName: "downloadWindowFolder"; text: pane.row.folder || ""; visible: text !== "" }
                 FieldLabel { text: qsTr("Source:"); visible: (pane.row.url || "") !== "" }
                 FieldValue { text: pane.row.url || ""; visible: text !== "" }
-            }
-            // Content actions, not an ApplicationWindow footer. Flow keeps all actions
-            // reachable at narrow widths; Close never pauses, cancels or deletes.
-            Flow {
-                id: actions; Layout.fillWidth: true; spacing: Tokens.spacingM
-                UiButton {
-                    objectName: "downloadWindowPause"; highlighted: true; text: qsTr("Pause"); icon.name: "media-playback-pause"
-                    visible: pane.transferState === "downloading" || (pane.transferState === "queued" && pane.row.waiting === true)
-                    enabled: pane.controlsEnabled; onClicked: pane.service.pauseDownload(pane.downloadId)
-                }
-                UiButton {
-                    objectName: "downloadWindowResume"; highlighted: true; icon.name: "media-playback-start"
-                    text: pane.transferState === "failed" ? qsTr("Retry") : pane.transferState === "paused" ? qsTr("Resume") : qsTr("Start")
-                    visible: pane.transferState === "paused" || pane.transferState === "failed" || (pane.transferState === "queued" && pane.row.waiting !== true)
-                    enabled: pane.controlsEnabled; onClicked: pane.service.resumeDownload(pane.downloadId)
-                }
-                UiButton {
-                    objectName: "downloadWindowClose"; text: qsTr("Close"); icon.name: "window-close"
-                    Accessible.description: qsTr("Closes this window; the download continues")
-                    onClicked: pane.closeRequested()
-                }
             }
             StatusMessage {
                 type: Kirigami.MessageType.Warning; visible: !pane.completed && pane.parts.resumeSupport === false
@@ -297,6 +277,28 @@ Item {
                 message: qsTr("This download was removed.")
             }
             Item { implicitHeight: Tokens.dialogPadding - Tokens.contentSpacing; Layout.fillWidth: true }
+        }
+    }    // Same footer as the completion page and every dialog: separator, right-aligned,
+    // wrapping at narrow widths. Close never pauses, cancels or deletes.
+    WindowFooter {
+        id: actions
+        anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
+        visible: !pane.completed
+        UiButton {
+            objectName: "downloadWindowPause"; highlighted: true; text: qsTr("Pause"); icon.name: "media-playback-pause"
+            visible: pane.transferState === "downloading" || (pane.transferState === "queued" && pane.row.waiting === true)
+            enabled: pane.controlsEnabled; onClicked: pane.service.pauseDownload(pane.downloadId)
+        }
+        UiButton {
+            objectName: "downloadWindowResume"; highlighted: true; icon.name: "media-playback-start"
+            text: pane.transferState === "failed" ? qsTr("Retry") : pane.transferState === "paused" ? qsTr("Resume") : qsTr("Start")
+            visible: pane.transferState === "paused" || pane.transferState === "failed" || (pane.transferState === "queued" && pane.row.waiting !== true)
+            enabled: pane.controlsEnabled; onClicked: pane.service.resumeDownload(pane.downloadId)
+        }
+        UiButton {
+            objectName: "downloadWindowClose"; text: qsTr("Close"); icon.name: "window-close"
+            Accessible.description: qsTr("Closes this window; the download continues")
+            onClicked: pane.closeRequested()
         }
     }
 }

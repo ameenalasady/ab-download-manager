@@ -974,6 +974,39 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(settings, "close"));
         progress->close();
     }
+    void dialogsShowTheirTitleOnceAndOneFooterLine() {
+        FakeService service; service.policyCapability = true;
+        service.extensionSnapshot = {{"queues", QJsonArray{}}, {"settings", basicSettings()},
+            {"settingsPolicy", QJsonObject{{"retained", QJsonArray{}}, {"activityAdapter", false}, {"speedLimitActive", false}}}};
+        PreviewDownloads resources; ServiceDownloads model(service.descriptor);
+        std::unique_ptr<QQuickView> view(liveView(model));
+        QTRY_COMPARE(model.connectionState(), "ready");
+        QVERIFY(QMetaObject::invokeMethod(view->rootObject(), "openSettings"));
+        auto *settings = view->rootObject()->findChild<QObject *>("serviceSettingsDialog"); QVERIFY(settings);
+        QTRY_VERIFY(settings->property("opened").toBool());
+        // The native title bar shows the title: UiDialog adds no in-window heading or line
+        // under it, and the desktop style's own header only appears for in-window
+        // Popup.Item dialogs. (Reading `header` would force that deferred style item.)
+        QCOMPARE(settings->property("popupType").toInt(), 1); // Popup.Window: natively titled
+        QCOMPARE(settings->property("title").toString(), QString("Settings"));
+        // The sidebar is divided from its page by a line spanning the content area, as in
+        // the main window.
+        auto *content = settings->property("contentItem").value<QQuickItem *>(); QVERIFY(content);
+        auto *divider = content->findChild<QQuickItem *>("paneSeparator"); QVERIFY(divider && divider->isVisible());
+        auto *footer = settings->property("footer").value<QQuickItem *>(); QVERIFY(footer);
+        QVERIFY(waitForRenderedFrame(content->window()));
+        QQuickItem *line = divider->childItems().value(0); QVERIFY(line);
+        const auto lineBounds = line->mapRectToScene(QRectF(QPointF(), line->size()));
+        QVERIFY2(lineBounds.top() <= 1, qPrintable(QString("line starts at %1").arg(lineBounds.top())));
+        QVERIFY(qAbs(lineBounds.bottom() - footer->mapToScene(QPointF()).y()) <= 1);
+        QCOMPARE(service.commands, 0);
+        QVERIFY(QMetaObject::invokeMethod(settings, "close"));
+        QTRY_VERIFY(!settings->property("visible").toBool());
+        view->close(); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        view->setSource(QUrl()); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        // Let the fixture's fragmented replies finish before its sockets are destroyed.
+        QTest::qWait(300);
+    }
     void settingsDropdownSurvivesPointerReleaseAndSelects() {
         FakeService service; service.policyCapability = true;
         service.extensionSnapshot = {{"queues", QJsonArray{}}, {"settings", displaySettings()},
@@ -2432,6 +2465,13 @@ private slots:
         QTRY_COMPARE(list->property("count").toInt(), 8);
         QTRY_VERIFY(list->height() >= list->property("contentHeight").toReal() - 1);
         QTRY_VERIFY(list->mapRectToScene(QRectF(QPointF(), list->size())).bottom() <= window->height());
+        // Actions use the shared bottom footer (separator, right-aligned) like the
+        // completion page and every dialog, below the parts rather than between sections.
+        auto *close = window->findChild<QQuickItem *>("downloadWindowClose"); QVERIFY(close && close->isVisible());
+        const auto closeBounds = close->mapRectToScene(QRectF(QPointF(), close->size()));
+        QVERIFY(closeBounds.top() >= list->mapRectToScene(QRectF(QPointF(), list->size())).bottom());
+        QVERIFY2(window->width() - closeBounds.right() < 40, "footer actions are right-aligned");
+        QVERIFY2(window->height() - closeBounds.bottom() < 40, "footer actions sit at the window bottom");
         const auto capture = qEnvironmentVariable("QT_ADAPTER_CAPTURE_DIR");
         if (!capture.isEmpty()) QVERIFY(window->grabWindow().save(capture + "/progress-eight-default.png"));
         const int hold = qBound(0, qEnvironmentVariableIntValue("QT_PROGRESS_CHROME_HOLD_MS"), 10000);
