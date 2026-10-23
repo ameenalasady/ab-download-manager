@@ -803,6 +803,47 @@ private slots:
         QVERIFY(model.settingsPolicy()["retained"].toList()[1].toMap()["value"].isNull());
         QCOMPARE(model.data(model.index(0), PreviewDownloads::SizeLabel).toString(), "1000 B");
     }
+    void settingsDoesNotBlockIndependentDownloadWindows() {
+        FakeService service; service.browserCapability = true; service.fulfillBrowserAccept = true;
+        service.extensionSnapshot = {{"queues", QJsonArray{}}, {"settings", basicSettings()}, {"browserRequests", QJsonArray{}},
+            {"browserIntegration", QJsonObject{{"state", "disabled"}, {"enabled", false}, {"auth", false}, {"port", 15151}, {"error", QJsonValue::Null}}}};
+        PreviewDownloads resources; ServiceDownloads model(service.descriptor);
+        std::unique_ptr<QQuickView> view(liveView(model));
+        QTRY_COMPARE(model.connectionState(), "ready");
+        QVERIFY(QMetaObject::invokeMethod(view->rootObject(), "openSettings"));
+        auto *settings = view->rootObject()->findChild<QObject *>("serviceSettingsDialog"); QVERIFY(settings);
+        QTRY_VERIFY(settings->property("opened").toBool());
+        auto *settingsContent = settings->property("contentItem").value<QQuickItem *>(); QVERIFY(settingsContent);
+        QVERIFY(QTest::qWaitForWindowExposed(settingsContent->window()));
+        const QString id = service.rows.first().toObject()["id"].toString();
+        QVERIFY(QMetaObject::invokeMethod(view->rootObject(), "showDownloadWindow", Q_ARG(QString, id), Q_ARG(bool, false)));
+        auto *progress = downloadWindow(*view, id); QVERIFY(progress);
+        QVERIFY(QTest::qWaitForWindowExposed(progress));
+        auto *pause = progress->findChild<QQuickItem *>("downloadWindowPause"); QVERIFY(pause);
+        QTRY_VERIFY(pause->isVisible() && pause->isEnabled());
+        QVERIFY(waitForRenderedFrame(progress));
+        QTest::mouseClick(progress, Qt::LeftButton, Qt::NoModifier,
+            pause->mapToScene(QPointF(pause->width() / 2, pause->height() / 2)).toPoint());
+        QTRY_COMPARE(service.commands, 1);
+        QCOMPARE(service.lastCommand["op"].toString(), "pause");
+        QVERIFY(settings->property("opened").toBool());
+        service.extensionSnapshot["browserRequests"] = QJsonArray{QJsonObject{{"id", "while-settings"}, {"source", "browser"},
+            {"outcomeUnknown", false}, {"items", QJsonArray{QJsonObject{{"url", "https://example.invalid/settings.bin"},
+                {"name", "settings.bin"}, {"hasHeaders", false}, {"downloadPage", QJsonValue::Null}}}}}};
+        QQuickWindow *review = nullptr;
+        QTRY_VERIFY((review = view->rootObject()->findChild<QQuickWindow *>("browserRequestDialog")) && review->isVisible());
+        QVERIFY(QTest::qWaitForWindowExposed(review)); QVERIFY(waitForRenderedFrame(review));
+        auto *add = review->findChild<QQuickItem *>("pauseBrowserRequest"); QVERIFY(add);
+        QTRY_VERIFY(add->isVisible() && add->isEnabled());
+        QTest::mouseClick(review, Qt::LeftButton, Qt::NoModifier,
+            add->mapToScene(QPointF(add->width() / 2, add->height() / 2)).toPoint());
+        QTRY_COMPARE(service.commands, 2);
+        QCOMPARE(service.lastCommand["op"].toString(), "browser.accept");
+        QCOMPARE(service.lastCommand["start"].toBool(), false);
+        QVERIFY(settings->property("opened").toBool());
+        QVERIFY(QMetaObject::invokeMethod(settings, "close"));
+        progress->close();
+    }
     void settingsDropdownSurvivesPointerReleaseAndSelects() {
         FakeService service; service.policyCapability = true;
         service.extensionSnapshot = {{"queues", QJsonArray{}}, {"settings", basicSettings()},

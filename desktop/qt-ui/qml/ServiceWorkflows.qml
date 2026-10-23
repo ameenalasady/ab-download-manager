@@ -65,6 +65,10 @@ Item {
     }
     UiDialog {
         id: settingsDialog; objectName: "serviceSettingsDialog"
+        // Popup.Window modal dialogs are application-modal, so even independent
+        // browser/progress toplevels lose input. Settings is a persistent draft,
+        // not a blocking decision; opening it must not suspend download actions.
+        modal: false
         property int page: 1
         property string storedSpeedMode: "Disabled"
         readonly property var sizeChoices: root.unitChoices(["BinaryBytes", "DecimalBytes"], root.service.settings.sizeUnit || "")
