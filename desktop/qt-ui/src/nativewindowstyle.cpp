@@ -7,6 +7,7 @@
 #include <QSurfaceFormat>
 #include <QStyleOption>
 #include <QTimer>
+#include <limits>
 #ifdef QT_CAPABILITY_HAS_KF6_WINDOWSYSTEM
 #include <KWindowSystem>
 #endif
@@ -61,12 +62,16 @@ void NativeWindowStyle::setWindow(QWindow *window) {
 }
 void NativeWindowStyle::apply() {
     if (!m_window) return;
-    // Use an explicit logical client rectangle. On KWin >= 6.6.90 the installed
-    // better-blur-dx treats an empty Wayland blur region as “no request”, even
-    // though the protocol/KWindowEffects whole-surface convention uses empty.
-    // Explicit regions work with both implementations and require no theme/rule
-    // changes. Server-side decoration blur still belongs to the decoration.
-    const QRegion region(QRect(QPoint(0, 0), m_window->size()));
+    // An explicit, size-independent region covering the whole surface (the compositor
+    // clips it to the window). On KWin >= 6.6.90 the installed better-blur-dx treats an
+    // empty Wayland blur region as “no request”, so empty is not used; this is the same
+    // rectangle KWindowEffects itself sends for "whole window" on ext_background_effect.
+    // Being size-independent, it is never resent while resizing: a per-size region was
+    // committed a frame behind the resized buffer, leaving the new edge unblurred, and
+    // made the blur effect redo its work on every resize step. Server-side decoration
+    // blur still belongs to the decoration.
+    static const QRegion region(QRect(std::numeric_limits<int>::min() / 2, std::numeric_limits<int>::min() / 2,
+                                      std::numeric_limits<int>::max(), std::numeric_limits<int>::max()));
     const bool requested = capability::requestBlurBehind(m_window, background().alpha() < 255, region);
     if (qEnvironmentVariableIsSet("QT_NATIVE_MATERIAL_DIAGNOSTICS"))
         qInfo() << "native material" << m_window->objectName() << m_window->size()
@@ -74,10 +79,6 @@ void NativeWindowStyle::apply() {
                 << "exposed" << m_window->isExposed() << "type" << m_window->type();
 }
 bool NativeWindowStyle::eventFilter(QObject *object, QEvent *event) {
-    if (object == m_window && event->type() == QEvent::Resize) {
-        // Coalesce with layout/configure delivery; never recreate a mapped surface.
-        QTimer::singleShot(0, this, &NativeWindowStyle::apply);
-    }
     if (object == m_window && (event->type() == QEvent::Show
         || (event->type() == QEvent::Expose && m_window->isExposed())
         || (event->type() == QEvent::PlatformSurface

@@ -167,6 +167,12 @@ int main(int argc, char **argv)
         Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
     QSurfaceFormat surfaceFormat;
     surfaceFormat.setAlphaBufferSize(backdropHint ? 0 : 8);
+    // Never block a swap on the compositor's frame callback. During an interactive resize
+    // KWin sends the next size only once the previous one is committed; Qt Wayland's
+    // emulated blocking swap delayed every resized frame to the next callback, so edge
+    // drags ran at about one size per refresh, behind Dolphin. Wayland presents whole
+    // buffers (no tearing), and animations stay paced by frame callbacks.
+    surfaceFormat.setSwapInterval(0);
     QSurfaceFormat::setDefaultFormat(surfaceFormat);
     QQuickWindow::setDefaultAlphaBuffer(!backdropHint);
 
