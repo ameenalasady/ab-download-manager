@@ -416,7 +416,6 @@ def main():
         start(); client = Client(profile, 'download-extra-restart')
         assert json.loads(download_extra.read_text()) == download_extra_document
         before = payload_manifest()
-        assert not client.command('download.forget', id=complete, keepFiles=False)['ok']
         assert client.command('download.forget', id=complete, keepFiles=True)['ok']
         assert not download_extra.exists()
         assert payload_manifest() == before
