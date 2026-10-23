@@ -2078,6 +2078,34 @@ private slots:
     }
     // The browser review is the same native surface that later shows progress. Both its
     // first exposure and the transition to progress must be fitted, not re-fitted later.
+    void singleBrowserReviewGeometrySurvivesDelayedPolling() {
+        FakeService service; service.browserCapability = service.categoryCapability = service.runtimeCapability = true;
+        service.extensionSnapshot = {{"settings", basicSettings()}, {"queues", QJsonArray{}},
+            {"runtime", QJsonObject{{"mode", "explicit-runtime"}, {"destination", "/downloads"}, {"destinationRoots", QJsonArray{"/downloads"}}, {"redirects", true}, {"proxy", "direct"}}},
+            {"browserIntegration", QJsonObject{{"state", "disabled"}, {"enabled", false}, {"auth", false}, {"port", 15151}, {"error", QJsonValue::Null}}},
+            {"browserRequests", QJsonArray{QJsonObject{{"id", "single-delayed"}, {"source", "browser"}, {"outcomeUnknown", false},
+                {"items", QJsonArray{QJsonObject{{"url", "https://example.invalid/single.bin"}, {"name", "single.bin"}, {"hasHeaders", true}, {"downloadPage", QJsonValue::Null}}}}}}}};
+        PreviewDownloads resources; ServiceDownloads model(service.descriptor);
+        std::unique_ptr<QQuickView> view(liveView(model));
+        QQuickWindow *review = nullptr;
+        QTRY_VERIFY((review = view->rootObject()->findChild<QQuickWindow *>("browserRequestDialog")) && review->isVisible());
+        const QSize exposed = firstExposedSize(review);
+        const auto capture = qEnvironmentVariable("QT_ADAPTER_CAPTURE_DIR");
+        QVERIFY(waitForRenderedFrame(review));
+        if (!capture.isEmpty()) QVERIFY(review->grabWindow().save(capture + "/single-review-first.png"));
+        QSignalSpy heights(review, &QWindow::heightChanged);
+        QSignalSpy widths(review, &QWindow::widthChanged);
+        for (int i = 0; i < 12; ++i) {
+            auto row = service.rows.first().toObject(); row["downloaded"] = QString::number(250 + i); service.rows[0] = row;
+            QTest::qWait(350); // Real delayed polling/style/layout after the configure guard expires.
+            QCOMPARE(review->size(), exposed);
+        }
+        for (const auto &change : heights) QCOMPARE(change.first().toInt(), exposed.height());
+        for (const auto &change : widths) QCOMPARE(change.first().toInt(), exposed.width());
+        QVERIFY(service.snapshots >= 12);
+        if (!capture.isEmpty()) QVERIFY(review->grabWindow().save(capture + "/single-review-delayed.png"));
+        review->close();
+    }
     void browserReviewIsFittedBeforeShowAndOnProgressTransition() {
         FakeService service; service.browserCapability = true; service.windowsCapability = true;
         service.fulfillBrowserAccept = true; service.rows = {};

@@ -77,9 +77,10 @@ Item {
         // geometry from another app window cannot resize the review.
         minimumWidth: initialConfigure ? targetWidth() : Tokens.windowMinimumWidth
         maximumWidth: initialConfigure ? targetWidth() : Tokens.windowMaximumHeight
-        // The review page keeps the shared window minimum; a completed progress page on the
-        // same surface is genuinely content-sized and may be smaller, as in its own toplevel.
-        minimumHeight: completedView
+        // Reviews and completion are genuinely content-sized. Advertising the generic
+        // 260px progress minimum for a shorter review contradicts fitContentHeight();
+        // when configureGuard releases maximumHeight, Qt clamps it up seconds later.
+        minimumHeight: downloadId === "" || completedView
             ? Math.max(Tokens.dialogPadding + Tokens.rowHeight, Math.min(Math.ceil(measuredHeight()), heightLimit()))
             : Math.max(Tokens.windowMinimumHeight, Math.min(Math.ceil(measuredHeight()), heightLimit()))
         // Content-sized: the review starts as tall as its list, and the same native
