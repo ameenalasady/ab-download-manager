@@ -1009,7 +1009,9 @@ Item {
             DuplicateNotice {
                 objectName: "addExistingWarning"
                 visible: Boolean(addDialog.existing) || addDialog.fileExists
-                text: addDialog.existing ? qsTr("“%1” is already in your downloads.").arg(addDialog.existing.name) : qsTr("A file with this name already exists here.")
+                title: addDialog.existing ? qsTr("Already in your downloads") : qsTr("File already exists")
+                detail: addDialog.existing ? qsTr("%1 · %2").arg(addDialog.existing.name).arg(root.stateLabel(addDialog.existing.state))
+                    : qsTr("“%1” is already in the download folder.").arg(nameInput.text.trim())
                 hasExisting: Boolean(addDialog.existing)
                 onShowExisting: { root.showDownloadWindow(addDialog.existing.id, false); addDialog.close() }
             }

@@ -234,7 +234,7 @@ Item {
             outcomeUnknown = request.outcomeUnknown === true
             items = request.items.map((item, index) => ({index: index, url: item.url, name: item.name, hasHeaders: item.hasHeaders, checked: true,
                 size: item.size || "-1", sizeLabel: item.sizeLabel || "—", probeState: item.probeState || ""}))
-            reviewSearch.text = ""
+            reviewSearch.text = ""; inlinePolicy = "numbered"
             categoryChoices = [{id: "auto", name: qsTr("Automatic")}, {id: "none", name: qsTr("No Category")}]
                 .concat((root.service.categories || []).map(c => ({id: c.id, name: c.name})))
             category.currentIndex = root.service.settings.useCategoryByDefault === false ? 1 : 0
@@ -249,12 +249,29 @@ Item {
         function existingFor(item: var): var {
             const folder = location.text || (root.service.runtime || {}).destination || ""
             const matches = root.service.findDuplicates(item.url, item.name, folder)
-            return {match: matches.length ? matches[0] : null, fileExists: root.service.destinationExists(folder, item.name)}
+            return {match: matches.length ? matches[0] : null, matches: matches, fileExists: root.service.destinationExists(folder, item.name)}
         }
         readonly property var existing: { nameRevision; return items.map(item => existingFor(item)) }
         readonly property var singleExisting: downloadId === "" && items.length === 1 && existing.length === 1 ? existing[0] : null
+        // Replacing is offered for one link whose recorded download has the same destination
+        // and is not transferring.
+        function replaceable(matches: var, count: int): bool {
+            return count === 1 && root.service.capabilities.indexOf("download.replace") >= 0
+                && matches.some(m => m.sameDestination)
+                && !matches.some(m => m.sameDestination && ["downloading", "queued"].indexOf(m.state) >= 0)
+        }
+        // A single link resolves duplicates inline: the banner's choice is the policy that
+        // Download/Add Paused apply, so no second confirmation dialog is needed.
+        readonly property bool singleDuplicate: Boolean(singleExisting && (singleExisting.match || singleExisting.fileExists))
+        readonly property bool singleCanReplace: Boolean(singleExisting && replaceable(singleExisting.matches, 1))
+        property string inlinePolicy: "numbered"
+        function stateLabel(state: string): string {
+            return ({downloading: qsTr("Downloading"), queued: qsTr("Queued"), paused: qsTr("Paused"),
+                     completed: qsTr("Completed"), failed: qsTr("Failed")})[state] || ""
+        }
         property var duplicateMatches: []
         property var pendingChosen: []
+        property int pendingDuplicates: 0
         property bool pendingStart: false
         function acceptChosen(chosen: var, start: bool, policy: string) {
             if (root.service.acceptBrowserRequest(requestId, chosen, start, categoryChoices[category.currentIndex].id,
@@ -269,35 +286,38 @@ Item {
                 exists = exists || root.service.destinationExists(folder, item.name)
             }
             const preference = root.service.settings.qtDuplicateAction || "ask"
-            if ((!matches.length && !exists) || preference === "numbered") { acceptChosen(chosen, start, "numbered"); return }
+            if (!matches.length && !exists) { acceptChosen(chosen, start, "numbered"); return }
             if (preference === "existing" && matches.length && chosen.length === 1 && items.length === 1) {
                 root.existingRequested(matches[0].id)
                 root.service.dismissBrowserRequest(requestId)
                 return
             }
+            if (items.length === 1) {
+                acceptChosen(chosen, start, inlinePolicy === "overwrite" && replaceable(matches, chosen.length) ? "overwrite" : "numbered")
+                return
+            }
+            if (preference === "numbered") { acceptChosen(chosen, start, "numbered"); return }
             duplicateMatches = matches; pendingChosen = chosen; pendingStart = start
+            pendingDuplicates = chosen.filter(i => existing[i.index] && (existing[i.index].match || existing[i.index].fileExists)).length
             duplicates.open()
         }
         UiDialog {
             id: duplicates; objectName: "browserDuplicateDialog"
-            title: qsTr("Download Already Exists"); preferredWidth: Tokens.dialogWidthMedium
-            readonly property var existing: dialog.duplicateMatches.length ? dialog.duplicateMatches[0] : null
-            readonly property bool canReplace: dialog.pendingChosen.length === 1 && root.service.capabilities.indexOf("download.replace") >= 0
-                && dialog.duplicateMatches.some(m => m.sameDestination)
-                && !dialog.duplicateMatches.some(m => m.sameDestination && ["downloading", "queued"].indexOf(m.state) >= 0)
+            title: qsTr("Some Links Already Exist"); preferredWidth: Tokens.dialogWidthMedium
+            // Multi-link reviews only; rows already flag each duplicate, so this asks just
+            // how to add them. A single link chooses inline in its banner instead.
+            readonly property bool canReplace: dialog.replaceable(dialog.duplicateMatches, dialog.pendingChosen.length)
             contentItem: ColumnLayout {
                 spacing: Tokens.contentSpacing
-                TextBlock { colors: theme; text: duplicates.existing ? qsTr("“%1” is already in your downloads.").arg(duplicates.existing.name) : qsTr("A file with this name already exists here.") }
+                TextBlock {
+                    colors: theme
+                    text: qsTr("%n of the selected links already exist in your downloads or download folder. Keep both to save numbered copies.", "", dialog.pendingDuplicates)
+                }
                 StatusMessage { type: Kirigami.MessageType.Error; message: root.service.errorMessage }
             }
             footer: DialogFooter {
-                leading: [
-                    UiButton { text: qsTr("Show Existing"); flat: true; visible: Boolean(duplicates.existing); onClicked: { root.existingRequested(duplicates.existing.id); duplicates.close() } },
-                    UiButton { text: qsTr("Open File"); flat: true; visible: Boolean(duplicates.existing && duplicates.existing.fileUrl.toString() !== ""); onClicked: { DesktopOpener.openFile(duplicates.existing.fileUrl, dialog); duplicates.close() } },
-                    UiButton { text: qsTr("Resume Existing"); flat: true; visible: Boolean(duplicates.existing && ["paused", "failed"].indexOf(duplicates.existing.state) >= 0); enabled: !root.service.busy; onClicked: { if (root.service.resumeDownload(duplicates.existing.id)) { duplicates.close(); dialog.close() } } }
-                ]
-                UiButton { id: browserDuplicateAdd; objectName: "browserDuplicateAddNew"; text: qsTr("Add New"); icon.name: "list-add"; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.AcceptRole; onClicked: { dialog.acceptChosen(dialog.pendingChosen, dialog.pendingStart, "numbered"); if (dialog.submitting) duplicates.close() } }
-                UiButton { objectName: "browserDuplicateOverwrite"; text: qsTr("Overwrite"); icon.name: "edit-delete"; enabled: duplicates.canReplace && !root.service.busy; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.DestructiveRole; onClicked: { dialog.acceptChosen(dialog.pendingChosen, dialog.pendingStart, "overwrite"); if (dialog.submitting) duplicates.close() } }
+                UiButton { id: browserDuplicateAdd; objectName: "browserDuplicateAddNew"; text: qsTr("Keep Both"); icon.name: "list-add"; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.AcceptRole; onClicked: { dialog.acceptChosen(dialog.pendingChosen, dialog.pendingStart, "numbered"); if (dialog.submitting) duplicates.close() } }
+                UiButton { objectName: "browserDuplicateOverwrite"; text: qsTr("Replace"); icon.name: "edit-delete"; visible: duplicates.canReplace; enabled: !root.service.busy; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.DestructiveRole; onClicked: { dialog.acceptChosen(dialog.pendingChosen, dialog.pendingStart, "overwrite"); if (dialog.submitting) duplicates.close() } }
                 UiButton { text: qsTr("Cancel"); icon.name: "dialog-cancel"; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.RejectRole; onClicked: duplicates.reject() }
             }
         }
@@ -455,16 +475,52 @@ Item {
                 }
             }
             TextBlock { colors: theme; tone: "secondary"; visible: dialog.multiple && dialog.filteredItems.length === 0; text: qsTr("No matching links") }
-            // Single-link review: show warning if link already exists
+            // Single-link review: what already exists, its actions, and how Download treats it.
             DuplicateNotice {
+                id: existingNotice
                 objectName: "browserRequestExisting"
                 readonly property var match: dialog.singleExisting ? dialog.singleExisting.match : null
-                visible: Boolean(dialog.singleExisting && (match || dialog.singleExisting.fileExists))
-                text: match ? qsTr("“%1” is already in your downloads.").arg(match.name) : qsTr("A file with this name already exists here.")
+                readonly property bool showsExisting: (root.service.settings.qtDuplicateAction || "ask") === "existing" && Boolean(match)
+                visible: dialog.singleDuplicate
+                title: match ? qsTr("Already in your downloads") : qsTr("File already exists")
+                detail: match ? (dialog.stateLabel(match.state) ? qsTr("%1 · %2").arg(match.name).arg(dialog.stateLabel(match.state)) : match.name)
+                    : dialog.items.length ? qsTr("“%1” is already in the download folder.").arg(dialog.items[0].name) : ""
                 hasExisting: Boolean(match)
                 canOpen: Boolean(match && match.fileUrl.toString() !== "")
+                canResume: Boolean(match && ["paused", "failed"].indexOf(match.state) >= 0 && !showsExisting)
                 onShowExisting: root.existingRequested(match.id)
                 onOpenFile: DesktopOpener.openFile(match.fileUrl, dialog)
+                onResume: { if (!root.service.busy && root.service.resumeDownload(match.id)) dialog.close() }
+                extraVisible: true
+                RowLayout {
+                    objectName: "browserRequestDuplicateChoice"
+                    visible: dialog.singleCanReplace && !existingNotice.showsExisting
+                    spacing: Tokens.spacingL
+                    QQC2.RadioButton {
+                        objectName: "browserRequestKeepBoth"
+                        text: qsTr("Keep both"); checked: dialog.inlinePolicy !== "overwrite"
+                        onToggled: if (checked) dialog.inlinePolicy = "numbered"
+                        QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Tokens.toolTipDelay
+                        QQC2.ToolTip.text: qsTr("Save the new download with a numbered name.")
+                    }
+                    QQC2.RadioButton {
+                        objectName: "browserRequestReplace"
+                        text: qsTr("Replace existing"); checked: dialog.inlinePolicy === "overwrite"
+                        onToggled: if (checked) dialog.inlinePolicy = "overwrite"
+                        QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Tokens.toolTipDelay
+                        QQC2.ToolTip.text: qsTr("Remove the existing download and its file, then download again.")
+                    }
+                    Item { Layout.fillWidth: true }
+                }
+                QQC2.Label {
+                    objectName: "browserRequestDuplicateHint"
+                    Layout.fillWidth: true
+                    visible: !dialog.singleCanReplace || existingNotice.showsExisting
+                    text: existingNotice.showsExisting ? qsTr("Download will show the existing download instead.")
+                        : qsTr("Downloading saves a numbered copy alongside it.")
+                    textFormat: Text.PlainText; wrapMode: Text.Wrap
+                    font: Tokens.smallFont; color: theme.secondary
+                }
             }
             FormGrid {
                 FormLabel { text: qsTr("Save in:") }

@@ -1902,19 +1902,33 @@ private slots:
         QTest::qWait(350); // Let the warning's first-show animation/style finish before capturing.
         const auto capture = qEnvironmentVariable("QT_ADAPTER_CAPTURE_DIR");
         if (!capture.isEmpty()) QVERIFY(review->grabWindow().save(capture + "/long-duplicate.png"));
-        // A long name must not create a second action row or grow the banner.
-        QVERIFY2(notice->height() <= 64, qPrintable(QString("duplicate banner height %1").arg(notice->height())));
+        // A long name must not create a second action row or grow the banner: the title,
+        // elided detail and actions share one row; only the policy hint sits below it.
+        auto *message = notice->findChild<QQuickItem *>("duplicateNoticeText"); QVERIFY(message);
+        auto *hint = notice->findChild<QQuickItem *>("browserRequestDuplicateHint"); QVERIFY(hint && hint->isVisible());
+        auto *show = notice->findChild<QQuickItem *>("duplicateNoticeShowExisting"); QVERIFY(show && show->isVisible());
+        auto *resume = notice->findChild<QQuickItem *>("duplicateNoticeResume"); QVERIFY(resume && resume->isVisible());
+        // Replace needs the replace capability; without it there is no choice to make.
+        QVERIFY(!notice->findChild<QQuickItem *>("browserRequestDuplicateChoice")->isVisible());
+        const auto checkRow = [&] {
+            const auto buttonBounds = show->mapRectToItem(notice, QRectF(QPointF(), show->size()));
+            const auto textBounds = message->mapRectToItem(notice, QRectF(QPointF(), message->size()));
+            const auto hintBounds = hint->mapRectToItem(notice, QRectF(QPointF(), hint->size()));
+            QVERIFY(buttonBounds.left() >= 0 && buttonBounds.right() <= notice->width());
+            QVERIFY(textBounds.right() <= resume->mapRectToItem(notice, QRectF(QPointF(), resume->size())).left());
+            QVERIFY2(buttonBounds.bottom() <= hintBounds.top(), "actions must stay on the title row");
+            QVERIFY(qAbs(resume->mapRectToItem(notice, QRectF(QPointF(), resume->size())).center().y() - buttonBounds.center().y()) < 1);
+        };
+        checkRow();
+        const qreal wideHeight = notice->height();
+        QVERIFY2(wideHeight <= 112, qPrintable(QString("duplicate banner height %1").arg(wideHeight)));
         review->setMinimumWidth(360); review->setMaximumWidth(1000); review->resize(420, review->height());
         QVERIFY(waitForRenderedFrame(review));
-        QVERIFY2(notice->height() <= 64, "narrow review must retain a single action row");
+        checkRow();
+        QVERIFY2(notice->height() <= wideHeight + 1, "narrow review must retain a single action row");
         QVERIFY(notice->width() <= review->width());
-        auto *message = notice->findChild<QQuickItem *>("duplicateNoticeText"); QVERIFY(message);
-        QCOMPARE(message->property("text").toString(), QString("“%1” is already in your downloads.").arg(name));
+        QCOMPARE(message->property("text").toString(), QString("%1 · Paused").arg(name));
         QVERIFY(message->property("truncated").toBool());
-        auto *show = notice->findChild<QQuickItem *>("duplicateNoticeShowExisting"); QVERIFY(show && show->isVisible());
-        const auto buttonBounds = show->mapRectToItem(notice, QRectF(QPointF(), show->size()));
-        QVERIFY(buttonBounds.left() >= 0 && buttonBounds.right() <= notice->width());
-        QVERIFY(qAbs(buttonBounds.center().y() - notice->height() / 2) < 2);
         if (!capture.isEmpty()) QVERIFY(review->grabWindow().save(capture + "/long-duplicate-narrow.png"));
         QCOMPARE(service.commands, 0);
         review->close();
@@ -1949,6 +1963,10 @@ private slots:
         openAdd();
         QTRY_VERIFY(object("addExistingWarning")->property("visible").toBool());
         if (galleryHold) QTest::qWait(galleryHold);
+        if (const auto capture = qEnvironmentVariable("QT_ADAPTER_CAPTURE_DIR"); !capture.isEmpty()) {
+            auto *warning = qobject_cast<QQuickItem *>(object("addExistingWarning")); QVERIFY(warning && warning->window());
+            QVERIFY(waitForRenderedFrame(warning->window())); QVERIFY(warning->window()->grabWindow().save(capture + "/add-duplicate-banner.png"));
+        }
         QVERIFY(QMetaObject::invokeMethod(object("confirmAddExample"), "clicked"));
         auto *duplicate = object("duplicateDownloadDialog"); QVERIFY(duplicate);
         QTRY_VERIFY(duplicate->property("visible").toBool()); QCOMPARE(service.commands, 0);
@@ -1978,17 +1996,155 @@ private slots:
         // The review already says the link exists, before Download is pressed.
         QTRY_VERIFY(review->findChild<QObject *>("browserRequestExisting")->property("visible").toBool());
         if (galleryHold) { view.hide(); QTest::qWait(galleryHold); }
-        auto *accept = review->findChild<QObject *>("acceptBrowserRequest"); QVERIFY(accept);
-        QVERIFY(QMetaObject::invokeMethod(accept, "clicked"));
-        auto *browserDuplicate = review->findChild<QObject *>("browserDuplicateDialog"); QVERIFY(browserDuplicate);
-        QTRY_VERIFY(browserDuplicate->property("visible").toBool()); QCOMPARE(service.commands, 1);
+        // A single link chooses inline: the banner offers Keep both/Replace and Download
+        // applies the choice without a second confirmation dialog.
+        auto *choice = review->findChild<QQuickItem *>("browserRequestDuplicateChoice"); QVERIFY(choice);
+        QTRY_VERIFY(choice->isVisible());
+        QVERIFY(!review->findChild<QQuickItem *>("browserRequestDuplicateHint")->isVisible());
+        auto *replace = review->findChild<QQuickItem *>("browserRequestReplace"); QVERIFY(replace);
+        QVERIFY(review->findChild<QObject *>("browserRequestKeepBoth")->property("checked").toBool());
+        QVERIFY(QTest::qWaitForWindowExposed(review)); QVERIFY(waitForRenderedFrame(review));
+        QTest::mouseClick(review, Qt::LeftButton, Qt::NoModifier,
+            replace->mapToScene(QPointF(replace->height() / 2, replace->height() / 2)).toPoint());
+        QTRY_VERIFY(replace->property("checked").toBool());
+        QCOMPARE(review->property("inlinePolicy").toString(), "overwrite");
         if (galleryHold) QTest::qWait(galleryHold);
+        if (const auto capture = qEnvironmentVariable("QT_ADAPTER_CAPTURE_DIR"); !capture.isEmpty()) {
+            QVERIFY(waitForRenderedFrame(review)); QVERIFY(review->grabWindow().save(capture + "/review-duplicate-choice.png"));
+        }
         service.commandResult = QJsonObject{{"ok", true}, {"id", id}, {"ids", QJsonArray{id}}};
-        QVERIFY(QMetaObject::invokeMethod(review->findChild<QObject *>("browserDuplicateAddNew"), "clicked"));
+        auto *accept = review->findChild<QObject *>("acceptBrowserRequest"); QVERIFY(accept);
+        // The accepted review closes and destroys itself, its duplicate dialog with it.
+        const QPointer<QObject> browserDuplicate = review->findChild<QObject *>("browserDuplicateDialog"); QVERIFY(browserDuplicate);
+        QVERIFY(QMetaObject::invokeMethod(accept, "clicked"));
         QTRY_COMPARE(service.commands, 2);
+        QVERIFY(!browserDuplicate || !browserDuplicate->property("visible").toBool());
+        QCOMPARE(service.lastCommand["op"].toString(), "browser.accept");
+        QCOMPARE(service.lastCommand["duplicatePolicy"].toString(), "overwrite");
+        QCOMPARE(service.lastCommand["requestId"].toString(), "duplicate-browser");
+    }
+    void browserReviewCategoryDropdownNeverCoversTheField() {
+        FakeService service; service.categoryCapability = service.runtimeCapability = service.browserCapability = true;
+        QJsonArray categories;
+        for (const auto &name : {"Compressed", "Programs", "Videos", "Music", "Pictures", "Documents"})
+            categories.append(QJsonObject{{"id", QString::number(categories.size() + 1)}, {"name", name}, {"icon", "icon:folder"}, {"path", "/downloads"}, {"usePath", false},
+                {"acceptedFileTypes", QJsonArray{}}, {"acceptedUrlPatterns", QJsonArray{}}, {"items", QJsonArray{}}});
+        service.categorySnapshot = categories;
+        service.extensionSnapshot = {{"settings", basicSettings()}, {"queues", QJsonArray{}},
+            {"runtime", QJsonObject{{"mode", "explicit-runtime"}, {"destination", "/downloads"}, {"destinationRoots", QJsonArray{"/downloads"}}, {"redirects", true}, {"proxy", "direct"}}},
+            {"browserIntegration", QJsonObject{{"state", "disabled"}, {"enabled", false}, {"auth", false}, {"port", 15151}, {"error", QJsonValue::Null}}},
+            {"browserRequests", QJsonArray{QJsonObject{{"id", "category-review"}, {"source", "browser"}, {"outcomeUnknown", false},
+                {"items", QJsonArray{QJsonObject{{"url", "https://example.invalid/clip.mp4"}, {"name", "clip.mp4"}, {"hasHeaders", false}, {"downloadPage", QJsonValue::Null}}}}}}}};
+        PreviewDownloads resources; ServiceDownloads model(service.descriptor);
+        std::unique_ptr<QQuickView> view(liveView(model));
+        QTRY_COMPARE(model.connectionState(), "ready");
+        QQuickWindow *review = nullptr;
+        QTRY_VERIFY((review = view->rootObject()->findChild<QQuickWindow *>("browserRequestDialog")) && review->isVisible());
+        auto *combo = review->findChild<QQuickItem *>("browserRequestCategory"); QVERIFY(combo);
+        QTRY_VERIFY(combo->isVisible() && combo->width() > 0);
+        QTRY_COMPARE(combo->property("count").toInt(), 8);
+        QVERIFY(QTest::qWaitForWindowExposed(review)); QVERIFY(waitForRenderedFrame(review));
+        auto *popup = combo->property("popup").value<QObject *>(); QVERIFY(popup);
+        const auto center = combo->mapToScene(QPointF(combo->width() / 2, combo->height() / 2)).toPoint();
+        // The content-sized review is too short for the list below the field.
+        const qreal comboBottom = combo->mapToScene(QPointF(0, combo->height())).y();
+        const auto open = [&] {
+            QTest::mouseClick(review, Qt::LeftButton, Qt::NoModifier, center);
+            QTRY_VERIFY(popup->property("opened").toBool());
+            QTest::qWait(500); // Opening release and service polls.
+            QVERIFY2(popup->property("opened").toBool(), "dropdown closed after its opening click");
+        };
+        const auto list = [&]() -> QQuickItem * {
+            auto *content = popup->property("contentItem").value<QQuickItem *>();
+            if (content && content->property("currentIndex").isValid()) return content;
+            for (auto *item : content ? content->findChildren<QQuickItem *>() : QList<QQuickItem *>{})
+                if (item->property("currentIndex").isValid()) return item;
+            return nullptr;
+        };
+        open();
+        QVERIFY2(comboBottom + popup->property("implicitHeight").toReal() > review->height(), "fixture must be a short review");
+        // A short window never covers the field: the list opens on the side with more
+        // room, inside the window, and scrolls when it is clipped.
+        const auto checkPlacement = [&](bool expectBelow) {
+            const qreal y = popup->property("y").toReal(), height = popup->property("height").toReal();
+            QVERIFY2(y + height <= 0 || y >= combo->height(), qPrintable(QString("popup %1+%2 overlaps the field").arg(y).arg(height)));
+            QCOMPARE(y >= combo->height(), expectBelow);
+            QVERIFY(combo->mapToScene(QPointF(0, y)).y() >= 0 && combo->mapToScene(QPointF(0, y + height)).y() <= review->height());
+            QCOMPARE(list()->property("interactive").toBool(), height < popup->property("implicitHeight").toReal());
+        };
+        checkPlacement(false);
+        const auto capture = qEnvironmentVariable("QT_ADAPTER_CAPTURE_DIR");
+        if (!capture.isEmpty()) QVERIFY(review->grabWindow().save(capture + "/review-category-short.png"));
+        QQuickItem *choice = nullptr;
+        QVERIFY(QMetaObject::invokeMethod(list(), "itemAtIndex", Q_RETURN_ARG(QQuickItem *, choice), Q_ARG(int, 4)));
+        QVERIFY(choice && choice->window() == review);
+        // Wheel-scroll the clipped list until the row is inside the visible part.
+        for (int step = 0; step < 10 && choice->mapToItem(list(), QPointF(0, choice->height())).y() > list()->height(); ++step) {
+            QWheelEvent wheel(list()->mapToScene(QPointF(list()->width() / 2, list()->height() / 2)), review->mapToGlobal(list()->mapToScene(QPointF(list()->width() / 2, list()->height() / 2))),
+                QPoint(), QPoint(0, -120), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+            QGuiApplication::sendEvent(review, &wheel);
+            QVERIFY(waitForRenderedFrame(review));
+        }
+        QTRY_VERIFY(choice->mapToItem(list(), QPointF(0, choice->height())).y() <= list()->height() + 1);
+        QTest::mouseClick(review, Qt::LeftButton, Qt::NoModifier,
+            choice->mapToScene(QPointF(choice->width() / 2, choice->height() / 2)).toPoint());
+        QTRY_VERIFY(!popup->property("visible").toBool());
+        QCOMPARE(combo->property("currentIndex").toInt(), 4);
+        // With room below (a taller window), it opens below the field at full height.
+        review->setMaximumHeight(2000); review->resize(review->width(), int(comboBottom + popup->property("implicitHeight").toReal() + 40));
+        QVERIFY(waitForRenderedFrame(review));
+        open();
+        checkPlacement(true);
+        QCOMPARE(popup->property("height").toReal(), popup->property("implicitHeight").toReal());
+        if (!capture.isEmpty()) QVERIFY(review->grabWindow().save(capture + "/review-category-tall.png"));
+        QTest::keyClick(review, Qt::Key_Escape);
+        QTRY_VERIFY(!popup->property("visible").toBool());
+        QCOMPARE(combo->property("currentIndex").toInt(), 4);
+        QCOMPARE(service.commands, 0);
+        review->close();
+    }
+    void browserMultiLinkDuplicatesAskOnceWithoutRedundantActions() {
+        FakeService service; service.detailsCapability = true; service.runtimeCapability = true;
+        service.duplicateCapability = true; service.replaceCapability = true; service.browserCapability = true;
+        const QString folder = service.directory.filePath("Downloads"); QVERIFY(QDir().mkpath(folder));
+        const QString id = "9007199254740993", link = "https://example.invalid/archive.zip";
+        service.rows = QJsonArray{QJsonObject{{"id", id}, {"name", "archive.zip"}, {"size", "1000"},
+            {"downloaded", "1000"}, {"state", "completed"}, {"dateAdded", "1234"},
+            {"details", QJsonObject{{"url", link}, {"folder", folder}, {"error", QJsonValue::Null}}}}};
+        auto settings = basicSettings(); settings["qtDuplicateAction"] = "ask";
+        service.extensionSnapshot = {{"queues", QJsonArray{}}, {"settings", settings},
+            {"runtime", QJsonObject{{"mode", "explicit-runtime"}, {"destination", folder}, {"destinationRoots", QJsonArray{folder}}, {"redirects", true}, {"proxy", "direct"}}},
+            {"browserIntegration", QJsonObject{{"state", "disabled"}, {"enabled", false}, {"auth", false}, {"port", 15151}, {"error", QJsonValue::Null}}},
+            {"browserRequests", QJsonArray{QJsonObject{{"id", "duplicate-batch"}, {"outcomeUnknown", false},
+                {"items", QJsonArray{QJsonObject{{"url", link}, {"name", "archive.zip"}, {"hasHeaders", false}, {"downloadPage", QJsonValue::Null}},
+                                     QJsonObject{{"url", "https://example.invalid/new.zip"}, {"name", "new.zip"}, {"hasHeaders", false}, {"downloadPage", QJsonValue::Null}}}}}}}};
+        PreviewDownloads resources; ServiceDownloads model(service.descriptor);
+        std::unique_ptr<QQuickView> view(liveView(model));
+        QTRY_COMPARE(model.connectionState(), "ready");
+        QQuickWindow *review = nullptr;
+        QTRY_VERIFY((review = view->rootObject()->findChild<QQuickWindow *>("browserRequestDialog")) && review->isVisible());
+        // Rows flag duplicates; the single-link banner is not used for batches.
+        QVERIFY(!review->findChild<QObject *>("browserRequestExisting")->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(review->findChild<QObject *>("acceptBrowserRequest"), "clicked"));
+        auto *duplicates = review->findChild<QObject *>("browserDuplicateDialog"); QVERIFY(duplicates);
+        QTRY_VERIFY(duplicates->property("visible").toBool()); QCOMPARE(service.commands, 0);
+        // Batch replacement is unsupported, so Replace is hidden rather than disabled.
+        QVERIFY(!review->findChild<QObject *>("browserDuplicateOverwrite")->property("visible").toBool());
+        auto *keep = review->findChild<QQuickItem *>("browserDuplicateAddNew"); QVERIFY(keep);
+        QVERIFY(keep->isVisible());
+        // Every footer button fits inside the dialog.
+        auto *content = qvariant_cast<QQuickItem *>(duplicates->property("contentItem")); QVERIFY(content);
+        auto *footer = qvariant_cast<QQuickItem *>(duplicates->property("footer")); QVERIFY(footer);
+        for (auto *button : footer->findChildren<QQuickItem *>()) {
+            if (!button->isVisible() || !button->inherits("QQuickAbstractButton")) continue;
+            const auto bounds = button->mapRectToItem(footer, QRectF(QPointF(), button->size()));
+            QVERIFY2(bounds.left() >= 0 && bounds.right() <= footer->width(), qPrintable(button->property("text").toString()));
+        }
+        QVERIFY(QMetaObject::invokeMethod(keep, "clicked"));
+        QTRY_COMPARE(service.commands, 1);
         QCOMPARE(service.lastCommand["op"].toString(), "browser.accept");
         QCOMPARE(service.lastCommand["duplicatePolicy"].toString(), "numbered");
-        QCOMPARE(service.lastCommand["requestId"].toString(), "duplicate-browser");
+        QCOMPARE(service.lastCommand["requestId"].toString(), "duplicate-batch");
     }
     void duplicateLookupDefaultFolderAndDuplicatePolicy() {
         FakeService service; service.detailsCapability = true; service.runtimeCapability = true;
