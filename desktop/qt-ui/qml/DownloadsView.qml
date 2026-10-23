@@ -60,7 +60,7 @@ Item {
     }
     function sendDownload(start: bool, policy: string): bool {
         return live ? downloads.addConfiguredDownload(sourceInput.text, nameInput.text, start, addCategory.model[addCategory.currentIndex].id,
-                        Object.assign({}, addOptions, {duplicatePolicy: policy}, explicitRuntime ? {folder: locationInput.text} : {}))
+                        Object.assign({}, addOptions, {duplicatePolicy: policy}, explicitRuntime && locationInput.text !== "" ? {folder: locationInput.text} : {}))
                     : downloads.addDownload(sourceInput.text, nameInput.text, start)
     }
     function submitDownload(start: bool): bool {
@@ -109,7 +109,7 @@ Item {
     }
     function openAddDialog() {
         downloads.clearError(); addOptions = ({})
-        locationInput.text = explicitRuntime ? downloads.runtime.destination : qsTr("Isolated profile / Downloads")
+        locationInput.text = explicitRuntime ? (downloads.capabilities.indexOf("category.destination") >= 0 ? "" : downloads.runtime.destination) : qsTr("Isolated profile / Downloads")
         sourceInput.text = live ? "" : "https://example.invalid/archive.zip"
         nameInput.text = live ? "" : "archive.zip"
         addDialog.categoryChoices = [{id: "auto", name: qsTr("Automatic")}, {id: "none", name: qsTr("No Category")}].concat(live ? downloads.categories.map(c => ({id: c.id, name: c.name})) : [])
@@ -971,12 +971,20 @@ Item {
                 FormLabel { text: qsTr("Save in:") }
                 FormField {
                     id: locationInput; objectName: "addDownloadLocation"; Layout.fillWidth: true; readOnly: !root.explicitRuntime
+                    placeholderText: root.live && root.downloads.capabilities.indexOf("category.destination") >= 0 ? qsTr("Category destination or default (optional override)") : ""
                     color: readOnly ? theme.secondary : theme.text; Accessible.name: qsTr("Download location")
                     Accessible.description: readOnly ? qsTr("Fixed by the test profile") : ""
                     onTextChanged: existingCheck.restart()
                 }
                 FormLabel { text: qsTr("Category:"); visible: addCategory.visible }
-                UiComboBox { id: addCategory; objectName: "addCategorySelection"; Layout.fillWidth: true; visible: root.live && root.downloads.capabilities.indexOf("category.create") >= 0; model: addDialog.categoryChoices; textRole: "name"; Accessible.name: qsTr("Download category") }
+                UiComboBox { id: addCategory; objectName: "addCategorySelection"; Layout.fillWidth: true; visible: root.live && root.downloads.capabilities.indexOf("category.create") >= 0; model: addDialog.categoryChoices; textRole: "name"; Accessible.name: qsTr("Download category")
+                    onActivated: {
+                        if (root.explicitRuntime && root.downloads.capabilities.indexOf("category.destination") >= 0) {
+                            const c = root.downloads.categories.find(c => c.id === addDialog.categoryChoices[currentIndex].id)
+                            locationInput.text = c && c.usePath ? c.path : ""
+                        }
+                    }
+                }
                 Item { implicitWidth: 1; visible: root.live }
                 UiButton {
                     objectName: "openAddHttpOptions"; text: qsTr("Connection && Authentication…"); icon.name: "configure"; visible: root.live && root.downloads.capabilities.indexOf("download.http-options") >= 0

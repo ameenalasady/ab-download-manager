@@ -50,7 +50,7 @@ public:
     QJsonObject extensionSnapshot, lastCommand, commandResult, partSnapshots;
     bool partsCapability = false, fulfillBrowserAccept = false;
     QJsonArray categorySnapshot;
-    bool policyCapability = false;
+    bool policyCapability = false, categoryDestinationCapability = false;
     bool categoryCapability = false, monitorCapability = false, detailsCapability = false, forgetCapability = false, runtimeCapability = false, httpCapability = false;
     bool browserCapability = false, desktopCapability = false, windowsCapability = false;
     // New negotiated settings/duplicate extensions.
@@ -129,6 +129,7 @@ public:
                     if (reviewCapability) { caps.append("links.review"); caps.append("browser.probe"); }
                     if (probeBatchCapability) caps.append("browser.probeBatch");
                     if (categoryIconCapability) caps.append("category.icon");
+                    if (categoryDestinationCapability) caps.append("category.destination");
                     if (soundCapability) caps.append("settings.notificationSounds");
                     if (powerCapability) for (const auto &op : {"queue.update", "queue.powerAction", "power.execute", "power.cancel"}) caps.append(op);
                     if (tasksCapability) for (const auto &op : {"queue.startAll", "queue.stopAll", "download.stopAll"}) caps.append(op);
@@ -416,6 +417,43 @@ private slots:
         QTRY_VERIFY((review = view.rootObject()->findChild<QObject *>("browserRequestDialog")) && review->property("visible").toBool());
         QCOMPARE(service.commands, 1);
         view.close(); view.setSource(QUrl()); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    }
+    void categoryDestinationsAreCapabilityGatedAndDraftsSurvivePolling() {
+        FakeService service; service.categoryCapability = service.categoryDestinationCapability = service.runtimeCapability = true;
+        service.categorySnapshot = QJsonArray{QJsonObject{{"id", "7"}, {"name", "Custom"}, {"icon", "icon:folder"}, {"path", "/downloads/custom"}, {"usePath", true},
+            {"acceptedFileTypes", QJsonArray{"zip"}}, {"acceptedUrlPatterns", QJsonArray{}}, {"items", QJsonArray{}}}};
+        service.extensionSnapshot = {{"settings", basicSettings()}, {"queues", QJsonArray{}},
+            {"runtime", QJsonObject{{"mode", "explicit-runtime"}, {"destination", "/downloads"}, {"destinationRoots", QJsonArray{"/downloads"}}, {"redirects", true}, {"proxy", "direct"}}}};
+        PreviewDownloads resources; ServiceDownloads model(service.descriptor);
+        std::unique_ptr<QQuickView> view(liveView(model)); QTRY_COMPARE(model.connectionState(), "ready");
+        QVERIFY(QMetaObject::invokeMethod(view->rootObject(), "openCategories"));
+        auto *dialog = view->rootObject()->findChild<QObject *>("serviceCategoriesDialog"); QVERIFY(dialog);
+        QVERIFY(QMetaObject::invokeMethod(dialog, "choose", Q_ARG(QString, "7")));
+        auto *toggle = dialog->findChild<QObject *>("categoryUsePath"); QVERIFY(toggle);
+        auto *path = dialog->findChild<QObject *>("categoryPath"); QVERIFY(path);
+        QTRY_VERIFY(toggle->property("visible").toBool()); QVERIFY(toggle->property("checked").toBool());
+        QCOMPARE(path->property("text").toString(), "/downloads/custom");
+        path->setProperty("text", "/downloads/edited");
+        QTest::qWait(600); QCOMPARE(path->property("text").toString(), "/downloads/edited");
+        QVERIFY(QMetaObject::invokeMethod(dialog->findChild<QObject *>("applyServiceCategory"), "clicked"));
+        QTRY_COMPARE(service.commands, 1);
+        QCOMPARE(service.lastCommand["path"].toString(), "/downloads/edited"); QVERIFY(service.lastCommand["usePath"].toBool());
+        const auto capture = qEnvironmentVariable("QT_ADAPTER_CAPTURE_DIR");
+        if (!capture.isEmpty()) {
+            auto *content = qvariant_cast<QQuickItem *>(dialog->property("contentItem")); QVERIFY(content && content->window());
+            QVERIFY(waitForRenderedFrame(content->window())); QVERIFY(content->window()->grabWindow().save(capture + "/category-destination.png"));
+        }
+        QVERIFY(QMetaObject::invokeMethod(dialog, "close"));
+        // Old services must never receive these extension fields, even if they expose
+        // the historical read-only path in category snapshots.
+        service.categoryDestinationCapability = false; service.restart("older");
+        QTRY_COMPARE(model.connectionState(), "ready"); QTRY_VERIFY(!model.capabilities().contains("category.destination"));
+        QVERIFY(QMetaObject::invokeMethod(view->rootObject(), "openCategories"));
+        QVERIFY(!toggle->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(dialog, "choose", Q_ARG(QString, "7")));
+        QVERIFY(QMetaObject::invokeMethod(dialog->findChild<QObject *>("applyServiceCategory"), "clicked"));
+        QTRY_COMPARE(service.commands, 2); QVERIFY(!service.lastCommand.contains("path")); QVERIFY(!service.lastCommand.contains("usePath"));
+        QVERIFY(QMetaObject::invokeMethod(dialog, "close"));
     }
     void categoryIconsFollowTheOriginalUrisInSidebarAndEditor() {
         FakeService service; service.categoryCapability = service.categoryIconCapability = true;

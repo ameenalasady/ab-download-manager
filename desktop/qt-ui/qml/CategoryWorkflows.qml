@@ -11,6 +11,7 @@ Item {
     id: root
     required property var service
     readonly property bool modalOpen: dialog.visible || confirmDelete.visible
+    readonly property bool destinationEditable: service.capabilities.indexOf("category.destination") >= 0 && service.runtime.mode === "explicit-runtime"
     readonly property bool iconEditable: service.capabilities.indexOf("category.icon") >= 0
     PreviewTheme { id: theme }
     function openCategories() { dialog.choose(""); dialog.open() }
@@ -41,6 +42,8 @@ Item {
             patterns.text = c ? c.acceptedUrlPatterns.join(" ") : ""
             // A stored icon the picker does not offer stays unselected and unchanged.
             iconIndex = CategoryIcons.indexOf(c ? c.icon : "icon:folder")
+            usePath.checked = c ? c.usePath : false
+            path.text = c ? c.path : (root.service.runtime.destination || "")
         }
         function send(op: string, args: var): bool { return root.service.categoryCommand(op, selectedCategory, args || {}) }
         title: qsTr("Categories")
@@ -125,6 +128,19 @@ Item {
                         Field { id: types; objectName: "categoryTypes"; enabled: typesEnabled.checked; maximumLength: 5248; placeholderText: "zip rar 7z"; Accessible.name: qsTr("File types, space separated") }
                         QQC2.CheckBox { id: patternsEnabled; Layout.topMargin: Tokens.spacingS; text: qsTr("URL Patterns") }
                         Field { id: patterns; objectName: "categoryPatterns"; enabled: patternsEnabled.checked; maximumLength: 16416; placeholderText: "http://127.0.0.1:*/files/*"; Accessible.name: qsTr("URL patterns, space separated") }
+                        QQC2.CheckBox {
+                            id: usePath; objectName: "categoryUsePath"; visible: root.destinationEditable
+                            text: qsTr("Download Location"); Layout.topMargin: Tokens.spacingS
+                        }
+                        Field {
+                            id: path; objectName: "categoryPath"; visible: root.destinationEditable
+                            enabled: usePath.checked; maximumLength: 4096
+                            Accessible.name: qsTr("Category download location")
+                        }
+                        Hint {
+                            visible: root.destinationEditable
+                            text: qsTr("Applies to new downloads unless you override Save in. Choose an existing writable folder within the allowed roots. Existing downloads are not moved.")
+                        }
                         Kirigami.Separator { Layout.fillWidth: true; Layout.topMargin: Tokens.spacingM; Layout.bottomMargin: Tokens.spacingS }
                         SectionHeading { text: qsTr("Selected Download") }
                         Hint {
@@ -160,6 +176,10 @@ Item {
                         const args = {name: nameField.text,
                             acceptedFileTypes: typesEnabled.checked ? types.text.trim().split(/\s+/).filter(s => s.length > 0) : [],
                             acceptedUrlPatterns: patternsEnabled.checked ? patterns.text.trim().split(/\s+/).filter(s => s.length > 0) : []}
+                        if (root.destinationEditable) {
+                            args.usePath = usePath.checked
+                            if (!dialog.category || path.text !== dialog.category.path) args.path = path.text
+                        }
                         if (root.iconEditable && dialog.iconIndex >= 0) args.icon = CategoryIcons.choices[dialog.iconIndex].uri
                         dialog.send(dialog.category ? "category.update" : "category.create", args)
                     }

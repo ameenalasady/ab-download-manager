@@ -239,7 +239,7 @@ Item {
                 .concat((root.service.categories || []).map(c => ({id: c.id, name: c.name})))
             category.currentIndex = root.service.settings.useCategoryByDefault === false ? 1 : 0
             // Read-only outside the explicit runtime, but always shows where files will go.
-            location.text = (root.service.runtime || {}).destination || ""
+            location.text = root.explicitRuntime && root.service.capabilities.indexOf("category.destination") >= 0 ? "" : (root.service.runtime || {}).destination || ""
             // Measure and map in one turn: the review is first shown at its natural size.
             dialog.fitContentSize()
         }
@@ -470,6 +470,7 @@ Item {
                 FormLabel { text: qsTr("Save in:") }
                 FormField {
                     id: location; objectName: "browserRequestLocation"; Layout.fillWidth: true; readOnly: !root.explicitRuntime
+                    placeholderText: root.service.capabilities.indexOf("category.destination") >= 0 ? qsTr("Category destination or default (optional override)") : ""
                     color: readOnly ? theme.secondary : theme.text
                     Accessible.name: qsTr("Download location")
                 }
@@ -477,6 +478,12 @@ Item {
                 UiComboBox {
                     id: category; objectName: "browserRequestCategory"; Layout.fillWidth: true; model: dialog.categoryChoices; textRole: "name"
                     visible: root.service.capabilities.indexOf("category.create") >= 0; enabled: !root.service.busy; Accessible.name: qsTr("Download category")
+                    onActivated: {
+                        if (root.explicitRuntime && root.service.capabilities.indexOf("category.destination") >= 0) {
+                            const c = root.service.categories.find(c => c.id === dialog.categoryChoices[currentIndex].id)
+                            location.text = c && c.usePath ? c.path : ""
+                        }
+                    }
                 }
             }
             // Copy audit (sizing pass): the bottom progress-window note was removed at the

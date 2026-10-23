@@ -188,7 +188,7 @@ class EngineSession(
             "browser.dismiss", "browser.settings", "settings.integration", "frontend.activate", "links.import",
             "system.activity", "download.probe", "download.review", "history.page", "history.delta", "download.windows", "download.parts",
             "download.replace", "download.delete", "settings.folder", "settings.duplicates",
-            "download.reset", "download.move", "download.links", "settings.sort", "category.icon", "settings.notificationSounds", "queue.powerAction", "power.execute", "power.cancel",
+            "download.reset", "download.move", "download.links", "settings.sort", "category.icon", "category.destination", "settings.notificationSounds", "queue.powerAction", "power.execute", "power.cancel",
             "queue.startAll", "queue.stopAll", "download.stopAll", "links.review", "browser.probe", "browser.probeBatch")
     }
 
@@ -333,7 +333,7 @@ class EngineSession(
             else -> categories.getCategoryById(selection.toLongOrNull() ?: error("Invalid category ID"))
                 ?: error("Category no longer exists")
         }
-        val folder = folderOverride ?: destination().toPath()
+        val folder = folderOverride ?: category?.takeIf { it.usePath }?.let { Path.of(it.path) } ?: destination().toPath()
         runtime.validateFolder(folder)
         val duplicatePolicy = options["duplicatePolicy"]?.jsonPrimitive?.content ?: "numbered"
         require(duplicatePolicy in setOf("reject", "numbered", "overwrite")) { "Unsupported duplicate policy" }
@@ -999,9 +999,17 @@ class EngineSession(
     }
 
     private fun categoryDraft(request: JsonObject, previous: Category): Category {
-        require(listOf("path", "usePath", "items").none { it in request }) {
-            "Category path/membership fields must use supported isolated workflows"
-        }
+        require("items" !in request) { "Category membership must use assignment commands" }
+        require(!runtime.isolated || ("path" !in request && "usePath" !in request)) { "Category destinations are unavailable in isolated mode" }
+        val path = request["path"]?.let { value ->
+            (value as? JsonPrimitive)?.takeIf { it.isString }?.content ?: error("Invalid category path")
+        } ?: previous.path
+        val usePath = request["usePath"]?.let { value ->
+            (value as? JsonPrimitive)?.takeIf { !it.isString }?.booleanOrNull ?: error("Invalid category destination toggle")
+        } ?: previous.usePath
+        // Explicit path edits are checked even when disabled; omitted disabled paths are
+        // retained (they may refer to a removable folder which is currently absent).
+        if ("path" in request) runtime.validateFolder(Path.of(path))
         // Optional; omitted keeps the stored icon, including one this editor does not offer.
         val icon = request["icon"]?.let { value ->
             (value as? JsonPrimitive)?.takeIf { it.isString }?.content?.takeIf { it in pickableCategoryIcons } ?: error("Unsupported category icon")
@@ -1010,7 +1018,7 @@ class EngineSession(
             require(it is JsonPrimitive && it.isString) { "Invalid filter" }; it.content
         }
         val name = request["name"]?.jsonPrimitive?.content?.trim() ?: error("Missing category name")
-        val draft = previous.copy(name = name, icon = icon, acceptedFileTypes = filters("acceptedFileTypes"),
+        val draft = previous.copy(name = name, icon = icon, path = path, usePath = usePath, acceptedFileTypes = filters("acceptedFileTypes"),
             acceptedUrlPatterns = filters("acceptedUrlPatterns"))
         validateCategories(listOf(draft), allowDraft = previous.id == -1L)
         return draft
@@ -1021,8 +1029,12 @@ class EngineSession(
         values.forEach { c ->
             require(c.name.length in 1..120 && c.name.none { it.isISOControl() }) { "Invalid category name" }
             require((c.id >= 0 || (allowDraft && c.id == -1L)) && c.id < Long.MAX_VALUE - 1 && c.icon.length <= 4096) { "Invalid category ID/icon" }
-            require(File(c.path).canonicalFile == downloads.canonicalFile && !c.usePath) {
+            if (runtime.isolated) require(File(c.path).canonicalFile == downloads.canonicalFile && !c.usePath) {
                 "Category destinations are unavailable in isolated mode"
+            } else {
+                require(c.path.length in 1..4096 && c.path.none { it.isISOControl() }) { "Invalid category path" }
+                runtime.validateDestination(Path.of(c.path))
+                if (c.usePath) runtime.validateFolder(Path.of(c.path))
             }
             require(c.items.size == c.items.distinct().size) { "Duplicate category membership" }
             require(c.acceptedFileTypes.size <= 128 && c.acceptedFileTypes.all {

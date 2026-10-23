@@ -62,6 +62,60 @@ class CategoryRepositoryTest {
         } finally { lifecycle.stop(); root.toFile().deleteRecursively() }
     }
 
+    @Test fun customDestinationsApplyOnlyToNewDownloadsAndPreserveOverrides() = runBlocking {
+        val root = Files.createTempDirectory("abdm-category-path-test-")
+        val downloads = Files.createDirectory(root.resolve("Downloads"))
+        val custom = Files.createDirectory(downloads.resolve("custom"))
+        val outside = Files.createDirectory(root.resolve("outside"))
+        val identity = java.util.UUID.randomUUID().toString()
+        val permissions = java.nio.file.attribute.PosixFilePermissions.fromString("rw-------")
+        Files.writeString(root.resolve("qt-runtime-profile.json"), """{"version":1,"profileId":"$identity"}""")
+        Files.setPosixFilePermissions(root.resolve("qt-runtime-profile.json"), permissions)
+        val policy = root.resolve("qt-runtime-policy.json")
+        Files.writeString(policy, buildJsonObject {
+            put("version", 1); put("profileId", identity); put("profile", root.toString()); put("destination", downloads.toString())
+            put("destinationRoots", JsonArray(listOf(JsonPrimitive(downloads.toString())))); put("redirects", true)
+            put("proxy", buildJsonObject { put("type", "direct") })
+        }.toString()); Files.setPosixFilePermissions(policy, permissions)
+        val runtime = RuntimePolicy.load(policy)
+        val lifecycle = ServiceLifecycle(root, runtime, browserIntegration = false)
+        try {
+            var engine = lifecycle.start()
+            val created = engine.command(command("category.create", *draft("Custom"),
+                "path" to JsonPrimitive(custom.toString()), "usePath" to JsonPrimitive(true)))
+            val id = created.getValue("categoryId").jsonPrimitive.content
+            val auto = add(engine, "auto.zip")
+            val fixed = add(engine, "fixed.bin", id)
+            val none = add(engine, "none.zip", "none")
+            val override = engine.command(command("add", "url" to JsonPrimitive("http://127.0.0.1:12345/override"),
+                "name" to JsonPrimitive("override.zip"), "categoryId" to JsonPrimitive(id), "folder" to JsonPrimitive(downloads.toString())))
+                .getValue("id").jsonPrimitive.content
+            suspend fun folder(target: String) = engine.snapshot().getValue("rows").jsonArray.map { it.jsonObject }
+                .single { it.getValue("id").jsonPrimitive.content == target }.getValue("details").jsonObject.getValue("folder").jsonPrimitive.content
+            assertEquals(custom.toString(), folder(auto)); assertEquals(custom.toString(), folder(fixed))
+            assertEquals(downloads.toString(), folder(none)); assertEquals(downloads.toString(), folder(override))
+            val file = root.resolve("app-data/config/download_db/categories/categories.json").toFile()
+            val before = file.readText()
+            for (bad in listOf(outside, downloads.resolve("missing"), downloads.resolve("../outside"))) {
+                assertFails { engine.command(command("category.update", "categoryId" to JsonPrimitive(id), *draft("Bad"),
+                    "path" to JsonPrimitive(bad.toString()), "usePath" to JsonPrimitive(true))) }
+                assertEquals(before, file.readText())
+            }
+            val alias = downloads.resolve("alias"); Files.createSymbolicLink(alias, custom)
+            assertFails { engine.command(command("category.update", "categoryId" to JsonPrimitive(id), *draft("Bad"),
+                "path" to JsonPrimitive(alias.toString()), "usePath" to JsonPrimitive(true))) }
+            for (bad in listOf(JsonNull, JsonPrimitive("true"), JsonPrimitive(1)))
+                assertFails { engine.command(command("category.update", "categoryId" to JsonPrimitive(id), *draft("Bad"), "usePath" to bad)) }
+            engine.command(command("category.update", "categoryId" to JsonPrimitive(id), *draft("Renamed")))
+            lifecycle.stop(); engine = lifecycle.start()
+            assertEquals(custom.toString(), categories(engine).last().getValue("path").jsonPrimitive.content)
+            assertTrue(categories(engine).last().getValue("usePath").jsonPrimitive.boolean)
+            engine.command(command("category.update", "categoryId" to JsonPrimitive(id), *draft("Disabled"), "usePath" to JsonPrimitive(false)))
+            assertEquals(downloads.toString(), folder(add(engine, "disabled.zip", id)))
+            assertEquals(custom.toString(), folder(auto)) // Configuration never moves existing records.
+        } finally { lifecycle.stop(); root.toFile().deleteRecursively() }
+    }
+
     @Test fun categoryWriteFailureReportsCommittedAddWithoutLosingItsStableId() = runBlocking {
         val root = Files.createTempDirectory("abdm-category-write-failure-test-")
         val lifecycle = ServiceLifecycle(root)
