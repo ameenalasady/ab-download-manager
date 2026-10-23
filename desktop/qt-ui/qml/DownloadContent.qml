@@ -3,6 +3,7 @@ import QtQuick
 import QtQuick.Controls as QQC2
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
+import Abdm.Desktop
 
 // One download's live view. While it runs this is a compact progress page: file icon
 // with size, name, status, progress bar, the transfer numbers and the engine's parts.
@@ -68,9 +69,11 @@ Item {
     }
     function refresh() {
         row = service.downloadState(downloadId); parts = service.downloadParts(downloadId)
+        partSlots.update(parts, service.settings.threadCount || 8)
         if (row.available) lastName = row.name
         fileUrl = service.completedFileUrl(downloadId, false)
     }
+    DownloadPartSlots { id: partSlots }
     Component.onCompleted: { partsWatched = service.watchDownloadParts(downloadId, true); refresh() }
     Component.onDestruction: if (partsWatched) service.watchDownloadParts(downloadId, false)
     Connections { target: pane.service; function onViewChanged() { pane.refresh() } }
@@ -250,7 +253,9 @@ Item {
                         id: partList; objectName: "downloadWindowPartList"
                         anchors.fill: parent; anchors.margins: Tokens.separatorWidth
                         anchors.topMargin: partFrame.inset; anchors.bottomMargin: partFrame.inset
-                        model: pane.parts.items || []; clip: true; boundsBehavior: Flickable.StopAtBounds
+                        // Incremental slot updates retain delegates and the user's scroll
+                        // position. The raw range array resets a ListView on every poll.
+                        model: partSlots; clip: true; boundsBehavior: Flickable.StopAtBounds
                         QQC2.ScrollBar.vertical: QQC2.ScrollBar {}
                         delegate: Rectangle {
                             id: part; required property var modelData; required property int index

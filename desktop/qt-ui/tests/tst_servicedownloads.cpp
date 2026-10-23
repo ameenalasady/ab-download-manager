@@ -1,4 +1,5 @@
 #include "servicedownloads.h"
+#include "downloadpartslots.h"
 #include "previewdownloads.h"
 #include "renderwait.h"
 #include <QAbstractItemModelTester>
@@ -503,7 +504,7 @@ private slots:
         FakeService service;
         service.sortCapability = service.monitorCapability = service.tasksCapability = service.actionsCapability = service.detailsCapability = true;
         service.reviewCapability = service.browserCapability = service.runtimeCapability = service.desktopCapability = true;
-        service.categoryCapability = service.categoryIconCapability = service.soundCapability = service.powerCapability = true;
+        service.categoryCapability = service.categoryIconCapability = service.soundCapability = service.powerCapability = service.policyCapability = true;
         {
             // The original defaults with their stored (historical) icon URIs.
             const QList<QPair<QString, QString>> defaults{{"Compressed", "icon:pictureFile"}, {"Programs", "icon:zipFile"}, {"Videos", "icon:musicFile"},
@@ -512,12 +513,13 @@ private slots:
                 {"icon", defaults[i].second}, {"path", "/downloads"}, {"usePath", false}, {"acceptedFileTypes", QJsonArray{"x"}},
                 {"acceptedUrlPatterns", QJsonArray{}}, {"items", QJsonArray{}}});
         }
-        auto settings = basicSettings(); settings["qtSortColumn"] = "name"; settings["qtSortDescending"] = false;
+        auto settings = displaySettings(); settings["qtSortColumn"] = "name"; settings["qtSortDescending"] = false;
         service.extensionSnapshot = {{"queues", QJsonArray{powerQueue()}}, {"powerAction", QJsonValue::Null}, {"manualPending", QJsonArray{"9007199254740995"}}, {"settings", settings}, {"browserRequests", QJsonArray{}},
             {"integration", QJsonObject{{"autoStartOnBoot", false}, {"useSystemTray", false}, {"notificationSound", true}, {"notifications", true},
                 {"successNotificationSound", "/home/user/Sounds/finished.wav"}, {"errorNotificationSound", ""}, {"generalNotificationSound", ""}}},
             {"browserIntegration", QJsonObject{{"state", "disabled"}, {"error", QJsonValue::Null}, {"enabled", false}, {"port", 15151}, {"auth", false}}},
             {"runtime", QJsonObject{{"mode", "explicit-runtime"}, {"destination", "/downloads"}, {"destinationRoots", QJsonArray{"/downloads"}}, {"redirects", true}, {"proxy", "direct"}}}};
+        service.extensionSnapshot["settingsPolicy"] = QJsonObject{{"retained", QJsonArray{}}, {"activityAdapter", false}, {"speedLimitActive", false}};
         const auto details = [](const QString &name) { return QJsonObject{{"url", "https://example.invalid/" + name}, {"folder", "/downloads"},
             {"downloadPage", "https://example.invalid/page"}, {"error", QJsonValue::Null}}; };
         service.rows = QJsonArray{
@@ -570,6 +572,13 @@ private slots:
         QMetaObject::invokeMethod(categories, "close"); QTRY_VERIFY(!categories->property("visible").toBool());
         QVERIFY(QMetaObject::invokeMethod(root, "openSettings"));
         auto *settingsDialog = root->findChild<QObject *>("serviceSettingsDialog"); QTRY_VERIFY(settingsDialog->property("visible").toBool());
+        settingsDialog->setProperty("page", 0); capture("settings-appearance");
+        auto *unit = root->findChild<QQuickItem *>("settingsSizeUnit"); QVERIFY(unit);
+        QTest::mouseClick(unit->window(), Qt::LeftButton, Qt::NoModifier,
+            unit->mapToScene(QPointF(unit->width() / 2, unit->height() / 2)).toPoint());
+        auto *unitPopup = unit->property("popup").value<QObject *>(); QVERIFY(unitPopup);
+        QTRY_VERIFY(unitPopup->property("opened").toBool()); capture("settings-dropdown");
+        QTest::keyClick(unit->window(), Qt::Key_Escape); QTRY_VERIFY(!unitPopup->property("visible").toBool());
         settingsDialog->setProperty("page", 2); capture("settings-integration");
         QMetaObject::invokeMethod(settingsDialog, "close"); QTRY_VERIFY(!settingsDialog->property("visible").toBool());
         QVERIFY(QMetaObject::invokeMethod(root, "openQueues", Q_ARG(QString, "0")));
@@ -846,7 +855,7 @@ private slots:
     }
     void settingsDropdownSurvivesPointerReleaseAndSelects() {
         FakeService service; service.policyCapability = true;
-        service.extensionSnapshot = {{"queues", QJsonArray{}}, {"settings", basicSettings()},
+        service.extensionSnapshot = {{"queues", QJsonArray{}}, {"settings", displaySettings()},
             {"settingsPolicy", QJsonObject{{"retained", QJsonArray{}}, {"activityAdapter", false}, {"speedLimitActive", false}}}};
         PreviewDownloads resources; ServiceDownloads model(service.descriptor);
         std::unique_ptr<QQuickView> view(liveView(model));
@@ -864,6 +873,7 @@ private slots:
         QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center);
         QTRY_VERIFY(popup->property("opened").toBool());
         QTest::qWait(800); // Opening release, focus handoff and multiple service polls.
+        QCOMPARE(model.connectionState(), "ready"); QVERIFY(model.errorMessage().isEmpty());
         QVERIFY2(popup->property("opened").toBool(), "dropdown closed after its opening click");
         auto *content = popup->property("contentItem").value<QQuickItem *>(); QVERIFY(content);
         auto *list = content; // Native styles may wrap their ListView in another item.
@@ -887,6 +897,23 @@ private slots:
         QTRY_VERIFY(!popup->property("visible").toBool());
         QCOMPARE(service.commands, 0);
         QVERIFY(QMetaObject::invokeMethod(dialog, "close"));
+        QTRY_VERIFY(!dialog->property("visible").toBool());
+        // Reopen native Settings and the combo repeatedly in the same QML engine.
+        for (int repeat = 0; repeat < 4; ++repeat) {
+            QVERIFY(QMetaObject::invokeMethod(view->rootObject(), "openSettings"));
+            QTRY_VERIFY(dialog->property("opened").toBool());
+            QVERIFY(waitForRenderedFrame(combo->window()));
+            QTest::mouseClick(combo->window(), Qt::LeftButton, Qt::NoModifier,
+                combo->mapToScene(QPointF(combo->width() / 2, combo->height() / 2)).toPoint());
+            QTRY_VERIFY(popup->property("opened").toBool());
+            QTest::qWait(150); QVERIFY(popup->property("opened").toBool());
+            QTest::keyClick(combo->window(), Qt::Key_Escape);
+            QTRY_VERIFY(!popup->property("visible").toBool());
+            QVERIFY(dialog->property("opened").toBool());
+            QVERIFY(QMetaObject::invokeMethod(dialog, "close"));
+            QTRY_VERIFY(!dialog->property("visible").toBool());
+        }
+        QCOMPARE(service.commands, 0);
     }
     void settingsFormKeepsStoredBusySpeedModeAndAppliesOnlyItsPage() {
         FakeService service; service.policyCapability = true;
@@ -1484,6 +1511,12 @@ private slots:
         return {{"threadCount", 8}, {"maxConcurrentDownloads", 3}, {"maxDownloadRetryCount", 3}, {"minPartSize", "524288"},
             {"dynamicPartCreation", true}, {"useSparseFileAllocation", true}, {"useServerLastModifiedTime", false}};
     }
+    static QJsonObject displaySettings() {
+        auto settings = basicSettings();
+        settings["sizeUnit"] = "BinaryBytes"; settings["speedUnit"] = "BinaryBytes"; settings["useCategoryByDefault"] = true;
+        settings["useSpeedLimit"] = "Disabled"; settings["speedLimit"] = "262144"; settings["useAverageSpeed"] = true;
+        return settings;
+    }
     // Five rows in service order: two pausable, one resumable, one completed, one failed.
     static QStringList seedRows(FakeService &service) {
         const QStringList ids{"9007199254740993", "9007199254740995", "9007199254740997", "9007199254740999", "9007199254741001"};
@@ -1921,6 +1954,122 @@ private slots:
         QCOMPARE(model.runtime().value("destination").toString(), folder);
         QVERIFY(!model.canSetDefaultFolder(outside));
     }
+    void partSlotModelKeepsExactRangesAndIncrementalIdentity() {
+        DownloadPartSlots slotModel;
+        QAbstractItemModelTester tester(&slotModel, QAbstractItemModelTester::FailureReportingMode::QtTest);
+        QSignalSpy resets(&slotModel, &QAbstractItemModel::modelReset);
+        QSignalSpy inserts(&slotModel, &QAbstractItemModel::rowsInserted);
+        QSignalSpy removes(&slotModel, &QAbstractItemModel::rowsRemoved);
+        QSignalSpy changes(&slotModel, &QAbstractItemModel::dataChanged);
+        const auto range = [](qint64 offset, const QString &state = "downloading", int done = 25, int length = 100) {
+            return QVariantMap{{"id", QString::number(offset)}, {"offset", QString::number(offset)}, {"state", state},
+                {"length", QString::number(length)}, {"downloaded", QString::number(done)}};
+        };
+        const auto update = [&](const QVariantList &items, int budget = 8) {
+            slotModel.update({{"available", true}, {"items", items}}, budget);
+        };
+        const qint64 base = 9007199254740993LL;
+        const auto at = [&](int row) { return slotModel.data(slotModel.index(row), DownloadPartSlots::PartData).toMap(); };
+        QVariantList parts; for (int i = 0; i < 12; ++i) parts.append(range(base + i));
+        update(parts); QCOMPARE(slotModel.rowCount(), 12); // Never hide real active ranges at the configured budget.
+        inserts.clear(); changes.clear();
+        parts[1] = range(base + 1, "completed", 100);
+        parts[2] = range(base + 2, "idle", 0);
+        parts[0] = range(base, "downloading", 50, 80); // Dynamic split changes the old range's endpoint.
+        parts.append(range(base + 12, "connecting", 0)); parts.append(range(base + 13));
+        update(parts);
+        QCOMPARE(slotModel.rowCount(), 12);
+        QCOMPARE(at(0)["length"].toString(), "80"); QCOMPARE(at(0)["downloaded"].toString(), "50");
+        QCOMPARE(at(1)["id"].toString(), QString::number(base + 12));
+        QCOMPARE(at(2)["id"].toString(), QString::number(base + 13));
+        QCOMPARE(at(3)["id"].toString(), QString::number(base + 3));
+        QVERIFY(!changes.isEmpty()); QCOMPARE(resets.count(), 0); QCOMPARE(inserts.count(), 0); QCOMPARE(removes.count(), 0);
+        changes.clear(); update(parts); QCOMPARE(changes.count(), 0);
+        // Missing ranges vacate slots, never leave stale offsets/progress presented as live.
+        parts.removeAt(3); update(parts); QCOMPARE(at(3)["id"].toString(), QString());
+        QCOMPARE(at(3)["state"].toString(), "idle");
+        slotModel.update({}, 8); QCOMPARE(slotModel.rowCount(), 12); // Cold/disconnected cache is not retirement.
+        slotModel.update({{"available", false}, {"items", QVariantList{}}}, 8);
+        QCOMPARE(slotModel.rowCount(), 0); QCOMPARE(removes.count(), 1); QCOMPARE(resets.count(), 0);
+        // Reopening late does not create a row per historical completed engine range.
+        parts.clear(); for (int i = 0; i < 256; ++i) parts.append(range(base + i, i >= 254 ? "downloading" : "completed", i >= 254 ? 25 : 100));
+        update(parts); QCOMPARE(slotModel.rowCount(), 8);
+        QSet<QString> ids; for (int i = 0; i < slotModel.rowCount(); ++i) ids.insert(at(i)["id"].toString());
+        QVERIFY(ids.contains(QString::number(base + 254))); QVERIFY(ids.contains(QString::number(base + 255)));
+    }
+    static QJsonObject partRange(int number, const QString &state = "downloading", int downloaded = 25) {
+        const QString offset = QString::number(number * 100);
+        return {{"id", offset}, {"offset", offset}, {"length", "100"}, {"downloaded", QString::number(downloaded)}, {"state", state}};
+    }
+    static void setParts(FakeService &service, const QString &id, const QJsonArray &items) {
+        service.partSnapshots[id] = QJsonObject{{"available", true}, {"totalCount", items.size()}, {"truncated", false}, {"resumeSupport", true}, {"items", items}};
+    }
+    void progressReusesFinishedPartSlotsWithoutChangingRanges() {
+        FakeService service; service.partsCapability = true;
+        service.extensionSnapshot = {{"settings", basicSettings()}, {"queues", QJsonArray{}}};
+        const QString id = service.rows.first().toObject()["id"].toString();
+        QJsonArray parts; for (int i = 0; i < 8; ++i) parts.append(partRange(i));
+        setParts(service, id, parts);
+        PreviewDownloads resources; ServiceDownloads model(service.descriptor);
+        std::unique_ptr<QQuickView> view(liveView(model)); QTRY_COMPARE(model.connectionState(), "ready");
+        QVERIFY(QMetaObject::invokeMethod(view->rootObject(), "showDownloadWindow", Q_ARG(QString, id), Q_ARG(bool, false)));
+        auto *window = downloadWindow(*view, id); QVERIFY(window); QVERIFY(QTest::qWaitForWindowExposed(window));
+        auto *list = window->findChild<QQuickItem *>("downloadWindowPartList"); QVERIFY(list);
+        QTRY_COMPARE(list->property("count").toInt(), 8);
+        QQuickItem *slot = nullptr;
+        QVERIFY(QMetaObject::invokeMethod(list, "itemAtIndex", Q_RETURN_ARG(QQuickItem *, slot), Q_ARG(int, 1)));
+        QVERIFY(slot); QPointer<QQuickItem> sameSlot(slot);
+        // A finished engine range stays in the raw projection; new split work reuses
+        // displayed slot 2, not a ninth cumulative-history row.
+        parts[1] = partRange(1, "completed", 100); parts.append(partRange(8, "connecting", 0));
+        setParts(service, id, parts);
+        QTRY_COMPARE(model.downloadParts(id)["items"].toList().size(), 9);
+        QTest::qWait(350);
+        QCOMPARE(list->property("count").toInt(), 8);
+        QVERIFY(sameSlot); QCOMPARE(sameSlot->property("index").toInt(), 1);
+        QTRY_COMPARE(sameSlot->property("modelData").toMap()["id"].toString(), partRange(8)["id"].toString());
+        QCOMPARE(sameSlot->property("modelData").toMap()["offset"].toString(), partRange(8)["offset"].toString());
+        QCOMPARE(sameSlot->property("modelData").toMap()["downloaded"].toString(), "0");
+        QCOMPARE(sameSlot->property("modelData").toMap()["length"].toString(), "100");
+        // A snapshot reorder cannot renumber a still-running range or rebuild slots.
+        QJsonArray reversed; for (auto i = parts.size(); i > 0; --i) reversed.append(parts[i - 1]);
+        setParts(service, id, reversed); QTest::qWait(600);
+        QVERIFY(sameSlot); QCOMPARE(sameSlot->property("modelData").toMap()["id"].toString(), partRange(8)["id"].toString());
+        QCOMPARE(model.downloadParts(id)["items"].toList().size(), 9); // Raw piece-bar data is untouched.
+        window->close();
+    }
+    void progressPartsKeepScrollPositionDuringUpdatesAndTurnover() {
+        FakeService service; service.partsCapability = true;
+        service.extensionSnapshot = {{"settings", basicSettings()}, {"queues", QJsonArray{}}};
+        const QString id = service.rows.first().toObject()["id"].toString();
+        auto download = service.rows.first().toObject(); download["size"] = "2500"; service.rows[0] = download;
+        QJsonArray parts; for (int i = 0; i < 24; ++i) parts.append(partRange(i));
+        setParts(service, id, parts);
+        PreviewDownloads resources; ServiceDownloads model(service.descriptor);
+        std::unique_ptr<QQuickView> view(liveView(model)); QTRY_COMPARE(model.connectionState(), "ready");
+        QVERIFY(QMetaObject::invokeMethod(view->rootObject(), "showDownloadWindow", Q_ARG(QString, id), Q_ARG(bool, false)));
+        auto *window = downloadWindow(*view, id); QVERIFY(window); QVERIFY(QTest::qWaitForWindowExposed(window));
+        auto *list = window->findChild<QQuickItem *>("downloadWindowPartList"); QVERIFY(list);
+        QTRY_COMPARE(list->property("count").toInt(), 24); QVERIFY(waitForRenderedFrame(window));
+        const QPointF center = list->mapToScene(QPointF(list->width() / 2, list->height() / 2));
+        QWheelEvent wheel(center, window->mapToGlobal(center.toPoint()), QPoint(), QPoint(0, -720), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+        QGuiApplication::sendEvent(window, &wheel);
+        QTRY_VERIFY(list->property("contentY").toReal() > 0); QTest::qWait(500);
+        const qreal position = list->property("contentY").toReal(); QVERIFY(position > 0);
+        for (int i = 0; i < 6; ++i) {
+            parts[12] = partRange(12, "downloading", 26 + i); setParts(service, id, parts);
+            QTRY_COMPARE(model.downloadParts(id)["items"].toList()[12].toMap()["downloaded"].toString(), QString::number(26 + i));
+            QTest::qWait(100);
+            QCOMPARE(list->property("contentY").toReal(), position);
+        }
+        parts[12] = partRange(12, "completed", 100); parts.append(partRange(24)); setParts(service, id, parts);
+        QTRY_COMPARE(model.downloadParts(id)["items"].toList().size(), 25); QTest::qWait(400);
+        QCOMPARE(list->property("contentY").toReal(), position);
+        QCOMPARE(list->property("count").toInt(), 24);
+        const auto capture = qEnvironmentVariable("QT_ADAPTER_CAPTURE_DIR");
+        if (!capture.isEmpty()) QVERIFY(window->grabWindow().save(capture + "/parts-scrolled-turnover.png"));
+        window->close();
+    }
     void progressShowsEightRowsAndResizesToDistinctCompletion() {
         FakeService service; service.partsCapability = true;
         const QString id = service.rows.first().toObject()["id"].toString();
@@ -2091,10 +2240,13 @@ private slots:
         QTRY_VERIFY((review = view->rootObject()->findChild<QQuickWindow *>("browserRequestDialog")) && review->isVisible());
         const QSize exposed = firstExposedSize(review);
         const auto capture = qEnvironmentVariable("QT_ADAPTER_CAPTURE_DIR");
-        QVERIFY(waitForRenderedFrame(review));
-        if (!capture.isEmpty()) QVERIFY(review->grabWindow().save(capture + "/single-review-first.png"));
         QSignalSpy heights(review, &QWindow::heightChanged);
         QSignalSpy widths(review, &QWindow::widthChanged);
+        QVERIFY(waitForRenderedFrame(review));
+        if (!capture.isEmpty()) {
+            QTest::qWait(350); // Opt-in image settling, still observed by both geometry spies.
+            QVERIFY(review->grabWindow().save(capture + "/single-review-first.png"));
+        }
         for (int i = 0; i < 12; ++i) {
             auto row = service.rows.first().toObject(); row["downloaded"] = QString::number(250 + i); service.rows[0] = row;
             QTest::qWait(350); // Real delayed polling/style/layout after the configure guard expires.
@@ -2307,6 +2459,18 @@ private slots:
             QVERIFY(reviewFrame(view, capture + "/capture-only-http-small.png", QSize(760, 600)));
         }
         QCOMPARE(service.commands, 0);
+        // Do not destroy the engine in the middle of native popup/deferred style
+        // construction. This capture-only case previously returned immediately
+        // after opening a second native dialog, intermittently corrupting teardown.
+        auto *http = view.rootObject()->findChild<QObject *>("httpOptionsDialog"); QVERIFY(http);
+        QTRY_VERIFY(http->property("opened").toBool());
+        auto *content = http->property("contentItem").value<QQuickItem *>(); QVERIFY(content);
+        QVERIFY(waitForRenderedFrame(content->window()));
+        QVERIFY(QMetaObject::invokeMethod(http, "close")); QTRY_VERIFY(!http->property("visible").toBool());
+        auto *add = view.rootObject()->findChild<QObject *>("addExampleDialog"); QVERIFY(add);
+        QVERIFY(QMetaObject::invokeMethod(add, "close")); QTRY_VERIFY(!add->property("visible").toBool());
+        view.close(); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        view.setSource(QUrl()); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     }
     void browserRequestsAreValidatedAndAcceptedWithoutSecrets() {
         FakeService service; service.browserCapability = true;

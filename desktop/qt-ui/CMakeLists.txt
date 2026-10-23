@@ -7,7 +7,7 @@ target_link_libraries(qtui-preview PUBLIC Qt6::Core Qt6::DBus Qt6::Network Qt6::
 qt_add_qml_module(qtui-preview URI Abdm.Desktop VERSION 1.0 NO_PLUGIN
     OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/Abdm/Desktop"
     SOURCES src/nativewindowstyle.cpp src/nativewindowstyle.h src/desktopopener.cpp src/desktopopener.h
-    src/aboutcredits.cpp src/aboutcredits.h)
+    src/aboutcredits.cpp src/aboutcredits.h src/downloadpartslots.cpp src/downloadpartslots.h)
 target_sources(qtui-preview PRIVATE ../qt-capability/src/kwindowsystembridge.cpp)
 target_include_directories(qtui-preview PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../qt-capability/src")
 if(TARGET PkgConfig::KF6WindowSystemPC)
