@@ -25,6 +25,9 @@ import androidx.compose.ui.window.v2.WindowPositionProvider
 import androidx.compose.ui.window.v2.WindowSizeProvider
 import androidx.compose.ui.window.v2.rememberWindowState
 import com.abdownloadmanager.desktop.AppComponent
+import com.abdownloadmanager.desktop.window.bringToFront
+import com.abdownloadmanager.shared.util.ui.theme.LocalUiScale
+import ir.amirab.util.desktop.screen.applyUiScale
 import com.abdownloadmanager.desktop.pages.addDownload.shared.ExtraConfig
 import com.abdownloadmanager.desktop.window.custom.CustomWindow
 import com.abdownloadmanager.desktop.window.custom.rememberWindowController
@@ -67,15 +70,16 @@ fun EditDownloadWindow(
 private fun EditDownloadWindow(
     component: DesktopEditDownloadComponent,
 ) {
-    CustomWindow(
-        state = rememberWindowState(
+    val windowState = rememberWindowState(
             initialBoundsProvider = WindowBoundsProvider(
                 sizeProvider = WindowSizeProvider.Fixed(
-                    size = DpSize(450.dp, 230.dp)
+                    size = DpSize(450.dp, 230.dp).applyUiScale(LocalUiScale.current)
                 ),
                 positionProvider = WindowPositionProvider.CenteredOnScreen
             )
-        ),
+        )
+    CustomWindow(
+        state = windowState,
         alwaysOnTop = true,
         onCloseRequest = {
             component.onRequestClose()
@@ -87,7 +91,8 @@ private fun EditDownloadWindow(
         HandleEffects(component) {
             when (it) {
                 EditDownloadPageEffects.BringToFront -> {
-                    window.toFront()
+                    windowState.requestMinimized(false)
+                    window.bringToFront()
                 }
             }
         }

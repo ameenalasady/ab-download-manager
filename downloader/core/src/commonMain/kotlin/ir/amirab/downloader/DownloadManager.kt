@@ -19,6 +19,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -33,7 +35,9 @@ class DownloadManager(
     val settings: DownloadSettings,
     val emptyFileCreator: EmptyFileCreator,
     private val downloaderRegistry: DownloaderRegistry,
-    val downloadDataFolder: File
+    val downloadDataFolder: File,
+    // Optional owner policy; legacy frontends retain their existing behavior.
+    val destinationValidator: (File) -> Unit = {},
 ) : DownloadManagerMinimalControl {
 
     val scope = CoroutineScope(SupervisorJob())
@@ -179,6 +183,41 @@ class DownloadManager(
             DownloadManagerEvents.OnJobRemoved(itemToDelete, contextContainer.getContext(id))
         )
         contextContainer.removeContext(id)
+    }
+
+    /** Forget metadata only; never initialize, clean up, rename or delete a destination.
+     * Caller must serialize mutations and detach queue producers before entry. Unlike
+     * legacy deleteDownload, this preserves ALL complete/incomplete payload files.
+     * Drains job writers before record deletion so autosave cannot resurrect history.
+     * Stores are not one transaction: failure requires resnapshot/inspection, not replay.
+     */
+    suspend fun forgetDownloadKeepingFiles(id: Long, context: DownloadItemContext = EmptyContext) {
+        val item = dlListDb.getById(id) ?: error("Download no longer exists")
+        val job = getDownloadJob(id)
+        require(job?.status?.value !is DownloadJobStatus.IsActive && job?.isDownloadActive?.value != true) {
+            "Pause download before removing it"
+        }
+        if (job != null) {
+            if (item.status != DownloadStatus.Completed) job.pause()
+            job.activeDownloadScope?.coroutineContext?.job?.cancelAndJoin()
+            job.scope.coroutineContext.job.cancelAndJoin()
+            deleteJob(id)
+        }
+        try {
+            dlListDb.remove(item)
+        } catch (e: Exception) {
+            // The old job has drained. Restore a usable job from still-persisted state,
+            // never reuse its canceled scope or let a later shutdown save the old job.
+            try { dlListDb.getById(id)?.takeIf { it.status != DownloadStatus.Completed }?.let { createJob(it).boot() } }
+            catch (restore: Exception) { e.addSuppressed(restore) }
+            throw e
+        }
+        contextContainer.updateContext(id) { it + context }
+        listOfJobsEvents.tryEmit(DownloadManagerEvents.OnJobRemoved(item, contextContainer.getContext(id)))
+        contextContainer.removeContext(id)
+        // An internal part cleanup failure may leave orphaned metadata, never deleted
+        // payloads or a false success. IDs are monotonic and are never reused.
+        partListDb.removeParts(id)
     }
 
     private fun deleteJob(
@@ -335,7 +374,7 @@ class DownloadManager(
     }
 
     fun calculateOutputFile(downloadItem: IDownloadItem): File {
-        return File(downloadItem.folder, downloadItem.name)
+        return File(downloadItem.folder, downloadItem.name).also(destinationValidator)
     }
 
     fun getJobStatusOf(id: Long): DownloadJobStatus? {

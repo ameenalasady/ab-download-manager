@@ -72,7 +72,6 @@ fun CategorySelect(
                 )
             }
         },
-        dropDownSize = DpSize(220.dp, 220.dp),
     )
 }
 

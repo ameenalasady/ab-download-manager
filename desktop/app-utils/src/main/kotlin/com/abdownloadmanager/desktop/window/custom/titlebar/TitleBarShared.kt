@@ -136,6 +136,7 @@ internal fun CommonRenderTitleBar(
     onRequestClose: () -> Unit,
     onRequestMinimize: (() -> Unit)?,
     onRequestToggleMaximize: (() -> Unit)?,
+    contentDragModifier: Modifier = Modifier,
 ) {
     Row(
         modifier.height(titleBar.titleBarHeight),
@@ -153,7 +154,7 @@ internal fun CommonRenderTitleBar(
         titleBar.RenderTitleBarContent(
             title = title,
             titlePosition = titlePosition,
-            modifier = Modifier.weight(1f),
+            modifier = contentDragModifier.then(Modifier.weight(1f)),
             windowIcon = windowIcon,
             start = start,
             end = end

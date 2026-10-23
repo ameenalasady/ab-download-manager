@@ -299,7 +299,7 @@ val downloadSystemModule = module {
         CategoryManager(
             categoryStorage = get(),
             scope = get(),
-            defaultCategoriesFactory = get(),
+            defaultCategoriesFactory = get<DefaultCategories>(),
             categoryItemProvider = get(),
         )
     }

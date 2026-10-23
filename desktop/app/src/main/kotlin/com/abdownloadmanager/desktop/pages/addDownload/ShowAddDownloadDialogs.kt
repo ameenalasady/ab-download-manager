@@ -53,8 +53,8 @@ private fun AddDownloadWindow(
     val uiScale = LocalUiScale.current
     when (addDownloadComponent) {
         is BaseAddSingleDownloadComponent -> {
-            val h = 265.applyUiScale(uiScale)
-            val w = 500.applyUiScale(uiScale)
+            val h = 312.applyUiScale(uiScale)
+            val w = 600.applyUiScale(uiScale)
             val size = remember {
                 DpSize(
                     height = h.dp,
@@ -74,7 +74,12 @@ private fun AddDownloadWindow(
                 state = state,
                 onCloseRequest = onRequestClose,
                 alwaysOnTop = true,
-                minSize = DpSize(w.dp, h.dp),
+                // This compact form is a fixed-size popup, not a content-sized window.
+                // Bound both axes at the window boundary; editors scroll long values inside it.
+                minSize = size,
+                maxSize = size,
+                resizable = false,
+                onRequestToggleMaximize = null,
                 windowController = rememberWindowController(
                     title = myStringResource(Res.string.add_download),
                 ),
@@ -89,8 +94,8 @@ private fun AddDownloadWindow(
         }
 
         is DesktopAddMultiDownloadComponent -> {
-            val h = 450
-            val w = 800
+            val h = 450.applyUiScale(uiScale)
+            val w = 800.applyUiScale(uiScale)
             val state = rememberWindowState(
                 initialBoundsProvider = WindowBoundsProvider(
                     sizeProvider = WindowSizeProvider.Fixed(

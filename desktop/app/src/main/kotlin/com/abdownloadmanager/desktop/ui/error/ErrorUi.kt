@@ -3,6 +3,8 @@ package com.abdownloadmanager.desktop.ui.error
 import com.abdownloadmanager.desktop.window.custom.CustomWindow
 import com.abdownloadmanager.desktop.window.custom.rememberWindowController
 import com.abdownloadmanager.shared.util.ui.myColors
+import com.abdownloadmanager.shared.util.ui.theme.LocalUiScale
+import ir.amirab.util.desktop.screen.applyUiScale
 import com.abdownloadmanager.shared.util.ui.theme.myTextSizes
 import com.abdownloadmanager.shared.util.ui.widget.ScreenSurface
 import com.abdownloadmanager.shared.ui.widget.ActionButton
@@ -35,7 +37,7 @@ fun ErrorWindow(
         state = rememberWindowState(
             initialBoundsProvider = WindowBoundsProvider(
                 sizeProvider = WindowSizeProvider.Fixed(
-                    size = DpSize(500.dp, 400.dp)
+                    size = DpSize(500.dp, 400.dp).applyUiScale(LocalUiScale.current)
                 ),
                 positionProvider = WindowPositionProvider.CenteredOnScreen
             )

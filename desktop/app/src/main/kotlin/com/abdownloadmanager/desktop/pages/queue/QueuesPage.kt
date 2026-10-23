@@ -53,19 +53,15 @@ fun QueuePage(component: QueuesComponent) {
     val queues = component.queuesState
     val activeItem: DownloadQueue = component.selectedItem
     val borderShape = myShapes.defaultRounded
-    val borderColor = myColors.surface
+    val borderColor = myColors.menuBorderColor
     Column {
         Row(
             Modifier.weight(1f)
         ) {
             QueueListSection(
                 modifier = Modifier
-                    .padding(horizontal = 8.dp)
-                    .width(200.dp)
-                    .padding(2.dp)
-                    .border(1.dp, borderColor, borderShape)
-                    .clip(borderShape)
-                    .padding(1.dp)
+                    .width(220.dp)
+                    .background(myColors.surface / 0.2f)
                     .fillMaxHeight(),
                 queues = queues,
                 selectedItem = component.selectedItem.id,
@@ -77,9 +73,8 @@ fun QueuePage(component: QueuesComponent) {
             QueueInfo(
                 modifier = Modifier
                     .weight(1f)
-                    .padding(2.dp)
+                    .padding(12.dp)
                     .border(1.dp, borderColor, borderShape)
-                    .padding(1.dp)
                     .clip(borderShape),
                 item = activeItem,
                 component = component.queueInfoComponent.collectAsState().value.child!!.instance,
@@ -97,42 +92,21 @@ private fun Actions(
 ) {
     val isActive by selectedItem.activeFlow.collectAsState()
     val scope = rememberCoroutineScope()
-    Row(
-        Modifier.fillMaxWidth()
-            .wrapContentWidth(Alignment.End)
-            .padding(horizontal = 16.dp)
-            .padding(vertical = 16.dp),
-    ) {
-        val space = @Composable {
-            Spacer(Modifier.width(4.dp))
-        }
-        ActionButton(
-            text = myStringResource(
-                if (isActive) {
-                    Res.string.stop_queue
-                } else {
-                    Res.string.start_queue
-                }
-            ),
-            modifier = Modifier,
-            onClick = {
-                scope.launch {
-                    if (isActive) {
-                        selectedItem.stop()
-                    } else {
-                        selectedItem.start()
+    ActionContainer(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+        ) {
+            ActionButton(
+                text = myStringResource(if (isActive) Res.string.stop_queue else Res.string.start_queue),
+                onClick = {
+                    scope.launch {
+                        if (isActive) selectedItem.stop() else selectedItem.start()
                     }
-                }
-            }
-        )
-        space()
-        ActionButton(
-            text = myStringResource(Res.string.close),
-            modifier = Modifier,
-            onClick = {
-                component.close()
-            }
-        )
+                },
+            )
+            ActionButton(text = myStringResource(Res.string.close), onClick = { component.close() })
+        }
     }
 }
 
@@ -369,7 +343,7 @@ private fun RenderQueueConfig(
                     horizontal = 8.dp,
                     vertical = 8.dp,
                 ),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             for ((index, cfgGroup) in configurables.withIndex()) {
                 RenderConfigurableGroup(

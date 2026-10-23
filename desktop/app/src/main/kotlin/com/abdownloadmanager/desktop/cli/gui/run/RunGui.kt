@@ -14,6 +14,7 @@ import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.option
 import dev.nucleusframework.aot.runtime.AotRuntime
 import ir.amirab.util.logger.appLogger
+import ir.amirab.util.desktop.window.ExperimentalDesktopProfile
 import ir.amirab.util.writeText
 import kotlinx.coroutines.runBlocking
 import kotlin.concurrent.thread
@@ -23,6 +24,7 @@ class RunGui : SuspendingCliktCommand(AppArguments.Commands.RUN) {
     val background by option(AppArguments.Args.BACKGROUND).flag()
 
     override suspend fun run() {
+        ExperimentalDesktopProfile.validateBackend()
         AppArguments.update {
             it.copy(startSilent = background)
         }

@@ -23,6 +23,7 @@ import androidx.compose.ui.window.v2.WindowPositionProvider
 import androidx.compose.ui.window.v2.WindowSizeProvider
 import androidx.compose.ui.window.v2.rememberWindowState
 import com.abdownloadmanager.shared.ui.widget.ActionButton
+import com.abdownloadmanager.shared.ui.widget.PrimaryMainActionButton
 import com.abdownloadmanager.shared.ui.widget.ActionContainer
 import com.abdownloadmanager.shared.ui.widget.Text
 import com.abdownloadmanager.shared.util.ui.theme.LocalUiScale
@@ -48,8 +49,8 @@ fun ConfirmDialog(
     onCancel: () -> Unit,
 ) {
     val uiScale = LocalUiScale.current
-    val h = 180.applyUiScale(uiScale)
-    val w = 400.applyUiScale(uiScale)
+    val h = 220.applyUiScale(uiScale)
+    val w = 460.applyUiScale(uiScale)
     val state = rememberWindowState(
         initialBoundsProvider = WindowBoundsProvider(
             sizeProvider = WindowSizeProvider.Fixed(
@@ -67,7 +68,7 @@ fun ConfirmDialog(
         onCloseRequest = onCancel,
         alwaysOnTop = true,
         minSize = DpSize(w.dp, h.dp),
-        windowController = rememberWindowController(title = type.toString()),
+        windowController = rememberWindowController(title = title.rememberString()),
     ) {
         Column {
             Row(
@@ -76,8 +77,8 @@ fun ConfirmDialog(
                     .padding(8.dp),
             ) {
                 val color = when (type) {
-                    ConfirmDialogType.Error -> myColors.info
-                    ConfirmDialogType.Info -> myColors.warning
+                    ConfirmDialogType.Error -> myColors.error
+                    ConfirmDialogType.Info -> myColors.info
                     ConfirmDialogType.Success -> myColors.success
                     ConfirmDialogType.Warning -> myColors.warning
                 }
@@ -118,15 +119,17 @@ fun ConfirmDialog(
                     LaunchedEffect(Unit) {
                         confirmFocusRequester.requestFocus()
                     }
-                    ActionButton(
-                        myStringResource(Res.string.ok),
-                        onClick = onConfirm,
-                        modifier = Modifier.focusRequester(confirmFocusRequester)
-                    )
-                    Spacer(Modifier.width(8.dp))
+                    val cautious = type == ConfirmDialogType.Error || type == ConfirmDialogType.Warning
                     ActionButton(
                         myStringResource(Res.string.cancel),
-                        onClick = onCancel
+                        onClick = onCancel,
+                        modifier = if (cautious) Modifier.focusRequester(confirmFocusRequester) else Modifier,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    PrimaryMainActionButton(
+                        text = myStringResource(Res.string.ok),
+                        onClick = onConfirm,
+                        modifier = if (cautious) Modifier else Modifier.focusRequester(confirmFocusRequester),
                     )
                 }
             }

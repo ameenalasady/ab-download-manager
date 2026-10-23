@@ -14,6 +14,7 @@ class SimpleDownloadDestination(
     val appendExtensionToIncompleteDownloads: Boolean,
     val downloadId: Long,
     private val emptyFileCreator: EmptyFileCreator,
+    private val validatePath: (File) -> Unit = {},
 ) : DownloadDestination(
     outputFile = file,
 ) {
@@ -43,6 +44,7 @@ class SimpleDownloadDestination(
         // let's open a file for writing to it!
         // it will be removed when all parts are cancelled so this method
         // maybe called multiple times
+        validatePath(fileToWrite)
         val handle = FileSystem.SYSTEM.openReadWrite(fileToWrite.toOkioPath())
         _fileHandle = handle
         return handle
@@ -63,6 +65,7 @@ class SimpleDownloadDestination(
     }
 
     override fun onAllPartsCompleted(onProgressUpdate: (Int?) -> Unit) {
+        validatePath(outputFile); validatePath(incompleteFile)
         if (appendExtensionToIncompleteDownloads) {
             // this function maybe called at some point that we may not even start download yet.
             // for example when the download has already completed, the DownloadJob will call this function! so we should do nothing.
@@ -118,6 +121,7 @@ class SimpleDownloadDestination(
     }
 
     fun prepareDestinationFolder() {
+        validatePath(fileToWrite)
         DownloadDestination.prepareDestinationFolder(fileToWrite)
     }
 
@@ -126,6 +130,7 @@ class SimpleDownloadDestination(
 //        println("preparing file ")
 //        println("file info path=$outputFile size=${outputFile.runCatching { length() }.getOrNull()}")
         val incompleteFile = fileToWrite
+        validatePath(incompleteFile)
         prepareDestinationFolder()
         emptyFileCreator
             .prepareFile(incompleteFile, outputSize, onProgressUpdate)
@@ -147,6 +152,7 @@ class SimpleDownloadDestination(
     }
 
     override fun updateLastModified() {
+        validatePath(fileToWrite)
         runCatching {
             requestedToChangeLastModified?.let {
                 fileToWrite.setLastModified(it)
@@ -155,6 +161,8 @@ class SimpleDownloadDestination(
     }
 
     override fun moveOutput(to: File) {
+        validatePath(outputFile); validatePath(to); validatePath(incompleteFile)
+        validatePath(IncompleteFileUtil.addIncompleteIndicator(to, downloadId))
         if (appendExtensionToIncompleteDownloads) {
             val incompleteFile = incompleteFile
             if (incompleteFile.exists()) {
@@ -172,6 +180,7 @@ class SimpleDownloadDestination(
     }
 
     override fun cleanUpJunkFiles() {
+        validatePath(incompleteFile)
         // remove incomplete file if exists
         val incompleteFile = incompleteFile
         if (incompleteFile.exists()) {

@@ -68,6 +68,7 @@ import ir.amirab.util.compose.IIconResolver
 import ir.amirab.util.compose.StringSource
 import ir.amirab.util.compose.asStringSource
 import ir.amirab.util.coroutines.launchWithDeferred
+import ir.amirab.util.desktop.window.ExperimentalDesktopProfile
 import ir.amirab.util.desktop.poweraction.PowerActionConfig
 import ir.amirab.util.flow.mapStateFlow
 import ir.amirab.util.osfileutil.FileUtils
@@ -77,6 +78,7 @@ import kotlinx.serialization.Serializable
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import kotlin.system.exitProcess
+import kotlin.time.Duration.Companion.seconds
 
 sealed interface AppEffects {
     data class SimpleNotificationNotification(
@@ -118,7 +120,7 @@ class AppComponent(
     val iconFromUriResolver: IIconResolver by inject()
     val updaterManager: UpdateManager by inject()
     val extraDownloadSettingStorage: ExtraDownloadSettingsStorage<DesktopExtraDownloadItemSettings> by inject()
-    val useSystemTray = appSettings.useSystemTray
+    val useSystemTray = if (ExperimentalDesktopProfile.blocksDesktopFeatures) MutableStateFlow(false) else appSettings.useSystemTray
     fun openHome() {
         scope.launch {
             showHomeSlot.value.child?.instance.let {
@@ -1022,9 +1024,32 @@ class AppComponent(
         scope.launch { exitApp() }
     }
 
+    internal var onExperimentalExit: (() -> Unit)? = null
+
     suspend fun exitApp() {
         downloadSystem.stopAnything()
-        exitProcess(0)
+        flushSettingsToDisk()
+        if (ExperimentalDesktopProfile.active) {
+            // JBR WLToolkit's JVM shutdown hook removes peers off the EDT. Let Compose
+            // dispose its windows on the EDT first, then its application scope exits.
+            withContext(Dispatchers.Main) { checkNotNull(onExperimentalExit).invoke() }
+        } else {
+            exitProcess(0)
+        }
+    }
+
+    /**
+     * settings are written with a debounce, and [exitProcess] does not give those writes a chance
+     * to run, so anything the user changed right before quitting (the window size and the maximized
+     * state in particular) would be lost.
+     */
+    private suspend fun flushSettingsToDisk() {
+        withTimeoutOrNull(3.seconds) {
+            showHomeSlot.value.child?.instance?.persistWindowState()
+            showSettingSlot.value.child?.instance?.persistWindowState()
+            appSettings.flush()
+            pageStatesStorage.flush()
+        }
     }
 
     fun closeConfirmExit() {
@@ -1217,6 +1242,7 @@ class AppComponent(
         powerActionConfig: PowerActionConfig,
         reason: PowerActionComponent.PowerActionReason,
     ) {
+        if (ExperimentalDesktopProfile.blocksDesktopFeatures) return
         scope.launch {
             powerActionNavigation.activate(
                 PowerActionComponent.Config(

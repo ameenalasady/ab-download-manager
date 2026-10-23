@@ -75,7 +75,8 @@ object LinuxTitleBar : TitleBar {
         end: @Composable (() -> Unit)?,
         onRequestClose: () -> Unit,
         onRequestMinimize: (() -> Unit)?,
-        onRequestToggleMaximize: (() -> Unit)?
+        onRequestToggleMaximize: (() -> Unit)?,
+        contentDragModifier: Modifier,
     ) {
         val windowFocused = isWindowFocused()
         CommonRenderTitleBar(
@@ -95,6 +96,7 @@ object LinuxTitleBar : TitleBar {
             onRequestClose = onRequestClose,
             onRequestMinimize = onRequestMinimize,
             onRequestToggleMaximize = onRequestToggleMaximize,
+            contentDragModifier = contentDragModifier,
         )
     }
 

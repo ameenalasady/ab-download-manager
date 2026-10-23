@@ -3,6 +3,10 @@ package com.abdownloadmanager.desktop.di
 import com.abdownloadmanager.github.GithubApi
 import com.abdownloadmanager.UpdateDownloadLocationProvider
 import com.abdownloadmanager.UpdateManager
+import com.abdownloadmanager.desktop.experimental.ExperimentalUpdateApplier
+import com.abdownloadmanager.desktop.experimental.NativeProfileStartup
+import ir.amirab.util.desktop.window.ExperimentalDesktopProfile
+import ir.amirab.util.startup.HeadlessStartupDesktop
 import com.abdownloadmanager.desktop.DesktopAddDownloadDialogManager
 import com.abdownloadmanager.desktop.AppArguments
 import com.abdownloadmanager.integration.IntegrationHandler
@@ -309,7 +313,7 @@ val downloadSystemModule = module {
         CategoryManager(
             categoryStorage = get(),
             scope = get(),
-            defaultCategoriesFactory = get(),
+            defaultCategoriesFactory = get<DefaultCategories>(),
             categoryItemProvider = get(),
         )
     }
@@ -441,6 +445,7 @@ val updaterModule = module {
         }
     }
     single<UpdateApplier> {
+        if (ExperimentalDesktopProfile.active) return@single ExperimentalUpdateApplier
         val definedPaths = get<DefinedPaths>()
         definedPaths.updateDownloadLocation
         DesktopDirectLinkUpdateApplier(
@@ -455,6 +460,10 @@ val updaterModule = module {
         )
     }
     single<UpdateChecker> {
+        if (ExperimentalDesktopProfile.active) return@single object : UpdateChecker(AppVersion.get()) {
+            override suspend fun getMyPlatformLatestVersion(): com.abdownloadmanager.updatechecker.UpdateInfo =
+                error("Update checks disabled in experimental sessions")
+        }
         GithubUpdateChecker(
             AppVersion.get(),
             githubApi = GithubApi(
@@ -475,7 +484,11 @@ val updaterModule = module {
     }
 }
 val startUpModule = module {
-    single {
+    single<AbstractStartupManager> {
+        ExperimentalDesktopProfile.desktopIntegration?.let { return@single NativeProfileStartup(it) }
+        if (ExperimentalDesktopProfile.active) return@single HeadlessStartupDesktop(
+            name = "ABDM experiment (autostart disabled)", path = "disabled", args = emptyList()
+        )
         Startup.getStartUpManagerForDesktop(
             name = AppInfo.displayName,
             path = AppInfo.mainExeFile,

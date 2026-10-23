@@ -1,5 +1,6 @@
 package com.abdownloadmanager.desktop.pages.addDownload.multiple
 
+import com.abdownloadmanager.desktop.ui.template.OptionPopupAnchor
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.onClick
@@ -56,18 +57,6 @@ fun AddMultiItemPage(
             addMultiDownloadComponent,
         )
     }
-    val currentDownloadConfigurableList by addMultiDownloadComponent.currentDownloadConfigurableList.collectAsState()
-    currentDownloadConfigurableList?.let {
-        ExtraConfig(
-            onDismiss = {
-                addMultiDownloadComponent.openConfigurableList(null)
-            },
-            configurables = it
-        )
-    }
-    ShowAddToQueueDialog(
-        queueComponent = addMultiDownloadComponent.selectQueueComponent,
-    )
 }
 
 @Composable
@@ -128,17 +117,16 @@ fun Footer(
                             enabled = component.canClickAdd,
                         )
                         Spacer(Modifier.width(8.dp))
-                        PrimaryMainActionButton(
-                            text = myStringResource(Res.string.add),
-                            onClick = {
-                                component.selectQueueComponent.openAddToQueueDialog()
-                            },
-                            onLongClick = {
-                                component.selectQueueComponent.fastConfirm()
-                            },
-                            enabled = component.canClickAdd,
-                            modifier = Modifier,
-                        )
+                        OptionPopupAnchor {
+                            PrimaryMainActionButton(
+                                text = myStringResource(Res.string.add),
+                                onClick = { component.selectQueueComponent.openAddToQueueDialog() },
+                                onLongClick = { component.selectQueueComponent.fastConfirm() },
+                                enabled = component.canClickAdd,
+                                modifier = Modifier,
+                            )
+                            ShowAddToQueueDialog(queueComponent = component.selectQueueComponent)
+                        }
                         Spacer(Modifier.width(8.dp))
                         ActionButton(
                             text = myStringResource(Res.string.cancel),

@@ -7,6 +7,9 @@ import com.abdownloadmanager.shared.storage.SupportedSizeUnits
 import com.abdownloadmanager.shared.util.AutoStartManager
 import com.abdownloadmanager.shared.util.SizeAndSpeedUnitProvider
 import com.abdownloadmanager.shared.util.DownloadSystem
+import com.abdownloadmanager.shared.util.DownloadEnginePolicy
+import com.abdownloadmanager.shared.util.DownloadEnginePolicyController
+import com.abdownloadmanager.shared.util.DownloadEnginePolicyBinding
 import com.abdownloadmanager.shared.util.autoremove.RemovedDownloadsFromDiskTracker
 import com.abdownloadmanager.shared.util.category.CategoryManager
 import com.abdownloadmanager.shared.util.proxy.ProxyManager
@@ -18,6 +21,7 @@ import ir.amirab.util.datasize.ConvertSizeConfig
 import ir.amirab.util.flow.mapStateFlow
 import ir.amirab.util.flow.withPrevious
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
@@ -60,7 +64,7 @@ open class BaseAppRepository(
                 isUserInteracting && isInBackground
             }
         }
-    }.stateIn(scope, SharingStarted.Eagerly, false)
+    }.stateIn(scope, SharingStarted.Eagerly, speedLimitMode.value == Enabled)
     val isSpeedLimitApplied = MutableStateFlow(false)
 
     val threadCount = appSettings.threadCount
@@ -98,19 +102,32 @@ open class BaseAppRepository(
         }
     }
 
+    private val enginePolicyController = DownloadEnginePolicyController(
+        downloadSettings, downloadManager, downloadSystem.manualDownloadQueue, downloadMonitor,
+    )
+    private val enginePolicyBinding: DownloadEnginePolicyBinding
+
     fun boot() {
-        updateDownloadSettings()
+        val policy = currentEnginePolicy()
+        enginePolicyController.apply(policy)
+        isSpeedLimitApplied.value = policy.globalSpeedLimit > 0
     }
 
-    private fun updateDownloadSettings() {
-        downloadSettings.defaultThreadCount = threadCount.value
-        downloadSettings.dynamicPartCreationMode = dynamicPartCreation.value
-        downloadSettings.useServerLastModifiedTime = useServerLastModifiedTime.value
-        downloadSettings.appendExtensionToIncompleteDownloads = appendExtensionToIncompleteDownloads.value
-        downloadSettings.useSparseFileAllocation = useSparseFileAllocation.value
-        downloadSettings.maxDownloadRetryCount = maxDownloadRetryCount.value
-        downloadSettings.globalSpeedLimit = speedLimiter.value
-    }
+    /** Only the extracted engine subscription; not a full platform/repository shutdown. */
+    suspend fun closeEnginePolicyAndJoin() = enginePolicyBinding.closeAndJoin()
+
+    private fun currentEnginePolicy() = DownloadEnginePolicy(
+        threadCount = threadCount.value,
+        minPartSize = minPartSize.value,
+        dynamicPartCreation = dynamicPartCreation.value,
+        useServerLastModifiedTime = useServerLastModifiedTime.value,
+        appendExtensionToIncompleteDownloads = appendExtensionToIncompleteDownloads.value,
+        useSparseFileAllocation = useSparseFileAllocation.value,
+        maxDownloadRetryCount = maxDownloadRetryCount.value,
+        globalSpeedLimit = DownloadEnginePolicy.effectiveSpeedLimit(shouldUseSpeedLimit.value, speedLimiter.value),
+        maxConcurrentDownloads = maxConcurrentDownloads.value,
+        useAverageSpeed = useAverageSpeed.value,
+    )
 
     init {
         saveLocation
@@ -131,69 +148,14 @@ open class BaseAppRepository(
             .onEach { enabled ->
                 AutoStartManager.startOnBoot(enabled)
             }.launchIn(scope)
-        combine(
-            shouldUseSpeedLimit,
-            speedLimiter,
-        ) { useSpeedLimit, speedLimit ->
-            if (useSpeedLimit) {
-                speedLimit.coerceAtLeast(1)
-            } else {
-                0
-            }
-        }
-            .debounce(500.milliseconds)
-            .onEach {
-                isSpeedLimitApplied.value = it > 0L
-                downloadSettings.globalSpeedLimit = it
-                downloadManager.limitGlobalSpeed(it)
-            }.launchIn(scope)
-        useAverageSpeed
-            .debounce(500.milliseconds)
-            .onEach {
-                downloadMonitor.useAverageSpeed = it
-            }.launchIn(scope)
-        threadCount
-            .debounce(500.milliseconds)
-            .onEach {
-                downloadSettings.defaultThreadCount = it
-                downloadManager.reloadSetting()
-            }.launchIn(scope)
-        minPartSize
-            .debounce(500.milliseconds)
-            .onEach {
-                downloadSettings.minPartSize = it
-                downloadManager.reloadSetting()
-            }.launchIn(scope)
-        dynamicPartCreation
-            .debounce(500.milliseconds)
-            .onEach {
-                downloadSettings.dynamicPartCreationMode = it
-                downloadManager.reloadSetting()
-            }.launchIn(scope)
-        useServerLastModifiedTime
-            .debounce(500.milliseconds)
-            .onEach {
-                downloadSettings.useServerLastModifiedTime = it
-                downloadManager.reloadSetting()
-            }.launchIn(scope)
-        appendExtensionToIncompleteDownloads
-            .debounce(500.milliseconds)
-            .onEach {
-                downloadSettings.appendExtensionToIncompleteDownloads = it
-                downloadManager.reloadSetting()
-            }.launchIn(scope)
-        useSparseFileAllocation
-            .debounce(500.milliseconds)
-            .onEach {
-                downloadSettings.useSparseFileAllocation = it
-                downloadManager.reloadSetting()
-            }.launchIn(scope)
-        maxDownloadRetryCount
-            .debounce(500.milliseconds)
-            .onEach {
-                downloadSettings.maxDownloadRetryCount = it
-                downloadManager.reloadSetting()
-            }.launchIn(scope)
+        val engineInputs: List<Flow<Any>> = listOf(
+            shouldUseSpeedLimit, speedLimiter, useAverageSpeed, threadCount, minPartSize,
+            dynamicPartCreation, useServerLastModifiedTime, appendExtensionToIncompleteDownloads,
+            useSparseFileAllocation, maxDownloadRetryCount, maxConcurrentDownloads,
+        )
+        enginePolicyBinding = DownloadEnginePolicyBinding(
+            scope, combine(engineInputs) { currentEnginePolicy() }, enginePolicyController::apply,
+        ) { isSpeedLimitApplied.value = it.globalSpeedLimit > 0 }
         trackDeletedFilesOnDisk
             .debounce(500.milliseconds)
             .onEach { enabled ->
@@ -203,11 +165,6 @@ open class BaseAppRepository(
                 } else {
                     removedDownloadsFromDiskTracker.stop()
                 }
-            }.launchIn(scope)
-        maxConcurrentDownloads
-            .debounce(500.milliseconds)
-            .onEach {
-                downloadSystem.manualDownloadQueue.setMaxConcurrent(it)
             }.launchIn(scope)
     }
 }

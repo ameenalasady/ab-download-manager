@@ -6,6 +6,7 @@ import com.abdownloadmanager.desktop.utils.isAppInstalled
 import ir.amirab.util.createParentDirectories
 import ir.amirab.util.deleteIfExists
 import ir.amirab.util.desktop.WindowsRegistry
+import ir.amirab.util.desktop.window.ExperimentalDesktopProfile
 import ir.amirab.util.platform.Platform
 import ir.amirab.util.writeText
 import kotlinx.serialization.json.Json
@@ -138,13 +139,14 @@ class MacosNativeMessagingManifestApplier(
 class LinuxNativeMessagingManifestApplier(
     json: Json
 ) : NativeMessagingManifestApplier(json) {
+    private val integrationHome get() = ExperimentalDesktopProfile.desktopIntegration?.home?.path ?: AppProperties.userDir
 
     private val nativeMessagingFileName = "${AppInfo.packageName}.json"
 
     private val firefoxNativeMessagingPaths
         get() = listOf(
             Path(
-                AppProperties.userDir,
+                integrationHome,
                 ".mozilla/native-messaging-hosts",
                 nativeMessagingFileName
             ).toOkioPath()
@@ -152,7 +154,7 @@ class LinuxNativeMessagingManifestApplier(
 
 
     private fun createChromiumNativeMessagingPath(browserConfigDir: String) = Path(
-        AppProperties.userDir,
+        integrationHome,
         ".config",
         browserConfigDir,
         "NativeMessagingHosts",

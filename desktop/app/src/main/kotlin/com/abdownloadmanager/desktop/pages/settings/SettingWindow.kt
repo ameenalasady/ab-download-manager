@@ -4,6 +4,15 @@ import com.abdownloadmanager.desktop.window.custom.CustomWindow
 import com.abdownloadmanager.shared.util.mvi.HandleEffects
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.dp
+import com.abdownloadmanager.desktop.window.ScreenGeometry
+import com.abdownloadmanager.desktop.window.bringToFront
+import com.abdownloadmanager.desktop.window.linux.isFullscreenNow
+import com.abdownloadmanager.shared.util.ui.theme.LocalUiScale
+import ir.amirab.util.desktop.screen.applyUiScale
+import ir.amirab.util.desktop.screen.unApplyUiScale
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.v2.WindowBoundsProvider
 import androidx.compose.ui.window.v2.WindowPositionProvider
@@ -18,6 +27,7 @@ import com.abdownloadmanager.shared.settings.BaseSettingsComponent
 import com.abdownloadmanager.shared.util.rememberChild
 import com.abdownloadmanager.resources.Res
 import ir.amirab.util.compose.resources.myStringResource
+import java.awt.Frame
 
 @Composable
 fun SettingWindow(
@@ -33,23 +43,22 @@ private fun SettingWindow(
     settingsComponent: DesktopSettingsComponent,
     onRequestCloseWindow: () -> Unit,
 ) {
+    val uiScale = LocalUiScale.current
+    val minimumSize = DpSize(720.dp, 420.dp).applyUiScale(uiScale)
+    val initialSize = remember(settingsComponent, uiScale) {
+        ScreenGeometry.fitSize(settingsComponent.windowSize.value.applyUiScale(uiScale), minimumSize)
+    }
     val windowState = rememberWindowState(
         initialBoundsProvider = WindowBoundsProvider(
             sizeProvider = WindowSizeProvider.Fixed(
-                size = settingsComponent.windowSize.value,
+                size = initialSize,
             ),
             positionProvider = WindowPositionProvider.CenteredOnScreen
         )
     )
-    LaunchedEffect(windowState.sizeOrNull) {
-        if (windowState.isMinimizedOrNull == false && windowState.placementOrNull == WindowPlacement.Floating) {
-            windowState.sizeOrNull?.let {
-                settingsComponent.setWindowSize(it)
-            }
-        }
-    }
     CustomWindow(
         state = windowState,
+        minSize = minimumSize,
         onCloseRequest = {
             onRequestCloseWindow()
         },
@@ -57,13 +66,29 @@ private fun SettingWindow(
             title = myStringResource(Res.string.settings),
         ),
     ) {
+        LaunchedEffect(windowState.sizeOrNull, uiScale) {
+            if (windowState.isMinimizedOrNull != false || windowState.placementOrNull != WindowPlacement.Floating) {
+                return@LaunchedEffect
+            }
+            // a window manager fullscreen still reports the floating placement underneath,
+            // saving it would persist the fullscreen size as the floating one
+            if (isFullscreenNow(window)) return@LaunchedEffect
+            // the placement sync runs a round trip behind the native window, the raw
+            // maximized bits do not
+            if ((window.extendedState and Frame.MAXIMIZED_BOTH) != 0) return@LaunchedEffect
+            windowState.sizeOrNull?.let {
+                if (it.width >= minimumSize.width && it.height >= minimumSize.height) {
+                    settingsComponent.setWindowSize(it.unApplyUiScale(uiScale))
+                }
+            }
+        }
         HandleEffects(settingsComponent) {
             when (it) {
                 is BaseSettingsComponent.Effects.Platform -> {
                     when (it as DesktopSettingsComponent.Effects) {
                         DesktopSettingsComponent.Effects.BringToFront -> {
                             windowState.requestMinimized(false)
-                            window.toFront()
+                            window.bringToFront()
                         }
                     }
                 }

@@ -1,6 +1,7 @@
 package com.abdownloadmanager.desktop.pages.singleDownloadPage
 
 import com.abdownloadmanager.desktop.DesktopDownloadDialogManager
+import com.abdownloadmanager.desktop.window.bringToFront
 import com.abdownloadmanager.desktop.window.custom.CustomWindow
 import com.abdownloadmanager.desktop.window.custom.WindowIcon
 import com.abdownloadmanager.desktop.window.custom.rememberWindowController
@@ -94,7 +95,7 @@ private fun FrameWindowScope.CommonContent(
                 when (it) {
                     DesktopSingleDownloadComponent.Effects.BringToFront -> {
                         state.requestMinimized(false)
-                        window.toFront()
+                        window.bringToFront()
                     }
                 }
             }
@@ -132,7 +133,7 @@ private fun CompletedWindow(
         resizable = false,
         alwaysOnTop = true,
         onCloseRequest = onRequestClose,
-        minSize = DpSize(defaultWidth.dp, defaultHeight.dp),
+        minSize = DpSize(defaultWidth.dp, defaultHeight.dp).applyUiScale(uiScale),
         windowController = rememberWindowController(
             title = getDownloadTitle(itemState),
         ),
@@ -142,16 +143,6 @@ private fun CompletedWindow(
             state = state,
             itemState = itemState,
         )
-        var h = defaultHeight
-        var w = defaultWidth
-        LaunchedEffect(w, h) {
-            state.requestSize(
-                DpSize(
-                    width = w.dp,
-                    height = h.dp
-                ).applyUiScale(uiScale)
-            )
-        }
         CompletedDownloadPage(
             singleDownloadComponent,
             itemState,

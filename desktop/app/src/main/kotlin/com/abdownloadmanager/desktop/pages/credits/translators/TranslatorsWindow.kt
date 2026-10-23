@@ -13,6 +13,8 @@ import com.abdownloadmanager.desktop.AppComponent
 import com.abdownloadmanager.desktop.window.custom.CustomWindow
 import com.abdownloadmanager.desktop.window.custom.rememberWindowController
 import com.abdownloadmanager.resources.Res
+import com.abdownloadmanager.shared.util.ui.theme.LocalUiScale
+import ir.amirab.util.desktop.screen.applyUiScale
 import ir.amirab.util.compose.resources.myStringResource
 
 
@@ -39,7 +41,7 @@ private fun TranslatorsWindow(
         state = rememberWindowState(
             initialBoundsProvider = WindowBoundsProvider(
                 sizeProvider = WindowSizeProvider.Fixed(
-                    size = DpSize(650.dp, 500.dp)
+                    size = DpSize(650.dp, 500.dp).applyUiScale(LocalUiScale.current)
                 ),
             )
         ),

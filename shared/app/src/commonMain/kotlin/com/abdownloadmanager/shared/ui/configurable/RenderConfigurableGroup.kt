@@ -5,6 +5,7 @@ import com.abdownloadmanager.shared.util.ui.theme.myTextSizes
 import com.abdownloadmanager.shared.util.div
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import com.abdownloadmanager.shared.ui.widget.Text
 import androidx.compose.runtime.Composable
@@ -31,16 +32,15 @@ fun RenderConfigurableGroup(
     Column(
         modifier
             .clip(myShapes.defaultRounded)
-            .background(myColors.surface / 0.5f)
+            .border(1.dp, myColors.onBackground / 0.08f, myShapes.defaultRounded)
+            .background(myColors.surface / 0.45f)
     ) {
         title?.rememberString()?.let {
             Text(
                 text = it,
-                fontSize = myTextSizes.base,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier
-                    .padding(start = 8.dp)
-                    .padding(vertical = 8.dp)
+                fontSize = myTextSizes.lg,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
             )
             Spacer(
                 Modifier

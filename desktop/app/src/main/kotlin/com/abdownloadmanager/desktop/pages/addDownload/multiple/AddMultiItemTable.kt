@@ -1,5 +1,6 @@
 package com.abdownloadmanager.desktop.pages.addDownload.multiple
 
+import com.abdownloadmanager.desktop.ui.template.OptionPopupAnchor
 import androidx.compose.foundation.*
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
@@ -19,6 +20,7 @@ import androidx.compose.ui.input.pointer.isShiftPressed
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.abdownloadmanager.resources.Res
+import com.abdownloadmanager.desktop.pages.addDownload.shared.ExtraConfig
 import com.abdownloadmanager.shared.downloaderinui.add.NewDownloadInputsUniqueIdType
 import com.abdownloadmanager.shared.pages.adddownload.multiple.NewMultiDownloadState
 import com.abdownloadmanager.shared.ui.widget.CheckBox
@@ -39,6 +41,8 @@ fun AddMultiDownloadTable(
     component: DesktopAddMultiDownloadComponent,
 ) {
     var isCtrlPressed by remember { mutableStateOf(false) }
+    var configuredItemId by remember { mutableStateOf<NewDownloadInputsUniqueIdType?>(null) }
+    val configurables by component.currentDownloadConfigurableList.collectAsState()
 
     val lastSelectedId = component.lastSelectedId
     val context = AddMultiItemListContext(component, component.isAllFilteredSelected.collectAsState().value)
@@ -92,7 +96,7 @@ fun AddMultiDownloadTable(
                         LocalIsChecked provides isSelected,
                     ) {
                         val itemInteractionSource = remember { MutableInteractionSource() }
-                        Box(
+                        OptionPopupAnchor(
                             Modifier
                                 .widthIn(min = getTableSize().visibleWidth)
                                 .onClick(
@@ -124,6 +128,7 @@ fun AddMultiDownloadTable(
                                 .onClick(
                                     matcher = PointerMatcher.mouse(PointerButton.Secondary)
                                 ) {
+                                    configuredItemId = item.id
                                     component.openConfigurableList(item.id)
                                 }
                                 .fillMaxWidth()
@@ -151,6 +156,14 @@ fun AddMultiDownloadTable(
                                 .padding(vertical = 8.dp, horizontal = itemHorizontalPadding)
                         ) {
                             content()
+                            if (configuredItemId == item.id) {
+                                configurables?.let {
+                                    ExtraConfig(
+                                        onDismiss = { component.openConfigurableList(null) },
+                                        configurables = it,
+                                    )
+                                }
+                            }
                         }
                     }
                 }

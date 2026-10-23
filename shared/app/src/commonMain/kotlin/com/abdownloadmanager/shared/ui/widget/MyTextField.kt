@@ -30,6 +30,8 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
@@ -84,12 +86,13 @@ fun MyTextField(
                 else PointerIcon.Default
             )
             .onKeyEvent {
-                if (it.key == Key.Escape) {
+                if (it.key == Key.Escape && it.type == KeyEventType.KeyDown) {
                     fm.clearFocus()
                     true
                 } else false
             }
             .clickable(
+                enabled = enabled,
                 indication = null,
                 interactionSource = null,
             ) {
@@ -126,9 +129,7 @@ fun MyTextField(
                 .focusRequester(focusRequester),
             textStyle = LocalTextStyle.current.merge(
                 TextStyle(
-                    color = LocalContentColor.current.ifThen(!enabled) {
-                        copy(0.5f)
-                    },
+                    color = contentColor,
                     fontSize = fontSize
                 )
             ),
@@ -143,7 +144,7 @@ fun MyTextField(
                         Text(
                             text = placeholder,
                             maxLines = 1,
-                            color = contentColor / 50,
+                            color = contentColor / 0.6f,
                             fontSize = textSize
                         )
                     }

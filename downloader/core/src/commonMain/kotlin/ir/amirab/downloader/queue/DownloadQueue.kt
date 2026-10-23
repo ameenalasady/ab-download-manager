@@ -13,6 +13,8 @@ import ir.amirab.util.coroutines.debounce
 import ir.amirab.util.guardedEntry
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
@@ -22,8 +24,9 @@ class DownloadQueue(
     val persistedData: DownloadQueuePersistedDataAccess,
     val downloadEvents: DownloadManagerMinimalControl,
     val onQueueEvent: (QueueEvent) -> Unit,
+    ownerContext: CoroutineContext = EmptyCoroutineContext,
 ) {
-    private val scope = CoroutineScope(SupervisorJob())
+    private val scope = CoroutineScope(ownerContext + SupervisorJob(ownerContext[Job]))
 
     //    private val mutex = Mutex()
     private var booted = guardedEntry()
@@ -424,7 +427,8 @@ class DownloadQueue(
         return getDownloadableItemFromQueue()?.let {
             activeItems.add(it)
             scope.launch {
-                downloadEvents.startJob(it, ResumedBy(me))
+                // A stop/remove can invalidate a start already queued on the owner.
+                if (isQueueActive && it in getQueueModel().queueItems && it in activeItems) downloadEvents.startJob(it, ResumedBy(me))
             }
             true
         } ?: false
@@ -456,6 +460,8 @@ class DownloadQueue(
         }
     }
 
+
+    suspend fun persistNow() = persist()
 
     private suspend fun persist() {
         val queue = getQueueModel()
@@ -516,6 +522,16 @@ class DownloadQueue(
 
     fun removeFromQueue(id: Long) {
         removeFromQueue(listOf(id))
+    }
+
+    /** Stop scheduler/listener/autosaver and JOIN every child before final persistence.
+     * The owner must separately drain transfer jobs before releasing its profile lease.
+     * Call from the queue's owner context, not a child of this queue's scope.
+     */
+    suspend fun closeAndJoin() {
+        setActive(false)
+        scope.coroutineContext.job.cancelAndJoin()
+        persist()
     }
 
     fun dispose() {

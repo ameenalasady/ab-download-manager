@@ -3,6 +3,7 @@ package com.abdownloadmanager.desktop.nativemessaging
 import com.abdownloadmanager.desktop.utils.AppInfo
 import com.abdownloadmanager.shared.util.SharedConstants
 import io.ktor.util.Platform
+import ir.amirab.util.desktop.window.ExperimentalDesktopProfile
 import ir.amirab.util.logger.thisLogger
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -56,6 +57,7 @@ class NativeMessaging(
     }
 
     fun installManifests() {
+        if (ExperimentalDesktopProfile.blocksDesktopFeatures) return
         val execFile = AppInfo.nativeMessagingExeFile ?: return
         val firefox = createFirefoxManifest(execFile)
         val chrome = createChromeManifest(execFile)
@@ -67,6 +69,7 @@ class NativeMessaging(
         )
     }
     fun uninstallManifests() {
+        if (ExperimentalDesktopProfile.blocksDesktopFeatures) return
         nativeMessagingManifestApplier.removeManifests()
     }
 

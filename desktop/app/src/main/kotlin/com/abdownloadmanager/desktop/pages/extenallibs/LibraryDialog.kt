@@ -3,6 +3,7 @@ package com.abdownloadmanager.desktop.pages.extenallibs
 import com.abdownloadmanager.shared.ui.widget.MaybeLinkText
 import com.abdownloadmanager.shared.util.ui.ProvideTextStyle
 import com.abdownloadmanager.shared.util.ui.myColors
+import com.abdownloadmanager.desktop.ui.template.dialogSurface
 import com.abdownloadmanager.shared.util.ui.theme.myTextSizes
 import com.abdownloadmanager.shared.ui.widget.ActionButton
 import com.abdownloadmanager.shared.util.ui.WithContentAlpha
@@ -46,16 +47,7 @@ fun LibraryDialog(
             val shape = myShapes.defaultRounded
             Column(
                 Modifier
-                    .clip(shape)
-                    .border(2.dp, myColors.onBackground / 10, shape)
-                    .background(
-                        Brush.linearGradient(
-                            listOf(
-                                myColors.surface,
-                                myColors.background,
-                            )
-                        )
-                    )
+                    .dialogSurface(shape)
                     .padding(16.dp)
             ) {
                 Column(

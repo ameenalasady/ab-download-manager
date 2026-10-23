@@ -7,73 +7,71 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.window.PopupPositionProviderAtPosition
+import androidx.compose.ui.unit.dp
 import ir.amirab.util.desktop.GlobalLayoutDirection
-import java.awt.Component
-import java.awt.Insets
-import java.awt.Toolkit
+import java.awt.MouseInfo
 import java.awt.Window
 
+/**
+ * Places this window where the mouse is, which is where the user just clicked to open it.
+ *
+ * There is no global pointer position under wayland - a client is only told about the pointer
+ * while it is over one of its own surfaces - so awt hands us nothing there and we have to settle
+ * for the middle of the window this one belongs to.
+ */
+fun Window.moveNearMouse(
+    alignment: Alignment = Alignment.BottomEnd,
+) {
+    val mousePosition = currentMousePosition()
+    if (mousePosition == null) {
+        // centers on the screen when there is no owner
+        setLocationRelativeTo(owner)
+        return
+    }
+    moveSafe(mousePosition, alignment)
+}
+
+/** @return where the pointer is in desktop coordinates, or `null` when the platform will not say */
+fun currentMousePosition(): DpOffset? {
+    val location = runCatching {
+        MouseInfo.getPointerInfo()?.location
+    }.getOrNull() ?: return null
+    return DpOffset(location.x.dp, location.y.dp)
+}
+
+/**
+ * Places this window next to [position], pulling it back inside the screen when it would not
+ * fit there.
+ *
+ * [position] is in absolute desktop coordinates, so the window is kept inside the screen that
+ * actually holds that point - on a second monitor the primary screen says nothing useful about
+ * where the window may go.
+ */
 fun Window.moveSafe(
     position: DpOffset,
     alignment: Alignment = Alignment.BottomEnd,
 ) {
-    val window = this
-    val p = PopupPositionProviderAtPosition(
+    val area = ScreenGeometry.usableArea(position) ?: return
+    val screenOrigin = IntOffset(area.left.value.toInt(), area.top.value.toInt())
+    val positionProvider = PopupPositionProviderAtPosition(
         positionPx = Offset.Zero,
         isRelativeToAnchor = true,
         offsetPx = Offset.Zero,
         alignment = alignment,
         windowMarginPx = 0,
     )
-
-    val screenSize = getScreenSize()
-    val insets = getScreenInsets(window)
-    val offset = p.calculatePosition(
-        popupContentSize = IntSize(
-            window.width, window.height
-        ),
+    val anchor = IntOffset(
+        x = position.x.value.toInt() - screenOrigin.x,
+        y = position.y.value.toInt() - screenOrigin.y,
+    )
+    val offset = positionProvider.calculatePosition(
+        popupContentSize = IntSize(width, height),
         layoutDirection = GlobalLayoutDirection,
-        windowSize = screenSize - insets,
-        anchorBounds = IntRect(
-            position.x.value.toInt(),
-            position.y.value.toInt(),
-            position.x.value.toInt(),
-            position.y.value.toInt(),
-        ),
-    ) + insets
-    window.setLocation(
-        offset.x,
-        offset.y,
+        windowSize = IntSize(area.width.value.toInt(), area.height.value.toInt()),
+        anchorBounds = IntRect(anchor, IntSize.Zero),
     )
-}
-
-fun getScreenInsets(component: Component): Insets {
-    return runCatching {
-        Toolkit.getDefaultToolkit().getScreenInsets(component.graphicsConfiguration)
-    }.getOrElse {
-        Insets(0, 0, 0, 0)
-    }
-}
-
-private operator fun IntSize.minus(insets: Insets): IntSize {
-    return IntSize(
-        width - (insets.left + insets.right),
-        height - (insets.top + insets.bottom)
+    setLocation(
+        offset.x + screenOrigin.x,
+        offset.y + screenOrigin.y,
     )
-}
-
-private operator fun IntOffset.plus(insets: Insets): IntOffset {
-    return copy(
-        x = x + insets.left,
-        y = y + insets.top,
-    )
-}
-
-//it is dp size!
-private fun getScreenSize(): IntSize {
-    Toolkit.getDefaultToolkit().screenSize.run {
-        return IntSize(
-            width, height
-        )
-    }
 }

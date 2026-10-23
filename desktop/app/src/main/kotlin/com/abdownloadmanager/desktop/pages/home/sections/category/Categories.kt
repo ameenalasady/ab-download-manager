@@ -49,6 +49,7 @@ import com.abdownloadmanager.shared.ui.widget.DelayedTooltipPopup
 import com.abdownloadmanager.shared.util.category.Category
 import com.abdownloadmanager.shared.util.category.rememberIconPainter
 import com.abdownloadmanager.shared.util.ui.theme.mySpacings
+import com.abdownloadmanager.shared.util.ui.theme.myShapes
 import ir.amirab.util.compose.resources.myStringResource
 import ir.amirab.util.ifThen
 import sh.calvin.reorderable.ReorderableColumn
@@ -75,11 +76,14 @@ private fun ReorderableListItemScope.CategoryFilterItem(
                 onDragDone = { isDraggingOnMe = false },
                 onItemsDropped = onItemsDropped,
             )
+            .clip(myShapes.defaultRounded)
             .hoverable(interactionSource)
             .background(
-                if (isSelected) {
-                    myColors.onBackground / 0.05f
-                } else Color.Transparent
+                when {
+                    isSelected -> myColors.primary / 0.14f
+                    isHovered -> myColors.onBackground / 0.05f
+                    else -> Color.Transparent
+                }
             )
             .ifThen(isDraggingOnMe) {
                 val infiniteTransition = rememberInfiniteTransition()
@@ -106,8 +110,8 @@ private fun ReorderableListItemScope.CategoryFilterItem(
         }
         Row(
             modifier = Modifier
-                .padding(start = 24.dp)
-                .padding(horizontal = 4.dp, vertical = 6.dp),
+                .heightIn(min = 36.dp)
+                .padding(start = 32.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             WithContentAlpha(if (isSelected) 1f else 0.75f) {
@@ -117,7 +121,7 @@ private fun ReorderableListItemScope.CategoryFilterItem(
                     null,
                     Modifier.size(16.dp),
                 )
-                Spacer(Modifier.width(4.dp))
+                Spacer(Modifier.width(8.dp))
                 Text(
                     category.name,
                     Modifier.weight(1f),
@@ -199,9 +203,10 @@ fun StatusFilterItem(
             Box(
                 Modifier
                     .height(IntrinsicSize.Max)
+                    .clip(myShapes.defaultRounded)
                     .background(
                         if (isSelected) {
-                            myColors.onBackground / 0.05f
+                            myColors.primary / 0.14f
                         } else Color.Transparent
                     )
                     .selectable(
@@ -215,9 +220,8 @@ fun StatusFilterItem(
                     )
             ) {
                 Row(
-                    Modifier.padding(vertical = 4.dp)
-                        .padding(start = 16.dp)
-                        .padding(end = 2.dp),
+                    Modifier.heightIn(min = 36.dp)
+                        .padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     WithContentAlpha(if (isSelected) 1f else 0.75f) {
@@ -226,12 +230,12 @@ fun StatusFilterItem(
                             null,
                             Modifier.size(mySpacings.iconSize)
                         )
-                        Spacer(Modifier.width(4.dp))
+                        Spacer(Modifier.width(8.dp))
                         Text(
                             statusFilter.name.rememberString(),
                             Modifier.weight(1f),
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                            fontSize = myTextSizes.lg,
+                            fontSize = myTextSizes.base,
                             overflow = TextOverflow.Ellipsis,
                             maxLines = 1,
                         )

@@ -1,0 +1,45 @@
+--- a/ComposeWindowPanel.desktop.kt
++++ b/ComposeWindowPanel.desktop.kt
+@@ -70,9 +70,18 @@
+             // opening separate windows from [ComposePanel] with such layer type.
+             if (it == LayerType.OnComponent) LayerType.OnSameCanvas else it
+         },
+-        // Swing graphics is not supposed to be used here.
+-        // TODO: Add isVsyncEnabled flag to ComposeWindowPanel constructor
+-        renderSettings = RenderSettings.SkiaSurface(),
++        // ABDM EXPERIMENT ONLY (Compose 1.12.1): Swing graphics is not supported upstream
++        // for standalone windows. Require explicit opt-in AND the actual native toolkit.
++        // XToolkit keeps the original SkiaSurface path even with the property enabled.
++        // Known limitations: extra frame copy, no Skiko fullscreen or native handle.
++        renderSettings = if (
++            java.lang.Boolean.getBoolean("abdm.experimental.nativeWayland") &&
++            window.toolkit.javaClass.name == "sun.awt.wl.WLToolkit"
++        ) {
++            RenderSettings.SwingGraphics()
++        } else {
++            RenderSettings.SkiaSurface()
++        },
+         coroutineContext = coroutineContext
+     )
+     private val composeContainer
+@@ -122,3 +131,20 @@
++    override fun paint(g: java.awt.Graphics) {
++        if (
++            java.lang.Boolean.getBoolean("abdm.experimental.nativeWayland") &&
++            window.toolkit.javaClass.name == "sun.awt.wl.WLToolkit"
++        ) {
++            // SwingSkiaLayerComponent.paint updates the scene's density/size when the
++            // graphics configuration changes, but not PlatformWindowContext. A Wayland
++            // surface can acquire its scale after the last AWT resize. Without this,
++            // LocalWindowInfo.containerSize retains the unscaled viewport, while popup
++            // anchors/content are measured in scaled pixels. All popup clipping and
++            // placement must use the same current pixel space as the scene, including
++            // the first paint and later monitor-scale transitions (even without resize).
++            _composeContainer?.windowContext?.setContainerSizeFromComponent(this)
++        }
++        super.paint(g)
++    }
++
+     override fun setBounds(x: Int, y: Int, width: Int, height: Int) {
+         super.setBounds(x, y, width, height)
+         composeContainer.setBounds(0, 0, width, height)

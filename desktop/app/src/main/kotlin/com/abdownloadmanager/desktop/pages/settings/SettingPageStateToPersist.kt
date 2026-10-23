@@ -4,5 +4,5 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class SettingPageStateToPersist(
-    val windowSize: Pair<Float, Float> = 800f to 400f
+    val windowSize: Pair<Float, Float> = 920f to 680f
 )

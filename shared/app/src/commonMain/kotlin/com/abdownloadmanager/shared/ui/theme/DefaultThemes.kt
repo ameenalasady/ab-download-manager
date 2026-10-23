@@ -182,6 +182,7 @@ object DefaultThemes {
             twilight,
             black,
             lightGray,
+            LayanTheme.colors,
         )
     }
 

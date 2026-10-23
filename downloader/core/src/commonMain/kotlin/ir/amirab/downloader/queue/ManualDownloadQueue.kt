@@ -266,7 +266,8 @@ class ManualDownloadQueue(
         return downloadableItemFromQueue?.let {
             addAnActiveItem(it)
             scope.launch {
-                downloadEvents.startJob(it, ResumedBy(me))
+                // A pause/remove can detach this ID before the queued launch runs.
+                if (it in totalItemsFlow.value && it in activeItems) downloadEvents.startJob(it, ResumedBy(me))
             }
             true
         } ?: false
@@ -326,7 +327,7 @@ class ManualDownloadQueue(
 
     fun resume(item: Long) {
         totalItemsFlow.update {
-            it + item
+            (it + item).distinct()
         }
         shake(
             // immediately shake the queue
@@ -338,7 +339,12 @@ class ManualDownloadQueue(
     suspend fun pause(item: Long) {
         // this should be removed here as it indicates that user manually paused it
         // so the trimmed item list should not contain it anymore
-        trimmedItems.remove(item)
+        // Pending items may never emit OnJobCanceled (they have not started yet).
+        // Remove before requesting stop so a later slot cannot restart a paused item.
+        removeFromQueue(item)
         downloadEvents.stopJob(item, StoppedBy(me))
+        // Its OnJobCanceled is now skipped (no longer a member), so refill the freed slot here,
+        // debounced like the original post-cancel shake. The paused ID cannot be chosen.
+        shake()
     }
 }

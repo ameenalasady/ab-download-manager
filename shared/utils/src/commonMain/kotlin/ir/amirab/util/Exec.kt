@@ -14,7 +14,7 @@ fun execAndWait(
 ): Boolean {
     return runCatching {
         val pb = ProcessBuilder(*command)
-        val p = pb
+        val p = ExternalAppEnvironment.applyTo(pb)
             .withoutJPackageEnvVariable()
             .start()
         val exited = p.waitFor(waitFor, TimeUnit.MILLISECONDS)
@@ -22,6 +22,33 @@ fun execAndWait(
             p.exitValue() == 0
         } else {
             false
+        }
+    }.getOrElse { false }
+}
+
+/**
+ * Starts a program that is meant to keep running - a settings panel, a file manager, a browser -
+ * without waiting for the user to close it again.
+ * @param settleFor how long to give the program to fail, so that a wrong argument can still be
+ * noticed and another candidate tried
+ * @return `false` when the program is not installed or gave up right away
+ */
+fun execAndForget(
+    command: Array<String>,
+    settleFor: Long = 300,
+): Boolean {
+    return runCatching {
+        val process = ExternalAppEnvironment.applyTo(ProcessBuilder(*command))
+            .withoutJPackageEnvVariable()
+            // a program we never read from will block once it fills up the pipe
+            .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+            .redirectError(ProcessBuilder.Redirect.DISCARD)
+            .start()
+        if (process.waitFor(settleFor, TimeUnit.MILLISECONDS)) {
+            process.exitValue() == 0
+        } else {
+            // still up, so it is showing the user something
+            true
         }
     }.getOrElse { false }
 }

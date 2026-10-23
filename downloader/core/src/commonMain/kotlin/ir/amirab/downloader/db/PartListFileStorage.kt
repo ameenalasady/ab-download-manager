@@ -30,7 +30,9 @@ class PartListFileStorage(
     }
 
     override suspend fun removeParts(id: Long) {
-        getFileForId(id).delete()
+        withContext(Dispatchers.IO) {
+            java.nio.file.Files.deleteIfExists(getFileForId(id).toPath())
+        }
     }
 
     override suspend fun clear() {

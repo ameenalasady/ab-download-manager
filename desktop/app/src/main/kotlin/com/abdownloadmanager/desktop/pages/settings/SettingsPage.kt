@@ -1,67 +1,62 @@
 package com.abdownloadmanager.desktop.pages.settings
 
-import com.abdownloadmanager.shared.util.ui.WithContentAlpha
-import com.abdownloadmanager.desktop.window.custom.WindowIcon
-import ir.amirab.util.compose.IconSource
-import com.abdownloadmanager.shared.util.ui.widget.MyIcon
-import com.abdownloadmanager.shared.util.ui.icon.MyIcons
-import com.abdownloadmanager.shared.util.ui.myColors
-import com.abdownloadmanager.shared.ui.widget.Handle
-import com.abdownloadmanager.shared.ui.widget.Text
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.foundation.*
-import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.abdownloadmanager.desktop.window.custom.WindowIcon
+import com.abdownloadmanager.resources.Res
 import com.abdownloadmanager.shared.ui.configurable.RenderConfigurableGroup
+import com.abdownloadmanager.shared.ui.widget.Handle
+import com.abdownloadmanager.shared.ui.widget.Text
 import com.abdownloadmanager.shared.util.div
 import com.abdownloadmanager.shared.util.ui.MultiplatformVerticalScrollbar
+import com.abdownloadmanager.shared.util.ui.WithContentColor
+import com.abdownloadmanager.shared.util.ui.icon.MyIcons
+import com.abdownloadmanager.shared.util.ui.myColors
 import com.abdownloadmanager.shared.util.ui.needScroll
 import com.abdownloadmanager.shared.util.ui.theme.myShapes
 import com.abdownloadmanager.shared.util.ui.theme.myTextSizes
+import com.abdownloadmanager.shared.util.ui.widget.MyIcon
 import io.github.oikvpqya.compose.fastscroller.rememberScrollbarAdapter
-import ir.amirab.util.ifThen
+import ir.amirab.util.compose.IconSource
+import ir.amirab.util.compose.resources.myStringResource
 
 @Composable
 private fun SideBar(
     settingsComponent: DesktopSettingsComponent,
     modifier: Modifier = Modifier,
 ) {
-    val shape = myShapes.defaultRounded
+    val currentPage by settingsComponent.currentPage.collectAsState()
     Column(
         modifier
             .fillMaxHeight()
-            .border(1.dp, myColors.surface / 0.5f, shape)
-            .clip(shape)
+            .background(myColors.surface / 0.2f)
+            .verticalScroll(rememberScrollState())
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-//        var searchText by remember { mutableStateOf("") }
-//        SearchBox(
-//            searchText,
-//            onTextChange = { searchText = it },
-//            modifier = Modifier.height(38.dp),
-//        )
-        val collectAsState by settingsComponent.currentPage.collectAsState()
-        for (i in settingsComponent.pages) {
+        Text(
+            myStringResource(Res.string.settings),
+            Modifier.padding(start = 12.dp, top = 4.dp, bottom = 12.dp),
+            fontSize = myTextSizes.xl,
+            fontWeight = FontWeight.SemiBold,
+        )
+        for (page in settingsComponent.pages) {
             SideBarItem(
-                icon = i.icon,
-                name = i.name.rememberString(),
-                isSelected = collectAsState == i,
-                onClick = {
-                    settingsComponent.setCurrentPage(i)
-                }
+                icon = page.icon,
+                name = page.name.rememberString(),
+                isSelected = currentPage == page,
+                onClick = { settingsComponent.setCurrentPage(page) },
             )
         }
     }
@@ -69,85 +64,27 @@ private fun SideBar(
 
 @Composable
 private fun SideBarItem(icon: IconSource, name: String, isSelected: Boolean, onClick: () -> Unit) {
-    Box(
+    Row(
         Modifier
-            .height(IntrinsicSize.Max)
-            .ifThen(isSelected) {
-                background(myColors.onBackground / 0.05f)
-            }
-            .selectable(
-                selected = isSelected,
-                onClick = onClick
-            )
+            .fillMaxWidth()
+            .clip(myShapes.defaultRounded)
+            .background(if (isSelected) myColors.primary / 0.14f else androidx.compose.ui.graphics.Color.Transparent)
+            .selectable(selected = isSelected, onClick = onClick)
+            .heightIn(min = 40.dp)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Row(
-            Modifier
-                .padding(vertical = 8.dp)
-                .padding(start = 16.dp)
-                .padding(end = 2.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            WithContentAlpha(if (isSelected) 1f else 0.75f) {
-                MyIcon(
-                    icon,
-                    null,
-                    Modifier.size(16.dp)
-                )
-                Spacer(Modifier.width(4.dp))
-                Text(
-                    name,
-                    Modifier.weight(1f),
-                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                    fontSize = myTextSizes.lg,
-                    overflow = TextOverflow.Ellipsis,
-                    maxLines = 1,
-                )
-            }
-        }
-        AnimatedVisibility(
-            isSelected,
-            modifier = Modifier
-                .align(Alignment.CenterStart),
-            enter = scaleIn(),
-            exit = scaleOut(),
-        ) {
-            Spacer(
-                Modifier
-                    .height(16.dp)
-                    .width(3.dp)
-                    .clip(
-                        RoundedCornerShape(
-                            topStart = 0.dp,
-                            bottomStart = 0.dp,
-                            bottomEnd = 12.dp,
-                            topEnd = 12.dp,
-                        )
-                    )
-                    .background(myColors.primary)
+        WithContentColor(if (isSelected) myColors.primary else myColors.onBackground / 0.8f) {
+            MyIcon(icon, null, Modifier.size(16.dp))
+            Text(
+                name,
+                Modifier.weight(1f),
+                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                fontSize = myTextSizes.base,
+                overflow = TextOverflow.Ellipsis,
+                maxLines = 1,
             )
-        }
-        if (isSelected) {
-            listOf(
-                Alignment.TopCenter,
-                Alignment.BottomCenter,
-            ).forEach {
-                Spacer(
-                    Modifier
-                        .align(it)
-                        .fillMaxWidth()
-                        .height(1.dp)
-                        .background(
-                            Brush.horizontalGradient(
-                                listOf(
-                                    Color.Transparent,
-                                    myColors.onBackground / 0.1f,
-                                    myColors.onBackground / 0.1f,
-                                    Color.Transparent,
-                                )
-                            )
-                        )
-                )
-            }
         }
     }
 }
@@ -157,70 +94,50 @@ fun SettingsPage(
     settingsComponent: DesktopSettingsComponent,
     onDismissRequest: () -> Unit,
 ) {
-//    WindowIcon(MyIcons.settings)
     WindowIcon(MyIcons.appIcon)
-    Column {
-        Spacer(
-            Modifier
-                .fillMaxWidth()
-                .height(1.dp)
-                .background(myColors.surface)
-        )
-        Row {
-            var sideBarWidth by remember { mutableStateOf(250.dp) }
-            SideBar(
-                settingsComponent,
-                Modifier
-                    .fillMaxHeight()
-                    .width(sideBarWidth)
-                    .padding(8.dp)
-            )
-            val currentConfigurables by settingsComponent.configurables.collectAsState()
-            Handle(
-                Modifier.width(5.dp).fillMaxHeight(),
-                orientation = Orientation.Horizontal
-            ) {
-                sideBarWidth = (sideBarWidth + it).coerceIn(150.dp..300.dp)
+    val currentPage by settingsComponent.currentPage.collectAsState()
+    val currentConfigurables by settingsComponent.configurables.collectAsState()
+    Column(Modifier.fillMaxSize()) {
+        Spacer(Modifier.fillMaxWidth().height(1.dp).background(myColors.onBackground / 0.08f))
+        Row(Modifier.weight(1f)) {
+            var sideBarWidth by remember { mutableStateOf(220.dp) }
+            SideBar(settingsComponent, Modifier.width(sideBarWidth))
+            Handle(Modifier.width(5.dp).fillMaxHeight()) {
+                sideBarWidth = (sideBarWidth + it).coerceIn(180.dp..300.dp)
             }
-            AnimatedContent(currentConfigurables) { configurableGroups ->
+            AnimatedContent(currentConfigurables, modifier = Modifier.weight(1f)) { configurableGroups ->
                 val scrollState = rememberScrollState()
                 val scrollbarAdapter = rememberScrollbarAdapter(scrollState)
-                Row {
+                Row(Modifier.fillMaxSize()) {
                     Column(
                         Modifier
                             .weight(1f)
                             .verticalScroll(scrollState)
-                            .padding(
-                                horizontal = 8.dp,
-                                vertical = 8.dp
-                            ),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                            .padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
-                        for (cfgGroup in configurableGroups) {
+                        Text(
+                            currentPage.name.rememberString(),
+                            fontSize = myTextSizes.x3l,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        for (group in configurableGroups) {
                             RenderConfigurableGroup(
-                                cfgGroup,
-                                Modifier,
-                                itemPadding = PaddingValues(
-                                    vertical = 8.dp,
-                                    horizontal = 16.dp
-                                )
+                                group,
+                                Modifier.fillMaxWidth(),
+                                itemPadding = PaddingValues(vertical = 10.dp, horizontal = 16.dp),
+                                spaceBy = 0.dp,
                             )
                         }
                     }
                     if (scrollbarAdapter.needScroll()) {
                         MultiplatformVerticalScrollbar(
                             adapter = scrollbarAdapter,
-                            modifier = Modifier
-                                .padding(vertical = 8.dp)
-                                .padding(end = 2.dp),
+                            modifier = Modifier.padding(vertical = 12.dp).padding(end = 4.dp),
                         )
                     }
                 }
             }
-
         }
     }
 }
-
-
-

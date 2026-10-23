@@ -7,27 +7,20 @@ import com.abdownloadmanager.shared.util.ui.myColors
 import com.abdownloadmanager.shared.util.ui.theme.myTextSizes
 import com.abdownloadmanager.shared.ui.widget.Text
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.window.WindowDraggableArea
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.v2.WindowBoundsProvider
-import androidx.compose.ui.window.v2.WindowSizeProvider
-import androidx.compose.ui.window.v2.rememberDialogState
-import com.abdownloadmanager.desktop.window.custom.BaseOptionDialog
-import com.abdownloadmanager.desktop.window.moveSafe
+import com.abdownloadmanager.desktop.ui.template.OptionPopup
+import com.abdownloadmanager.desktop.ui.template.OptionPopupAnchor
 import com.abdownloadmanager.resources.Res
 import com.abdownloadmanager.shared.ui.widget.LabeledCheckbox
 import com.abdownloadmanager.shared.util.div
@@ -39,7 +32,6 @@ import com.abdownloadmanager.desktop.ui.util.rememberMyDirectoryPickerLauncher
 import com.abdownloadmanager.shared.pages.adddownload.shared.LastUsedLocationsProp
 import com.abdownloadmanager.shared.pages.adddownload.shared.RememberFolderProp
 import com.abdownloadmanager.shared.pages.adddownload.shared.rememberDescriptionString
-import java.awt.MouseInfo
 import java.io.File
 
 @Composable
@@ -65,7 +57,7 @@ fun LocationTextField(
         directory?.let(setText)
     }
 
-    Box(modifier) {
+    OptionPopupAnchor(modifier) {
         MyTextFieldWithIcons(
             text,
             setText,
@@ -78,7 +70,6 @@ fun LocationTextField(
                         icon = MyIcons.folder,
                         contentDescription = myStringResource(Res.string.download_location),
                     ) {
-                        downloadLauncherFolderPickerLauncher
                         downloadLauncherFolderPickerLauncher.launch()
                     }
                     MyTextFieldIcon(
@@ -113,45 +104,14 @@ private fun LocationOptionsDialog(
     lastUsedLocations: LastUsedLocationsProp,
     rememberFolder: RememberFolderProp,
 ) {
-    val state = rememberDialogState(
-        initialBoundsProvider = WindowBoundsProvider(
-            sizeProvider = WindowSizeProvider.Unconstrained
-        )
-    )
-    BaseOptionDialog(
-        onCloseRequest = onDismiss,
-        state = state,
-        resizeable = false,
-    ) {
-        LaunchedEffect(window) {
-            window.moveSafe(
-                MouseInfo.getPointerInfo().location.run {
-                    DpOffset(
-                        x = x.dp,
-                        y = y.dp
-                    )
-                }
-            )
-        }
-        val shape = myShapes.defaultRounded
+    OptionPopup(onDismissRequest = onDismiss, matchAnchorWidth = true) {
         Column(
             Modifier
-                .width(IntrinsicSize.Max)
-                .widthIn(min = 320.dp, max = 460.dp)
-                .clip(shape)
-                .border(2.dp, myColors.onBackground / 10, shape)
-                .background(
-                    Brush.linearGradient(
-                        listOf(
-                            myColors.surface,
-                            myColors.background,
-                        )
-                    )
-                )
+                .fillMaxWidth()
         ) {
             WithContentColor(myColors.onBackground) {
                 Column {
-                    WindowDraggableArea(Modifier.fillMaxWidth()) {
+                    Box(Modifier.fillMaxWidth()) {
                         Row(
                             Modifier
                                 .fillMaxWidth()
@@ -161,7 +121,7 @@ private fun LocationOptionsDialog(
                             Text(
                                 myStringResource(Res.string.download_location),
                                 modifier = Modifier.weight(1f),
-                                fontSize = myTextSizes.lg,
+                                fontSize = myTextSizes.base,
                                 fontWeight = FontWeight.Bold,
                             )
                             Spacer(Modifier.width(8.dp))
@@ -216,13 +176,14 @@ private fun LocationOptionsDialog(
                                             .clickable {
                                                 onSuggestionSelected(l)
                                             }
-                                            .padding(vertical = 6.dp, horizontal = 4.dp),
+                                            .heightIn(min = 36.dp)
+                                            .padding(vertical = 8.dp, horizontal = 8.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
                                         Text(
                                             text = l,
                                             modifier = Modifier.weight(1f),
-                                            fontSize = myTextSizes.sm,
+                                            fontSize = myTextSizes.base,
                                             maxLines = 2,
                                             overflow = TextOverflow.Ellipsis,
                                         )

@@ -10,6 +10,10 @@ import ir.amirab.downloader.downloaditem.DownloadJob
 import ir.amirab.downloader.downloaditem.IDownloadItem
 import ir.amirab.downloader.queue.ManualDownloadQueue
 import ir.amirab.util.flow.combineStateFlows
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.EmptyCoroutineContext
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.job
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -23,11 +27,15 @@ import kotlin.time.Duration.Companion.seconds
 class DownloadMonitor(
     private val downloadManager: DownloadManager,
     private val manualDownloadQueue: ManualDownloadQueue,
-    downloadItemStateFactory: Lazy<DownloadItemStateFactory<IDownloadItem, DownloadJob>>
+    downloadItemStateFactory: Lazy<DownloadItemStateFactory<IDownloadItem, DownloadJob>>,
+    ownerContext: CoroutineContext = EmptyCoroutineContext,
 ) : IDownloadMonitor {
     val downloadItemStateFactory by downloadItemStateFactory
 
-    private val scope = CoroutineScope(SupervisorJob())
+    private val scope = CoroutineScope(ownerContext + SupervisorJob(ownerContext[Job]))
+
+    /** Drain subscription listeners, list samplers and the existing speed meter. */
+    suspend fun closeAndJoin() { scope.coroutineContext.job.cancelAndJoin() }
 
     private var avSpeedCollectorJob: Job? = null
     override var useAverageSpeed = false

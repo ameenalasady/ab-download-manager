@@ -6,8 +6,6 @@ import com.abdownloadmanager.shared.util.ui.theme.myTextSizes
 import ir.amirab.util.ifThen
 import com.abdownloadmanager.shared.ui.widget.menu.custom.MyDropDown
 import com.abdownloadmanager.shared.ui.widget.menu.custom.SubMenu
-import com.abdownloadmanager.shared.util.ui.WithContentAlpha
-import com.abdownloadmanager.shared.util.ui.WithContentColor
 import ir.amirab.util.compose.action.MenuItem
 import com.abdownloadmanager.shared.util.div
 import androidx.compose.foundation.*
@@ -17,9 +15,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import com.abdownloadmanager.shared.util.ui.theme.myShapes
 import androidx.compose.ui.unit.dp
 import com.abdownloadmanager.shared.ui.widget.Tooltip
-import com.abdownloadmanager.shared.util.ui.LocalMultiplatformScrollbarStyle
 import com.abdownloadmanager.shared.util.ui.MultiplatformHorizontalScrollbar
 import com.abdownloadmanager.shared.util.ui.needScroll
 import ir.amirab.util.compose.IconSource
@@ -29,24 +33,26 @@ import ir.amirab.util.compose.StringSource
 fun Actions(
     list: List<MenuItem>,
     showLabels: Boolean,
+    modifier: Modifier = Modifier,
 ) {
     val scrollState = rememberScrollState()
-    Column {
+    Column(modifier) {
         Row(
             Modifier
                 .height(IntrinsicSize.Max)
-                .horizontalScroll(scrollState)
+                .horizontalScroll(scrollState),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             for (a in list) {
                 when (a) {
                     MenuItem.Separator -> {
                         Spacer(
                             Modifier
-                                .padding(horizontal = 4.dp)
+                                .padding(horizontal = 6.dp)
                                 .fillMaxHeight()
                                 .padding(vertical = 4.dp)
                                 .width(1.dp)
-                                .background(myColors.onBackground / 5)
+                                .background(myColors.onBackground / 0.1f)
                         )
                     }
 
@@ -130,33 +136,33 @@ private fun ActionIconWithLabel(
     onClick: () -> Unit,
     enabled: Boolean,
 ) {
-    OptionalTooltip(
-        title.takeIf { !showLabels },
-    ) {
-        Column(
+    val interactionSource = remember { MutableInteractionSource() }
+    val isHovered by interactionSource.collectIsHoveredAsState()
+    val isFocused by interactionSource.collectIsFocusedAsState()
+    OptionalTooltip(title.takeIf { !showLabels }) {
+        Row(
             modifier = Modifier
-                .clickable(enabled = enabled, onClick = onClick)
-                .ifThen(!enabled) {
-                    alpha(0.5f)
-                }
-                .padding(if (showLabels) 8.dp else 12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
+                .heightIn(min = 36.dp)
+                .clip(myShapes.defaultRounded)
+                .background(if (enabled && (isHovered || isFocused)) myColors.onBackground / 0.08f else Color.Transparent)
+                .border(1.dp, if (isFocused) myColors.primary else Color.Transparent, myShapes.defaultRounded)
+                .clickable(
+                    enabled = enabled,
+                    interactionSource = interactionSource,
+                    indication = LocalIndication.current,
+                    role = Role.Button,
+                    onClick = onClick,
+                )
+                .ifThen(!enabled) { alpha(0.4f) }
+                .padding(horizontal = 8.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            WithContentColor(myColors.onBackground) {
-                WithContentAlpha(1f) {
-                    icon?.let {
-                        val iconSize = if (showLabels) 16.dp else 24.dp
-                        MyIcon(
-                            icon = it,
-                            contentDescription = null,
-                            modifier = Modifier.size(iconSize)
-                        )
-                    }
-                    if (showLabels) {
-                        Spacer(Modifier.size(2.dp))
-                        Text(title.rememberString(), maxLines = 1, fontSize = myTextSizes.sm)
-                    }
-                }
+            icon?.let {
+                MyIcon(it, if (showLabels) null else title.rememberString(), Modifier.size(16.dp))
+            }
+            if (showLabels) {
+                Spacer(Modifier.width(6.dp))
+                Text(title.rememberString(), maxLines = 1, fontSize = myTextSizes.base)
             }
         }
     }

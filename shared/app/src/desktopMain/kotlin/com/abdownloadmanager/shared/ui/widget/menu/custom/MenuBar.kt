@@ -2,7 +2,6 @@ package com.abdownloadmanager.shared.ui.widget.menu.custom
 
 import com.abdownloadmanager.shared.util.ui.myColors
 import com.abdownloadmanager.shared.util.ui.theme.myTextSizes
-import ir.amirab.util.ifThen
 import ir.amirab.util.compose.action.MenuItem
 import androidx.compose.foundation.*
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -12,7 +11,10 @@ import com.abdownloadmanager.shared.ui.widget.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
+import com.abdownloadmanager.shared.util.div
+import com.abdownloadmanager.shared.util.ui.theme.myShapes
 import androidx.compose.ui.unit.dp
 
 @Composable
@@ -41,14 +43,13 @@ fun MenuBar(
             Column {
                 Column(
                     modifier
+                        .clip(myShapes.defaultRounded)
                         .hoverable(interactionSource)
-                        .clickable {
-                            openedItem = subMenu
+                        .background(if (isSelected || isHovered) myColors.onBackground / 0.08f else androidx.compose.ui.graphics.Color.Transparent)
+                        .clickable(role = Role.Button) {
+                            openedItem = subMenu.takeUnless { isSelected }
                         }
-                        .ifThen(isSelected) {
-                            background(myColors.surface)
-                        }
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
                         .wrapContentHeight(Alignment.CenterVertically)
                 ) {
                     val text = subMenu.title.collectAsState().value.rememberString()
@@ -62,13 +63,9 @@ fun MenuBar(
                 if (isSelected) {
                     MyDropDown(
                         onDismissRequest = onRequestClose,
-                        focusable = false,
+                        focusable = true,
                     ) {
-                        CompositionLocalProvider(
-                            LocalMenuBoxClip provides RectangleShape
-                        ) {
-                            SubMenu(subMenu, onRequestClose = onRequestClose)
-                        }
+                        SubMenu(subMenu, onRequestClose = onRequestClose)
                     }
                 }
             }

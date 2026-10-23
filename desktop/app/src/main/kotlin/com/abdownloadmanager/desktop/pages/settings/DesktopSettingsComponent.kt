@@ -17,6 +17,7 @@ import com.abdownloadmanager.shared.ui.theme.ThemeManager
 import com.abdownloadmanager.shared.util.proxy.ProxyManager
 import com.abdownloadmanager.shared.util.ui.icon.MyIcons
 import com.arkivanov.decompose.ComponentContext
+import com.arkivanov.essenty.lifecycle.doOnDestroy
 import ir.amirab.util.compose.IconSource
 import ir.amirab.util.compose.StringSource
 import ir.amirab.util.compose.asStringSource
@@ -211,6 +212,15 @@ class DesktopSettingsComponent(
             .onEach { newValue ->
                 pageStorage.settingsPageStorage.update { newValue }
             }.launchIn(scope)
+        lifecycle.doOnDestroy {
+            // closing the window destroys this component and cancels the debounce above with it,
+            // so the size the user just left the window in has to be handed over right now
+            persistWindowState()
+        }
+    }
+
+    fun persistWindowState() {
+        pageStorage.settingsPageStorage.update { settingsPageStateToPersist.value }
     }
 
     var pages = listOf(

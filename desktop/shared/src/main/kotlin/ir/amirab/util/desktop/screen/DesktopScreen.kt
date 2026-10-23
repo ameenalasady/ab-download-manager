@@ -39,6 +39,10 @@ fun Float.unApplyUiScale(
     return (this / userUiScale)
 }
 
+/**
+ * Window sizes are kept in floating point, so [applyUiScale] and [unApplyUiScale]
+ * round trip without shrinking the window a little on every save/restore.
+ */
 fun DpSize.applyUiScale(
     userUiScale: Float,
 ): DpSize {
@@ -46,11 +50,11 @@ fun DpSize.applyUiScale(
     if (this == DpSize.Unspecified) return this
     return DpSize(
         width = width.let {
-            if (isSpecified) it.value.toInt().applyUiScale(userUiScale).dp
+            if (it.isSpecified) it.value.applyUiScale(userUiScale).dp
             else it
         },
         height = height.let {
-            if (isSpecified) it.value.toInt().applyUiScale(userUiScale).dp
+            if (it.isSpecified) it.value.applyUiScale(userUiScale).dp
             else it
         },
     )
@@ -63,11 +67,11 @@ fun DpSize.unApplyUiScale(
     if (this == DpSize.Unspecified) return this
     return DpSize(
         width = width.let {
-            if (isSpecified) it.value.toInt().unApplyUiScale(userUiScale).dp
+            if (it.isSpecified) it.value.unApplyUiScale(userUiScale).dp
             else it
         },
         height = height.let {
-            if (isSpecified) it.value.toInt().applyUiScale(userUiScale).dp
+            if (it.isSpecified) it.value.unApplyUiScale(userUiScale).dp
             else it
         },
     )

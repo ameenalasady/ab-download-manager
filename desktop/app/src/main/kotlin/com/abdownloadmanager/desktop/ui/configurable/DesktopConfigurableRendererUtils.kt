@@ -30,7 +30,7 @@ import ir.amirab.util.ifThen
 @Composable
 fun <T> TitleAndDescription(
     cfg: Configurable<T>,
-    modifier: Modifier = Modifier.padding(8.dp),
+    modifier: Modifier = Modifier.padding(vertical = 4.dp),
     describe: Boolean = true,
 ) {
     val enabled = isConfigEnabled()
@@ -43,7 +43,7 @@ fun <T> TitleAndDescription(
             Text(
                 cfg.title.rememberString(),
                 fontSize = myTextSizes.base,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.Medium,
                 modifier = Modifier.weight(1f, false)
             )
             if (cfg.description.rememberString().isNotBlank()) {
@@ -85,7 +85,8 @@ fun ConfigTemplate(
         Row(
             Modifier
                 .height(IntrinsicSize.Max),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.spacedBy(20.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(
                 Modifier.weight(3f, true),

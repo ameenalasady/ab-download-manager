@@ -5,6 +5,7 @@ import androidx.compose.ui.window.application
 import com.abdownloadmanager.desktop.AppArguments
 import com.abdownloadmanager.desktop.AppComponent
 import com.abdownloadmanager.desktop.AppEffects
+import com.abdownloadmanager.desktop.experimental.ExperimentalAppLifecycle
 import com.abdownloadmanager.desktop.actions.gotoSettingsAction
 import com.abdownloadmanager.desktop.actions.newDownloadFromClipboardAction
 import com.abdownloadmanager.desktop.actions.requestExitAction
@@ -52,8 +53,11 @@ import com.abdownloadmanager.shared.util.ui.ProvideDebugInfo
 import com.abdownloadmanager.shared.util.ui.icon.MyIcons
 import ir.amirab.util.compose.action.buildMenu
 import ir.amirab.util.compose.localizationmanager.LanguageManager
+import ir.amirab.util.desktop.window.ExperimentalDesktopProfile
 import ir.amirab.util.desktop.PlatformDockToggler
 import ir.amirab.util.desktop.mac.event.MacEventHandler
+import ir.amirab.util.desktop.screen.SystemFontScale
+import ir.amirab.util.desktop.screen.SystemUiScale
 import ir.amirab.util.platform.Platform
 import ir.amirab.util.platform.isMac
 import kotlinx.coroutines.CoroutineScope
@@ -98,6 +102,12 @@ object Ui : KoinComponent {
         globalAppExceptionHandler: GlobalAppExceptionHandler,
     ) {
         application {
+            if (ExperimentalDesktopProfile.active) {
+                DisposableEffect(Unit) {
+                    appComponent.onExperimentalExit = { exitApplication() }
+                    onDispose { appComponent.onExperimentalExit = null }
+                }
+            }
             ProvideLocalProviders(
                 languageManager = languageManager,
                 appComponent = appComponent,
@@ -129,6 +139,7 @@ object Ui : KoinComponent {
                 PowerActionAlert(appComponent)
                 PerHostSettingsWindow(appComponent)
                 DownloadErrorDialog(appComponent)
+                ExperimentalAppLifecycle(appComponent)
             }
         }
     }
@@ -146,6 +157,11 @@ private fun ProvideLocalProviders(
 ) {
     val theme by themeManager.currentThemeColor.collectAsState()
     val fontFamily by fontManager.currentFontFamily.collectAsState()
+    val userUiScale by appComponent.uiScale.collectAsState()
+    // AWT can not see fractional desktop scaling on linux, so we compensate for it here
+    val uiScale = userUiScale * SystemUiScale.correctionFactor
+    // and it does not know about the system text size either
+    val fontScale = SystemFontScale.scale
     val configurableRendererRegistry = remember {
         ConfigurableRendererRegistry {
             listOf(
@@ -169,7 +185,8 @@ private fun ProvideLocalProviders(
                     ABDownloaderTheme(
                         myColors = theme,
                         fontFamily = fontFamily,
-                        uiScale = appComponent.uiScale.collectAsState().value
+                        uiScale = uiScale,
+                        fontScale = fontScale,
                     ) {
                         ProvideGlobalExceptionHandler(globalAppExceptionHandler) {
                             ProvideSizeUnits(appComponent.appRepository) {
