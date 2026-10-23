@@ -803,6 +803,50 @@ private slots:
         QVERIFY(model.settingsPolicy()["retained"].toList()[1].toMap()["value"].isNull());
         QCOMPARE(model.data(model.index(0), PreviewDownloads::SizeLabel).toString(), "1000 B");
     }
+    void settingsDropdownSurvivesPointerReleaseAndSelects() {
+        FakeService service; service.policyCapability = true;
+        service.extensionSnapshot = {{"queues", QJsonArray{}}, {"settings", basicSettings()},
+            {"settingsPolicy", QJsonObject{{"retained", QJsonArray{}}, {"activityAdapter", false}, {"speedLimitActive", false}}}};
+        PreviewDownloads resources; ServiceDownloads model(service.descriptor);
+        std::unique_ptr<QQuickView> view(liveView(model));
+        QTRY_COMPARE(model.connectionState(), "ready");
+        QVERIFY(QMetaObject::invokeMethod(view->rootObject(), "openSettings"));
+        auto *dialog = view->rootObject()->findChild<QObject *>("serviceSettingsDialog"); QVERIFY(dialog);
+        QTRY_VERIFY(dialog->property("opened").toBool());
+        dialog->setProperty("page", 0);
+        auto *combo = view->rootObject()->findChild<QQuickItem *>("settingsSizeUnit"); QVERIFY(combo);
+        QTRY_VERIFY(combo->isVisible() && combo->width() > 0);
+        auto *window = combo->window(); QVERIFY(window && window != view.get());
+        QVERIFY(QTest::qWaitForWindowExposed(window)); QVERIFY(waitForRenderedFrame(window));
+        const auto center = combo->mapToScene(QPointF(combo->width() / 2, combo->height() / 2)).toPoint();
+        auto *popup = combo->property("popup").value<QObject *>(); QVERIFY(popup);
+        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center);
+        QTRY_VERIFY(popup->property("opened").toBool());
+        QTest::qWait(800); // Opening release, focus handoff and multiple service polls.
+        QVERIFY2(popup->property("opened").toBool(), "dropdown closed after its opening click");
+        auto *content = popup->property("contentItem").value<QQuickItem *>(); QVERIFY(content);
+        auto *list = content; // Native styles may wrap their ListView in another item.
+        if (!list->property("currentIndex").isValid()) {
+            for (auto *item : content->findChildren<QQuickItem *>())
+                if (item->property("currentIndex").isValid()) { list = item; break; }
+        }
+        QVERIFY(list->property("currentIndex").isValid());
+        // Select a real delegate with a pointer event, not currentIndex assignment.
+        QQuickItem *choice = nullptr;
+        QVERIFY(QMetaObject::invokeMethod(list, "itemAtIndex", Q_RETURN_ARG(QQuickItem *, choice), Q_ARG(int, 1)));
+        QVERIFY(choice && choice->window());
+        QTest::mouseClick(choice->window(), Qt::LeftButton, Qt::NoModifier,
+            choice->mapToScene(QPointF(choice->width() / 2, choice->height() / 2)).toPoint());
+        QTRY_VERIFY(!popup->property("visible").toBool());
+        QCOMPARE(combo->property("currentIndex").toInt(), 1);
+        // Reopening and dismissing must work too, without applying the draft.
+        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center);
+        QTRY_VERIFY(popup->property("opened").toBool());
+        QTest::keyClick(content->window(), Qt::Key_Escape);
+        QTRY_VERIFY(!popup->property("visible").toBool());
+        QCOMPARE(service.commands, 0);
+        QVERIFY(QMetaObject::invokeMethod(dialog, "close"));
+    }
     void settingsFormKeepsStoredBusySpeedModeAndAppliesOnlyItsPage() {
         FakeService service; service.policyCapability = true;
         const QJsonObject settings{{"threadCount", 8}, {"maxConcurrentDownloads", 3}, {"maxDownloadRetryCount", 3},
