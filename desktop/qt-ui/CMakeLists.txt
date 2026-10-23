@@ -16,7 +16,7 @@ if(TARGET PkgConfig::KF6WindowSystemPC)
 endif()
 qt_add_resources(qtui-preview preview_qml
     PREFIX "/qt-ui"
-    FILES qml/qmldir qml/Tokens.qml qml/SectionHeading.qml qml/TextBlock.qml qml/StatusMessage.qml qml/DuplicateNotice.qml
+    FILES qml/qmldir qml/Tokens.qml qml/SectionHeading.qml qml/TextBlock.qml qml/StatusMessage.qml qml/DuplicateNotice.qml qml/ChecksumWorkflow.qml
     qml/FormGrid.qml qml/FormLabel.qml qml/FormField.qml qml/SurfaceFrame.qml qml/SettingsSection.qml
     qml/ProgressTrack.qml qml/WindowFooter.qml qml/ButtonFocus.qml qml/UiButton.qml qml/UiComboBox.qml qml/UiTabButton.qml
     qml/UiDialog.qml qml/DialogFooter.qml qml/IconButton.qml qml/SidebarItem.qml qml/HttpOptions.qml qml/DownloadsView.qml qml/DownloadDetails.qml qml/DownloadContent.qml qml/DownloadCompletion.qml qml/DownloadWindow.qml qml/ServiceWorkflows.qml qml/CategoryWorkflows.qml qml/BrowserRequests.qml qml/PreviewTheme.qml qml/LegacyIcon.qml qml/LegacyPaths.js qml/CategoryIcons.js

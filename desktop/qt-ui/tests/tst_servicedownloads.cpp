@@ -50,7 +50,7 @@ public:
     QJsonObject extensionSnapshot, lastCommand, commandResult, partSnapshots;
     bool partsCapability = false, fulfillBrowserAccept = false;
     QJsonArray categorySnapshot;
-    bool policyCapability = false, categoryDestinationCapability = false;
+    bool policyCapability = false, categoryDestinationCapability = false, checksumCapability = false;
     bool categoryCapability = false, monitorCapability = false, detailsCapability = false, forgetCapability = false, runtimeCapability = false, httpCapability = false;
     bool browserCapability = false, desktopCapability = false, windowsCapability = false;
     // New negotiated settings/duplicate extensions.
@@ -130,6 +130,7 @@ public:
                     if (probeBatchCapability) caps.append("browser.probeBatch");
                     if (categoryIconCapability) caps.append("category.icon");
                     if (categoryDestinationCapability) caps.append("category.destination");
+                    if (checksumCapability) caps.append("download.checksum");
                     if (soundCapability) caps.append("settings.notificationSounds");
                     if (powerCapability) for (const auto &op : {"queue.update", "queue.powerAction", "power.execute", "power.cancel"}) caps.append(op);
                     if (tasksCapability) for (const auto &op : {"queue.startAll", "queue.stopAll", "download.stopAll"}) caps.append(op);
@@ -417,6 +418,88 @@ private slots:
         QTRY_VERIFY((review = view.rootObject()->findChild<QObject *>("browserRequestDialog")) && review->property("visible").toBool());
         QCOMPARE(service.commands, 1);
         view.close(); view.setSource(QUrl()); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    }
+    void malformedChecksumSnapshotsAreRejected_data() {
+        QTest::addColumn<QJsonValue>("value");
+        const QJsonObject valid{{"id", "9007199254740993"}, {"algorithm", "SHA-256"}, {"state", "done"}, {"percent", 100}, {"digest", QString(64, 'a')}};
+        QTest::newRow("missing") << QJsonValue(QJsonValue::Undefined);
+        QTest::newRow("not-object") << QJsonValue("wrong");
+        const QList<QPair<QString, QJsonValue>> fields{{"id", 123}, {"algorithm", "SHA-999"}, {"state", "matches"},
+            {"percent", -1}, {"percent", 101}, {"percent", 99.5}, {"percent", "100"}, {"percent", 99},
+            {"digest", 3}, {"digest", "abc"}, {"digest", QString(64, 'z')}, {"digest", QString(64, 'A')}};
+        int i = 0;
+        for (const auto &field : fields) {
+            auto bad = valid; bad[field.first] = field.second;
+            QTest::newRow(qPrintable(QString("bad-%1-%2").arg(field.first).arg(i++))) << QJsonValue(bad);
+        }
+        auto running = valid; running["state"] = "running";
+        QTest::newRow("running-with-digest") << QJsonValue(running);
+    }
+    void malformedChecksumSnapshotsAreRejected() {
+        QFETCH(QJsonValue, value);
+        FakeService service; service.detailsCapability = service.checksumCapability = true;
+        auto row = service.rows.first().toObject(); row["details"] = QJsonObject{{"url", "https://example.invalid/x"}, {"folder", "/downloads"}, {"error", QJsonValue::Null}, {"fileChecksum", QJsonValue::Null}};
+        service.rows = QJsonArray{row};
+        service.extensionSnapshot = {{"settings", basicSettings()}, {"queues", QJsonArray{}}, {"checksum", QJsonValue::Null}};
+        ServiceDownloads model(service.descriptor); QTRY_COMPARE(model.connectionState(), "ready");
+        QCOMPARE(model.rowCount(), 1);
+        service.extensionSnapshot["checksum"] = value;
+        QTRY_VERIFY(model.connectionState() != "ready"); QCOMPARE(model.rowCount(), 1); QVERIFY(model.checksum().isEmpty());
+    }
+    void checksumDialogUsesCapturedIdsAndExplicitCommands() {
+        FakeService service; service.detailsCapability = service.checksumCapability = true;
+        const QString id = "9007199254740993", hash(64, 'a');
+        service.rows = QJsonArray{QJsonObject{{"id", id}, {"name", "fixture.bin"}, {"size", "1000"}, {"downloaded", "1000"},
+            {"state", "completed"}, {"dateAdded", "1234"}, {"details", QJsonObject{{"url", "https://example.invalid/x"}, {"folder", "/downloads"}, {"error", QJsonValue::Null}, {"fileChecksum", "SHA-256:" + hash}}}}};
+        service.extensionSnapshot = {{"settings", basicSettings()}, {"queues", QJsonArray{}}, {"checksum", QJsonValue::Null}};
+        PreviewDownloads resources; ServiceDownloads model(service.descriptor);
+        std::unique_ptr<QQuickView> view(liveView(model)); QTRY_COMPARE(model.connectionState(), "ready");
+        QVERIFY(QTest::qWaitForWindowExposed(view.get())); QVERIFY(waitForRenderedFrame(view.get()));
+        model.select(id); QCOMPARE(model.selectedId(), id);
+        QVERIFY(QMetaObject::invokeMethod(view->rootObject(), "openChecksum"));
+        auto *dialog = view->rootObject()->findChild<QObject *>("downloadChecksumDialog"); QVERIFY(dialog);
+        QTRY_VERIFY(dialog->property("opened").toBool()); QCOMPARE(service.commands, 0); // Opening never hashes/saves.
+        QVERIFY(view->rootObject()->property("modalOpen").toBool());
+        auto *dialogContent = dialog->property("contentItem").value<QQuickItem *>(); QVERIFY(dialogContent);
+        QVERIFY(waitForRenderedFrame(dialogContent->window()));
+        model.select(""); // Later selection changes must not retarget the captured dialog.
+        auto *expected = dialog->findChild<QObject *>("checksumExpected"); QVERIFY(expected);
+        QCOMPARE(expected->property("text").toString(), hash);
+        auto *start = dialog->findChild<QObject *>("checksumStart"); QVERIFY(start);
+        QVERIFY(QMetaObject::invokeMethod(start, "clicked")); QTRY_COMPARE(service.commands, 1);
+        QCOMPARE(service.lastCommand["op"].toString(), "download.checksum"); QCOMPARE(service.lastCommand["action"].toString(), "start"); QCOMPARE(service.lastCommand["id"].toString(), id);
+        service.extensionSnapshot["checksum"] = QJsonObject{{"id", id}, {"algorithm", "SHA-256"}, {"state", "running"}, {"percent", 37}, {"digest", ""}};
+        auto *cancel = dialog->findChild<QObject *>("checksumCancel"); QVERIFY(cancel); QTRY_VERIFY(cancel->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(cancel, "clicked")); QTRY_COMPARE(service.commands, 2); QCOMPARE(service.lastCommand["action"].toString(), "cancel");
+        service.extensionSnapshot["checksum"] = QJsonObject{{"id", id}, {"algorithm", "SHA-256"}, {"state", "done"}, {"percent", 100}, {"digest", hash}};
+        auto *status = dialog->findChild<QObject *>("checksumComparison"); QVERIFY(status);
+        QTRY_COMPARE(status->property("text").toString(), "Matches expected checksum");
+        expected->setProperty("text", QString(64, 'b'));
+        QTRY_COMPARE(status->property("text").toString(), "Does not match expected checksum");
+        QTest::qWait(500); QCOMPARE(expected->property("text").toString(), QString(64, 'b'));
+        auto *save = dialog->findChild<QObject *>("checksumSave"); QVERIFY(save);
+        expected->setProperty("text", "bad"); QVERIFY(!save->property("enabled").toBool());
+        expected->setProperty("text", QString(64, 'b')); QTRY_VERIFY(save->property("enabled").toBool());
+        QVERIFY(QMetaObject::invokeMethod(save, "clicked")); QTRY_COMPARE(service.commands, 3);
+        QCOMPARE(service.lastCommand["expected"].toString(), QString(64, 'b')); QCOMPARE(service.lastCommand["id"].toString(), id);
+        expected->setProperty("text", ""); QTRY_VERIFY(!model.busy()); QVERIFY(QMetaObject::invokeMethod(save, "clicked"));
+        QTRY_COMPARE(service.commands, 4); QVERIFY(service.lastCommand["expected"].isNull());
+        const auto capture = qEnvironmentVariable("QT_ADAPTER_CAPTURE_DIR");
+        if (!capture.isEmpty()) {
+            expected->setProperty("text", hash);
+            auto *content = qvariant_cast<QQuickItem *>(dialog->property("contentItem")); QVERIFY(content && content->window());
+            QVERIFY(waitForRenderedFrame(content->window())); QVERIFY(content->window()->grabWindow().save(capture + "/checksum-matches.png"));
+        }
+        service.checksumCapability = false; service.restart("older-checksum");
+        QTRY_VERIFY(!model.capabilities().contains("download.checksum")); QTRY_COMPARE(model.connectionState(), "ready");
+        auto *action = view->rootObject()->findChild<QObject *>("checksumDownload"); QVERIFY(action); QVERIFY(!action->property("visible").toBool());
+        QVERIFY(!model.checksumCommand(id, "start", "SHA-256", "")); QCOMPARE(service.commands, 4);
+        QVERIFY(waitForRenderedFrame(dialogContent->window()));
+        QVERIFY(QMetaObject::invokeMethod(dialog, "close"));
+        QTRY_VERIFY(!dialog->property("visible").toBool());
+        QVERIFY(!view->rootObject()->property("modalOpen").toBool());
+        view->close(); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        view->setSource(QUrl()); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     }
     void categoryDestinationsAreCapabilityGatedAndDraftsSurvivePolling() {
         FakeService service; service.categoryCapability = service.categoryDestinationCapability = service.runtimeCapability = true;

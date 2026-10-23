@@ -96,6 +96,7 @@ class EngineSession(
     private val probeJobs = java.util.concurrent.ConcurrentHashMap<BrowserItem, Job>()
     private val probeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val probePermits = kotlinx.coroutines.sync.Semaphore(4)
+    private val checksum = DownloadChecksum()
     // Queue collections and their scheduler/listener/autosaver run on ONE owner thread.
     private val context = Executors.newSingleThreadExecutor { r -> Thread(r, "service-owner") }.asCoroutineDispatcher()
     private val queueScope = CoroutineScope(SupervisorJob() + context)
@@ -188,7 +189,7 @@ class EngineSession(
             "browser.dismiss", "browser.settings", "settings.integration", "frontend.activate", "links.import",
             "system.activity", "download.probe", "download.review", "history.page", "history.delta", "download.windows", "download.parts",
             "download.replace", "download.delete", "settings.folder", "settings.duplicates",
-            "download.reset", "download.move", "download.links", "settings.sort", "category.icon", "category.destination", "settings.notificationSounds", "queue.powerAction", "power.execute", "power.cancel",
+            "download.reset", "download.move", "download.links", "download.checksum", "settings.sort", "category.icon", "category.destination", "settings.notificationSounds", "queue.powerAction", "power.execute", "power.cancel",
             "queue.startAll", "queue.stopAll", "download.stopAll", "links.review", "browser.probe", "browser.probeBatch")
     }
 
@@ -377,6 +378,7 @@ class EngineSession(
     private suspend fun replaceDestination(folder: Path, name: String): List<Long> {
         val targets = manager.getDownloadList().filter { it.folder == folder.toString() && it.name == name }
         for (item in targets) {
+            require(!checksum.isReading(item.id)) { "Cancel checksum calculation before replacing this download" }
             require(item.status != DownloadStatus.Downloading && manager.getJobStatusOf(item.id) !is DownloadJobStatus.IsActive &&
                 manager.downloadJobs.none { it.id == item.id && it.isDownloadActive.value }) { "Pause the existing download before replacing it" }
             require(queues.getAll().none { it.isQueueActive && item.id in it.getQueueModel().queueItems }) {
@@ -384,6 +386,7 @@ class EngineSession(
             }
         }
         for (item in targets) {
+            checksum.invalidate(item.id)
             val memberships = queues.getAll().filter { item.id in it.getQueueModel().queueItems }
             manual.removeFromQueue(item.id)
             memberships.forEach { it.removeFromQueue(item.id) }
@@ -528,6 +531,7 @@ class EngineSession(
                 put("dateAdded", item.dateAdded.toString())
                 put("details", buildJsonObject {
                     put("url", item.link); put("folder", item.folder)
+                    put("fileChecksum", item.fileChecksum?.take(256)?.let(::JsonPrimitive) ?: JsonNull)
                     put("downloadPage", item.downloadPage?.takeIf { page ->
                         runCatching { val uri = java.net.URI(page)
                             page.length <= 2048 && page.none(Char::isISOControl) && uri.scheme in listOf("http", "https") &&
@@ -561,6 +565,7 @@ class EngineSession(
         val state = buildJsonObject {
             put("state", "ready"); put("rows", rows); put("settings", preferences.snapshot())
             put("downloadParts", partSnapshot(partsFor))
+            put("checksum", checksum.snapshot())
             put("settingsPolicy", preferences.policySnapshot())
             put("browserIntegration", bridge.snapshot())
             // Forget results (and cancel probes) of items no longer awaiting review.
@@ -769,9 +774,36 @@ class EngineSession(
                         check(withContext(Dispatchers.IO) { power.initiate(pending.type) }) { "The system refused the power action" }
                     }
                 }
+                "download.checksum" -> jobControl.mutate {
+                    val id = request["id"]?.jsonPrimitive?.content?.toLongOrNull() ?: error("Invalid stable ID")
+                    val action = request["action"]?.jsonPrimitive?.content ?: error("Missing checksum action")
+                    if (action == "cancel") { checksum.cancel(id); put("id", id.toString()); return@mutate }
+                    val item = list.getById(id) ?: error("Download no longer exists")
+                    require(item.status == DownloadStatus.Completed && manager.getJobStatusOf(id) !is DownloadJobStatus.IsActive) { "Checksum requires a completed download" }
+                    require(queues.getAll().none { it.isQueueActive && id in it.getQueueModel().queueItems }) { "Stop containing queues first" }
+                    val algorithm = request["algorithm"]?.jsonPrimitive?.content ?: error("Missing checksum algorithm")
+                    require(algorithm in DownloadChecksum.algorithms) { "Unsupported checksum algorithm" }
+                    when (action) {
+                        "start" -> {
+                            runtime.validateFolder(Path.of(item.folder))
+                            val file = File(item.folder, item.name).toPath()
+                            runtime.validateDestination(file)
+                            checksum.start(id, file, algorithm)
+                        }
+                        "save" -> {
+                            val expected = DownloadChecksum.expected(algorithm, request["expected"] ?: error("Missing expected checksum"))
+                            try { manager.updateDownloadItem(id, null) { it.fileChecksum = expected } }
+                            catch (e: CancellationException) { throw e }
+                            catch (e: Exception) { throw DownloadMutationPartiallyApplied(id, op, e) }
+                        }
+                        else -> error("Unsupported checksum action")
+                    }
+                    put("id", id.toString())
+                }
                 "download.reset", "download.move" -> jobControl.mutate {
                     val id = request["id"]?.jsonPrimitive?.content?.toLongOrNull() ?: error("Invalid stable ID")
                     val item = list.getById(id) as? HttpDownloadItem ?: error("Download no longer exists")
+                    require(!checksum.isReading(id)) { "Cancel checksum calculation before changing this download" }
                     require(item.status != DownloadStatus.Downloading && manager.getJobStatusOf(id) !is DownloadJobStatus.IsActive &&
                         manager.downloadJobs.none { it.id == id && it.isDownloadActive.value }) { "Pause download first" }
                     require(queues.getAll().none { it.isQueueActive && id in it.getQueueModel().queueItems }) { "Stop containing queues first" }
@@ -798,6 +830,7 @@ class EngineSession(
                     }
                     manual.removeFromQueue(id)
                     manager.downloadJobs.find { it.id == id }?.activeDownloadScope?.coroutineContext?.job?.join()
+                    checksum.invalidate(id)
                     try {
                         if (op == "download.reset") facade.reset(id)
                         else manager.updateDownloadItem(id, null) { (it as HttpDownloadItem).applyFrom(draft) }
@@ -838,6 +871,8 @@ class EngineSession(
                 }
                 "download.forget" -> jobControl.mutate {
                     val id = request["id"]?.jsonPrimitive?.content?.toLongOrNull() ?: error("Invalid stable ID")
+                    require(!checksum.isReading(id)) { "Cancel checksum calculation before removing this download" }
+                    checksum.invalidate(id)
                     val keepFiles = request["keepFiles"]?.jsonPrimitive?.booleanOrNull ?: error("Missing keepFiles parameter")
                     val item = list.getById(id) ?: error("Download no longer exists")
                     require(item.status != DownloadStatus.Downloading && manager.getJobStatusOf(id) !is DownloadJobStatus.IsActive &&
@@ -1059,6 +1094,7 @@ class EngineSession(
         activity.close()
         // Review probes do not touch the engine; join them before closing the HTTP client.
         probeScope.coroutineContext.job.cancelAndJoin()
+        checksum.close()
         withContext(context) {
             // Disable/cancel and join EVERY queue producer before pausing transfer jobs.
             // Final queue persistence runs after autosavers have joined, with lease still held.

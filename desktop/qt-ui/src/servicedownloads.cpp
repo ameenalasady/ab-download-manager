@@ -223,6 +223,10 @@ void ServiceDownloads::readFrames() {
                         || reason["throwableMessage"].toString().size() > 8192) { invalid(); return; }
                 }
             }
+            if (m_capabilities.contains("download.checksum")) {
+                const auto saved = row["details"].toObject()["fileChecksum"];
+                if ((!saved.isNull() && !saved.isString()) || saved.toString().size() > 256) { invalid(); return; }
+            }
             if (m_capabilities.contains("download.links")) {
                 const auto page = row["details"].toObject()["downloadPage"];
                 if (!page.isString() || page.toString().size() > 2048) { invalid(); return; }
@@ -495,6 +499,22 @@ void ServiceDownloads::readFrames() {
             }
             if (!events.isEmpty() && previous != windowSerial) { invalid(); return; }
         }
+        QVariantMap checksum;
+        if (m_capabilities.contains("download.checksum")) {
+            const auto value = snapshot["checksum"];
+            if (!value.isNull()) {
+                const auto c = value.toObject();
+                const QHash<QString, int> lengths{{"MD5", 32}, {"SHA-1", 40}, {"SHA-256", 64}, {"SHA-512", 128}};
+                const auto digest = c["digest"].toString(), state = c["state"].toString();
+                if (!value.isObject() || !numericId(c["id"]) || !lengths.contains(c["algorithm"].toString())
+                    || !QStringList{"running", "done", "cancelled", "error"}.contains(state)
+                    || !c["percent"].isDouble() || c["percent"].toDouble() != c["percent"].toInt(-1)
+                    || c["percent"].toInt() < 0 || c["percent"].toInt() > 100 || !c["digest"].isString()
+                    || (state == "done" ? (c["percent"].toInt() != 100 || digest.size() != lengths.value(c["algorithm"].toString())
+                        || std::any_of(digest.cbegin(), digest.cend(), [](QChar ch) { return !QStringLiteral("0123456789abcdef").contains(ch); })) : !digest.isEmpty())) { invalid(); return; }
+                checksum = c.toVariantMap();
+            }
+        }
         QJsonObject activation;
         if (m_capabilities.contains("frontend.activate")) {
             const auto value = snapshot["frontend"].toObject()["activation"];
@@ -513,11 +533,11 @@ void ServiceDownloads::readFrames() {
         const bool unitsChanged = settings.value("sizeUnit") != m_settings.value("sizeUnit") || settings.value("speedUnit") != m_settings.value("speedUnit");
         const bool sortChanged = settings.value("qtSortColumn") != m_settings.value("qtSortColumn") || settings.value("qtSortDescending") != m_settings.value("qtSortDescending");
         const bool extensionsChanged = queues != m_queues || settings != m_settings || categoriesChanged || runtimeChanged || settingsPolicy != m_settingsPolicy || integration != m_integration
-            || manualPending != m_manualPending || parts != m_parts || powerAction != m_powerAction;
+            || manualPending != m_manualPending || parts != m_parts || powerAction != m_powerAction || checksum != m_checksum;
         if (extensionsChanged) {
             m_queues = queues; m_settings = settings; m_categories = categories; m_categoryMembers = categoryMembers; m_runtime = runtime;
             m_settingsPolicy = settingsPolicy; m_integration = integration; m_manualPending = manualPending; m_parts = parts;
-            m_powerAction = powerAction;
+            m_powerAction = powerAction; m_checksum = checksum;
             if (m_category.startsWith("category:") && !m_categoryMembers.contains(m_category)) m_category = "all";
         }
         if (rows != m_rows || categoriesChanged || unitsChanged || sortChanged || !m_selectOnSnapshot.isEmpty()) {
@@ -886,6 +906,7 @@ QVariantMap ServiceDownloads::downloadState(const QString &id) const {
         if (m_capabilities.contains("download.details")) {
             const auto details = row["details"].toObject();
             result.insert("url", details["url"].toString()); result.insert("folder", details["folder"].toString());
+            if (m_capabilities.contains("download.checksum")) result.insert("fileChecksum", details["fileChecksum"].toString());
             result.insert("error", details["error"].isObject() ? details["error"].toObject().toVariantMap() : QVariant());
             if (m_capabilities.contains("download.http-options")) result.insert("hasCredentials", details["hasCredentials"].toBool());
         }
@@ -1187,6 +1208,13 @@ bool ServiceDownloads::probeBrowserItems(const QString &requestId, const QVarian
     if (batch) return command({{"op", "browser.probeBatch"}, {"requestId", requestId}, {"indices", all}});
     // Older services: one bounded probe at a time through the command slot.
     return commandBatch(commands);
+}
+bool ServiceDownloads::checksumCommand(const QString &id, const QString &action, const QString &algorithm, const QString &expected) {
+    if (!numericId(id) || !QStringList{"start", "save", "cancel"}.contains(action)) return false;
+    if (action != "cancel" && downloadState(id).value("state").toString() != "completed") return false;
+    if (action != "cancel" && !QStringList{"MD5", "SHA-1", "SHA-256", "SHA-512"}.contains(algorithm)) return false;
+    return command({{"op", "download.checksum"}, {"id", id}, {"action", action}, {"algorithm", algorithm},
+        {"expected", expected.isEmpty() ? QJsonValue(QJsonValue::Null) : QJsonValue(expected)}});
 }
 bool ServiceDownloads::taskCommand(const QString &operation) {
     return QStringList{"queue.startAll", "queue.stopAll", "download.stopAll"}.contains(operation) && command({{"op", operation}});

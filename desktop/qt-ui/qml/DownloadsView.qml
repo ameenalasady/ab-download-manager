@@ -18,7 +18,7 @@ Item {
     readonly property bool removeDialogVisible: removeDialog.visible
     readonly property bool actionsMenuVisible: actionsMenu.visible
     // Every dialog except the browser review, which waits for these to close.
-    readonly property bool mainModalOpen: powerDialog.visible || exitDialog.visible || multipleAddDialog.visible || mutationDialog.visible || addDialog.visible || duplicateDialog.visible || removeDialog.visible || aboutDialog.visible || Boolean(workflows && workflows.modalOpen) || Boolean(categoryWorkflows && categoryWorkflows.modalOpen) || Boolean(detailsLoader.item && detailsLoader.item.modalOpen) || Boolean(httpOptionsLoader.item && httpOptionsLoader.item.modalOpen)
+    readonly property bool mainModalOpen: powerDialog.visible || exitDialog.visible || multipleAddDialog.visible || mutationDialog.visible || addDialog.visible || duplicateDialog.visible || removeDialog.visible || aboutDialog.visible || Boolean(workflows && workflows.modalOpen) || Boolean(categoryWorkflows && categoryWorkflows.modalOpen) || Boolean(detailsLoader.item && detailsLoader.item.modalOpen) || Boolean(checksumLoader.item && checksumLoader.item.modalOpen) || Boolean(httpOptionsLoader.item && httpOptionsLoader.item.modalOpen)
     readonly property bool modalOpen: mainModalOpen || Boolean(browserLoader.item && browserLoader.item.modalOpen)
     PreviewTheme { id: theme }
     NativeWindowStyle { id: material; window: root.Window.window; maximumOpacity: Tokens.materialOpacity }
@@ -146,6 +146,13 @@ Item {
     Loader {
         id: workflowLoader; active: root.live; anchors.fill: parent
         sourceComponent: Component { ServiceWorkflows { service: root.downloads } }
+    }
+    function openChecksum() {
+        if (live && singleSelection && checksumLoader.item) (checksumLoader.item as ChecksumWorkflow).openChecksum(downloads.selectedId)
+    }
+    Loader {
+        id: checksumLoader; active: root.live; anchors.fill: parent
+        sourceComponent: Component { ChecksumWorkflow { service: root.downloads } }
     }
     function openDetails() { if (detailsLoader.item) (detailsLoader.item as DownloadDetails).openDetails(downloads.selectedId) }
     Loader {
@@ -684,8 +691,14 @@ Item {
         QQC2.MenuSeparator { visible: root.live && root.downloads.capabilities.indexOf("download.links") >= 0 }
         QQC2.MenuItem { objectName: "copyDownloadLink"; text: qsTr("Copy &Link"); icon.name: "edit-copy"; visible: root.live && root.downloads.capabilities.indexOf("download.links") >= 0; enabled: root.downloads.selectionCount > 0; onTriggered: root.downloads.copyDownloadLinks() }
         QQC2.MenuItem { objectName: "openDownloadPage"; text: qsTr("Open Download Pa&ge"); icon.name: "internet-web-browser"; visible: root.live && root.singleSelection && root.downloads.downloadPageUrl(root.downloads.selectedId).toString() !== ""; onTriggered: DesktopOpener.openWebPage(root.downloads.downloadPageUrl(root.downloads.selectedId), root.Window.window) }
-        QQC2.MenuSeparator { visible: root.live && ["download.move", "download.reset", "download.edit", "queue.add", "category.assign"].some(c => root.downloads.capabilities.indexOf(c) >= 0) }
+        QQC2.MenuSeparator { visible: root.live && ["download.move", "download.reset", "download.edit", "download.checksum", "queue.add", "category.assign"].some(c => root.downloads.capabilities.indexOf(c) >= 0) }
         QQC2.MenuItem { objectName: "moveRenameDownload"; text: qsTr("Move / Re&name…"); icon.name: "edit-rename"; visible: root.live && root.downloads.capabilities.indexOf("download.move") >= 0; enabled: root.singleSelection && root.downloads.canMutateDownload(root.downloads.selectedId, "download.move"); onTriggered: root.openMutation("download.move") }
+        QQC2.MenuItem {
+            objectName: "checksumDownload"; text: qsTr("File Chec&ksum…"); icon.name: "document-encrypt"
+            visible: root.live && root.downloads.capabilities.indexOf("download.checksum") >= 0
+            enabled: root.singleSelection && !root.downloads.busy && root.downloads.downloadState(root.downloads.selectedId).state === "completed"
+            onTriggered: root.openChecksum()
+        }
         QQC2.MenuItem { objectName: "resetDownload"; text: qsTr("Re&set Progress…"); icon.name: "view-refresh"; visible: root.live && root.downloads.capabilities.indexOf("download.reset") >= 0; enabled: root.singleSelection && root.downloads.canMutateDownload(root.downloads.selectedId, "download.reset"); onTriggered: root.openMutation("download.reset") }
         QQC2.MenuItem { objectName: "editDownloadOptions"; text: qsTr("&Edit Connection Options…"); icon.name: "configure"; visible: root.live && root.downloads.capabilities.indexOf("download.edit") >= 0; enabled: root.singleSelection && root.downloads.canResume; onTriggered: root.openHttpEdit() }
         MenuSurface {

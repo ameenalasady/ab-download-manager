@@ -22,6 +22,7 @@ class ServiceDownloads : public QAbstractListModel
     // A finished queue's power action awaiting the countdown answer, or empty:
     // {serial, type: Shutdown|Sleep|Hibernate, reason: queueFinished|queueEndTime, queueId, queueName}.
     Q_PROPERTY(QVariantMap powerAction READ powerAction NOTIFY viewChanged)
+    Q_PROPERTY(QVariantMap checksum READ checksum NOTIFY viewChanged)
     Q_PROPERTY(QStringList capabilities READ capabilities NOTIFY viewChanged)
     Q_PROPERTY(QVariantList browserRequests READ browserRequests NOTIFY browserChanged)
     Q_PROPERTY(QVariantMap browserIntegration READ browserIntegration NOTIFY browserChanged)
@@ -66,6 +67,8 @@ public:
     QVariantMap settingsPolicy() const { return m_settingsPolicy; }
     QVariantMap integration() const { return m_integration; }
     QVariantMap powerAction() const { return m_powerAction; }
+    QVariantMap checksum() const { return m_checksum; }
+    Q_INVOKABLE bool checksumCommand(const QString &id, const QString &action, const QString &algorithm, const QString &expected);
     // Confirms (execute) or cancels the pending power action with this serial, once.
     Q_INVOKABLE bool answerPowerAction(const QString &serial, bool execute);
     void setFrontendActive(bool active) { m_frontendActive = active; }
@@ -212,7 +215,7 @@ private:
     QTimer m_poll, m_deadline;
     QByteArray m_input;
     QVariantList m_queues, m_categories;
-    QVariantMap m_settings, m_counts, m_runtime, m_settingsPolicy, m_browserIntegration, m_integration, m_powerAction;
+    QVariantMap m_settings, m_counts, m_runtime, m_settingsPolicy, m_browserIntegration, m_integration, m_powerAction, m_checksum;
     QString m_activationKey;
     bool m_frontendActive = false;
     QVariantList m_browserRequests;
