@@ -1760,6 +1760,44 @@ private slots:
         QCOMPARE(service.commandLog.size(), 4);
         QCOMPARE(model.rowCount(), 2);
     }
+    void longDuplicateNameKeepsExistingActionInline() {
+        FakeService service; service.detailsCapability = service.runtimeCapability = service.browserCapability = true;
+        const QString name = QString(170, 'W') + ".mp4", link = "https://example.invalid/long.mp4";
+        service.rows = QJsonArray{QJsonObject{{"id", "9007199254740993"}, {"name", name}, {"size", "1000"},
+            {"downloaded", "0"}, {"state", "paused"}, {"dateAdded", "1234"},
+            {"details", QJsonObject{{"url", link}, {"folder", "/downloads"}, {"error", QJsonValue::Null}}}}};
+        service.extensionSnapshot = {{"settings", basicSettings()}, {"queues", QJsonArray{}},
+            {"runtime", QJsonObject{{"mode", "explicit-runtime"}, {"destination", "/downloads"}, {"destinationRoots", QJsonArray{"/downloads"}}, {"redirects", true}, {"proxy", "direct"}}},
+            {"browserIntegration", QJsonObject{{"state", "disabled"}, {"enabled", false}, {"auth", false}, {"port", 15151}, {"error", QJsonValue::Null}}},
+            {"browserRequests", QJsonArray{QJsonObject{{"id", "long-duplicate"}, {"source", "browser"}, {"outcomeUnknown", false},
+                {"items", QJsonArray{QJsonObject{{"url", link}, {"name", name}, {"hasHeaders", false}, {"downloadPage", QJsonValue::Null}}}}}}}};
+        PreviewDownloads resources; ServiceDownloads model(service.descriptor);
+        std::unique_ptr<QQuickView> view(liveView(model));
+        QTRY_COMPARE(model.connectionState(), "ready");
+        QQuickWindow *review = nullptr;
+        QTRY_VERIFY((review = view->rootObject()->findChild<QQuickWindow *>("browserRequestDialog")) && review->isVisible());
+        auto *notice = review->findChild<QQuickItem *>("browserRequestExisting"); QVERIFY(notice);
+        QTRY_VERIFY(notice->isVisible()); QVERIFY(waitForRenderedFrame(review));
+        QTest::qWait(350); // Let the warning's first-show animation/style finish before capturing.
+        const auto capture = qEnvironmentVariable("QT_ADAPTER_CAPTURE_DIR");
+        if (!capture.isEmpty()) QVERIFY(review->grabWindow().save(capture + "/long-duplicate.png"));
+        // A long name must not create a second action row or grow the banner.
+        QVERIFY2(notice->height() <= 64, qPrintable(QString("duplicate banner height %1").arg(notice->height())));
+        review->setMinimumWidth(360); review->setMaximumWidth(1000); review->resize(420, review->height());
+        QVERIFY(waitForRenderedFrame(review));
+        QVERIFY2(notice->height() <= 64, "narrow review must retain a single action row");
+        QVERIFY(notice->width() <= review->width());
+        auto *message = notice->findChild<QQuickItem *>("duplicateNoticeText"); QVERIFY(message);
+        QCOMPARE(message->property("text").toString(), QString("“%1” is already in your downloads.").arg(name));
+        QVERIFY(message->property("truncated").toBool());
+        auto *show = notice->findChild<QQuickItem *>("duplicateNoticeShowExisting"); QVERIFY(show && show->isVisible());
+        const auto buttonBounds = show->mapRectToItem(notice, QRectF(QPointF(), show->size()));
+        QVERIFY(buttonBounds.left() >= 0 && buttonBounds.right() <= notice->width());
+        QVERIFY(qAbs(buttonBounds.center().y() - notice->height() / 2) < 2);
+        if (!capture.isEmpty()) QVERIFY(review->grabWindow().save(capture + "/long-duplicate-narrow.png"));
+        QCOMPARE(service.commands, 0);
+        review->close();
+    }
     void duplicateDialogsRequireAnExplicitChoiceBeforeAdding() {
         FakeService service; service.detailsCapability = true; service.runtimeCapability = true;
         service.duplicateCapability = true; service.replaceCapability = true; service.browserCapability = true;

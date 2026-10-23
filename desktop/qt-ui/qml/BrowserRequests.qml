@@ -456,24 +456,15 @@ Item {
             }
             TextBlock { colors: theme; tone: "secondary"; visible: dialog.multiple && dialog.filteredItems.length === 0; text: qsTr("No matching links") }
             // Single-link review: show warning if link already exists
-            Kirigami.InlineMessage {
+            DuplicateNotice {
                 objectName: "browserRequestExisting"
-                Layout.fillWidth: true
-                type: Kirigami.MessageType.Warning
                 readonly property var match: dialog.singleExisting ? dialog.singleExisting.match : null
                 visible: Boolean(dialog.singleExisting && (match || dialog.singleExisting.fileExists))
                 text: match ? qsTr("“%1” is already in your downloads.").arg(match.name) : qsTr("A file with this name already exists here.")
-                actions: [
-                    Kirigami.Action {
-                        text: qsTr("Show Existing"); visible: Boolean(dialog.singleExisting && dialog.singleExisting.match)
-                        onTriggered: root.existingRequested(dialog.singleExisting.match.id)
-                    },
-                    Kirigami.Action {
-                        text: qsTr("Open File")
-                        visible: Boolean(dialog.singleExisting && dialog.singleExisting.match && dialog.singleExisting.match.fileUrl.toString() !== "")
-                        onTriggered: DesktopOpener.openFile(dialog.singleExisting.match.fileUrl, dialog)
-                    }
-                ]
+                hasExisting: Boolean(match)
+                canOpen: Boolean(match && match.fileUrl.toString() !== "")
+                onShowExisting: root.existingRequested(match.id)
+                onOpenFile: DesktopOpener.openFile(match.fileUrl, dialog)
             }
             FormGrid {
                 FormLabel { text: qsTr("Save in:") }

@@ -985,18 +985,12 @@ Item {
                     onClicked: { if (httpOptionsLoader.item) (httpOptionsLoader.item as HttpOptions).openOptions("", "", root.addOptions) }
                 }
             }
-            Kirigami.InlineMessage {
+            DuplicateNotice {
                 objectName: "addExistingWarning"
-                Layout.fillWidth: true
-                type: Kirigami.MessageType.Warning
                 visible: Boolean(addDialog.existing) || addDialog.fileExists
                 text: addDialog.existing ? qsTr("“%1” is already in your downloads.").arg(addDialog.existing.name) : qsTr("A file with this name already exists here.")
-                actions: [
-                    Kirigami.Action {
-                        text: qsTr("Show Existing"); visible: Boolean(addDialog.existing)
-                        onTriggered: { root.showDownloadWindow(addDialog.existing.id, false); addDialog.close() }
-                    }
-                ]
+                hasExisting: Boolean(addDialog.existing)
+                onShowExisting: { root.showDownloadWindow(addDialog.existing.id, false); addDialog.close() }
             }
             Body {
                 tone: "secondary"; visible: !root.explicitRuntime
