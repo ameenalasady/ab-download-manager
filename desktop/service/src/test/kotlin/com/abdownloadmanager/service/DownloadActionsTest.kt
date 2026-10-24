@@ -82,4 +82,31 @@ class DownloadActionsTest {
             assertNotEquals(first, second)
         } finally { lifecycle.stop(); root.toFile().deleteRecursively() }
     }
+    @Test fun rowsNameTheFileBeingWrittenUntilCompleted() = runBlocking {
+        for (incomplete in listOf(false, true)) {
+            val root = Files.createTempDirectory("abdm-actions-")
+            var lifecycle = ServiceLifecycle(root)
+            try {
+                val id = lifecycle.start().command(buildJsonObject {
+                    put("op", "add"); put("url", "http://127.0.0.1:12345/not-fetched"); put("name", "MTc5Mjg0")
+                }).getValue("id").jsonPrimitive.content
+                lifecycle.stop()
+                Files.writeString(root.resolve("app-data/config/appSettings.json"), """{"appendExtensionToIncompleteDownloads":$incomplete}""")
+                val itemFile = root.resolve("app-data/config/download_db/downloadlist/$id.json")
+                fun withStatus(status: String) {
+                    val item = Json.parseToJsonElement(Files.readString(itemFile)).jsonObject
+                    Files.writeString(itemFile, JsonObject(item + ("status" to JsonPrimitive(status))).toString())
+                }
+                lifecycle = ServiceLifecycle(root)
+                val partial = lifecycle.start().snapshot().getValue("rows").jsonArray.single().jsonObject
+                    .getValue("details").jsonObject.getValue("partialName").jsonPrimitive.content
+                val expected = if (incomplete) IncompleteFileUtil.addIncompleteIndicator(root.resolve("Downloads/MTc5Mjg0").toFile(), id.toLong()).name else "MTc5Mjg0"
+                assertEquals(expected, partial)
+                lifecycle.stop(); withStatus("Completed")
+                lifecycle = ServiceLifecycle(root)
+                val done = lifecycle.start().snapshot().getValue("rows").jsonArray.single().jsonObject
+                assertEquals(JsonNull, done.getValue("details").jsonObject.getValue("partialName"))
+            } finally { lifecycle.stop(); root.toFile().deleteRecursively() }
+        }
+    }
 }

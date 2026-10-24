@@ -531,6 +531,13 @@ class EngineSession(
                 put("dateAdded", item.dateAdded.toString())
                 put("details", buildJsonObject {
                     put("url", item.link); put("folder", item.folder)
+                    // Bare name of the file being written in `folder`, so the UI can sniff its type before completion.
+                    put("partialName", when {
+                        item.status == DownloadStatus.Completed -> JsonNull
+                        settings.appendExtensionToIncompleteDownloads ->
+                            JsonPrimitive(IncompleteFileUtil.addIncompleteIndicator(File(item.folder, item.name), item.id).name)
+                        else -> JsonPrimitive(item.name)
+                    })
                     put("fileChecksum", item.fileChecksum?.take(256)?.let(::JsonPrimitive) ?: JsonNull)
                     put("downloadPage", item.downloadPage?.takeIf { page ->
                         runCatching { val uri = java.net.URI(page)

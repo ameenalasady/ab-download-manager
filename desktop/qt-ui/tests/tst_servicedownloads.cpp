@@ -1672,6 +1672,23 @@ private slots:
                 bare["state"] = "completed"; service.rows[2] = bare;
                 QTRY_COMPARE(model.downloadState(ids[2])["state"].toString(), "completed");
                 QVERIFY(model.downloadState(ids[2])["iconName"].toString().startsWith("video-"));
+                // While downloading, the file being written is sniffed, retrying until its head arrives.
+                const auto restored = bare;
+                auto active = bare; active["name"] = "Zz9XkQ"; active["state"] = "downloading"; active["downloaded"] = "4096";
+                auto details = active["details"].toObject(); details["partialName"] = "Zz9XkQ.dl-7.abdm.part"; active["details"] = details;
+                QFile partial(QDir(folder).filePath("Zz9XkQ.dl-7.abdm.part")); QVERIFY(partial.open(QIODevice::WriteOnly));
+                partial.write(QByteArray(64, '\0')); partial.flush();
+                service.rows[2] = active;
+                QTRY_COMPARE(model.downloadState(ids[2])["name"].toString(), "Zz9XkQ");
+                QCOMPARE(model.downloadState(ids[2])["iconName"].toString(), "text-x-generic"); // Head still blank.
+                partial.seek(0); partial.write(QByteArray::fromHex("000000186674797069736f6d0000020069736f6d6d703431")); partial.close();
+                QTRY_VERIFY(model.downloadState(ids[2])["iconName"].toString().startsWith("video-"));
+                // A partialName outside the folder is never read.
+                details["partialName"] = "../1Q4YkrC7"; active["name"] = "Zz9XkR"; active["details"] = details; service.rows[2] = active;
+                QTRY_COMPARE(model.downloadState(ids[2])["name"].toString(), "Zz9XkR");
+                QCOMPARE(model.downloadState(ids[2])["iconName"].toString(), "text-x-generic");
+                service.rows[2] = restored;
+                QTRY_COMPARE(model.downloadState(ids[2])["name"].toString(), "1Q4YkrC7");
             }
             QVariant shown;
             QVERIFY(QMetaObject::invokeMethod(view.rootObject(), "showDownloadWindow", Q_RETURN_ARG(QVariant, shown), Q_ARG(QString, ids[2]), Q_ARG(bool, false)));

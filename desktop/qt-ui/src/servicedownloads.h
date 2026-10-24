@@ -225,7 +225,9 @@ private:
     QStringList m_capabilities;
     QVector<QJsonObject> m_rows;
     QString fileIcon(const QJsonObject &row) const;
-    mutable QHash<QString, QPair<QString, QString>> m_contentIcons;
+    // Content-sniffed icon per download. Unsettled entries (nothing readable yet) are re-sniffed after retryAt.
+    struct ContentIcon { QString signature, icon; bool settled; qint64 retryAt; };
+    mutable QHash<QString, ContentIcon> m_contentIcons;
     // A user command issued while a snapshot request is in flight. Sent once, right
     // after that reply; dropped (reported as not sent) if the connection ends first.
     QJsonObject m_deferred;

@@ -76,14 +76,18 @@ QString ServiceDownloads::fileCategory(const QString &name) {
     return "documents";
 }
 
-// The completed file's path when it is a plain regular file inside its download folder.
-static QString completedFilePath(const QJsonObject &row) {
-    if (row["state"].toString() != "completed") return {};
-    const QString directory = row["details"].toObject()["folder"].toString(), name = row["name"].toString();
+// `name` as a plain regular file inside the row's download folder, or empty.
+static QString plainFilePath(const QJsonObject &row, const QString &name) {
+    const QString directory = row["details"].toObject()["folder"].toString();
     if (!QDir::isAbsolutePath(directory) || name.isEmpty() || name.contains('/') || name == "." || name == "..") return {};
     const QFileInfo dir(directory), file(QDir(directory).filePath(name));
     if (!dir.isDir() || file.isSymLink() || !file.isFile()) return {};
     return file.absoluteFilePath();
+}
+
+// The completed file's path when it is a plain regular file inside its download folder.
+static QString completedFilePath(const QJsonObject &row) {
+    return row["state"].toString() == "completed" ? plainFilePath(row, row["name"].toString()) : QString();
 }
 
 static QString themeIconFor(const QMimeType &mime) {
@@ -92,22 +96,32 @@ static QString themeIconFor(const QMimeType &mime) {
     return mime.genericIconName().isEmpty() ? QStringLiteral("text-x-generic") : mime.genericIconName();
 }
 
-// Icon from the file's MIME type: by name first, then by content once the file is completed
-// (names such as "1Q4YkrC7" carry no extension).
+// Icon from the file's MIME type: by name first, then by content (names such as "1Q4YkrC7" carry no
+// extension). While downloading, the file being written is sniffed once it has bytes; its head may
+// still be blank (sparse allocation), so a blank result is retried shortly.
 QString ServiceDownloads::fileIcon(const QJsonObject &row) const {
     const QString name = row["name"].toString();
     static const QMimeDatabase db;
     const QMimeType byName = db.mimeTypeForFile(name, QMimeDatabase::MatchExtension);
     if (!byName.isDefault()) return themeIconFor(byName);
-    const QString signature = name + '\n' + row["state"].toString() + '\n' + row["details"].toObject()["folder"].toString();
+    const bool completed = row["state"].toString() == "completed";
+    const auto details = row["details"].toObject();
+    const QString signature = name + '\n' + details["folder"].toString() + '\n' + details["partialName"].toString() + (completed ? "\ncompleted" : "");
     const QString id = row["id"].toString();
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
     const auto cached = m_contentIcons.constFind(id);
-    if (cached != m_contentIcons.constEnd() && cached->first == signature) return cached->second;
-    const QString path = completedFilePath(row);
-    const QString icon = path.isEmpty() ? QStringLiteral("text-x-generic")
-        : themeIconFor(db.mimeTypeForFile(path, QMimeDatabase::MatchContent));
-    m_contentIcons.insert(id, {signature, icon});
-    return icon;
+    if (cached != m_contentIcons.constEnd() && cached->signature == signature && (cached->settled || now < cached->retryAt)) return cached->icon;
+    QString path = completedFilePath(row);
+    if (!completed && row["downloaded"].toString().toLongLong() > 0) path = plainFilePath(row, details["partialName"].toString());
+    ContentIcon entry{signature, QStringLiteral("text-x-generic"), completed, now + 2000};
+    if (!path.isEmpty()) {
+        const QMimeType byContent = db.mimeTypeForFile(path, QMimeDatabase::MatchContent);
+        const bool blank = byContent.isDefault() || byContent.name() == QLatin1String("application/x-zerosize");
+        if (!blank || completed) entry.icon = themeIconFor(byContent);
+        if (!blank) entry.settled = true;
+    }
+    m_contentIcons.insert(id, entry);
+    return entry.icon;
 }
 
 ServiceDownloads::ServiceDownloads(const QString &descriptor, QObject *parent)
