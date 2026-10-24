@@ -977,7 +977,9 @@ Item {
         // Automatic file name: shown as the File name placeholder while that field is empty. It starts as
         // the link's own last path segment and is replaced by the server's answer to a header-only check.
         property string autoName: ""
-        property string autoSource: "link"
+        // What the last check of the current link found: "none", "answered", "refused" (the server
+        // answered with an error or a login wall; autoDetail says which) or "unreachable".
+        property string probeOutcome: "none"
         property string autoDetail: ""
         property bool probing: false
         // Link + connection options a check was last started for / is running for.
@@ -990,17 +992,22 @@ Item {
         property bool forceSubmit: false
         readonly property bool canProbe: root.live && root.downloads.capabilities.indexOf("download.probe") >= 0
         readonly property bool nameSettled: !canProbe || sourceInput.text.trim() === "" || (!probing && linkKey() === probedKey)
-        readonly property string hintText: {
-            if (probing) return qsTr("Checking link…")
-            if (autoName === "") return ""
-            const source = autoSource === "server" ? qsTr("From the server") : qsTr("From the link")
-            return autoDetail !== "" ? qsTr("%1 · %2").arg(source).arg(autoDetail) : source
+        // The File name field's status (spinner, size or warning) lives inside the field, so showing
+        // or hiding it never changes the dialog's height.
+        readonly property bool statusVisible: root.live && nameInput.text.trim() === ""
+            && (probing || probeOutcome === "refused" || probeOutcome === "unreachable" || (probeOutcome === "answered" && autoDetail !== ""))
+        readonly property string statusText: {
+            if (probing) return qsTr("Checking the link…")
+            if (probeOutcome === "answered") return qsTr("Name and size from the server")
+            if (probeOutcome === "refused") return qsTr("The server said: %1. Using the name from the link.").arg(autoDetail)
+            if (probeOutcome === "unreachable") return qsTr("Couldn't reach the server. Using the name from the link.")
+            return ""
         }
         onAutoNameChanged: existingCheck.restart()
         function effectiveName(): string { const typed = nameInput.text.trim(); return typed !== "" ? typed : autoName }
         function linkKey(): string { return JSON.stringify([sourceInput.text.trim(), root.addOptions]) }
         function resetAuto(): void {
-            autoName = ""; autoSource = "link"; autoDetail = ""; probedKey = ""; probingKey = ""; pendingStart = -1; answers = ({})
+            autoName = ""; probeOutcome = "none"; autoDetail = ""; probedKey = ""; probingKey = ""; pendingStart = -1; answers = ({})
             probeTimer.stop()
         }
         // True when a check for the current link is running or has just been started.
@@ -1016,8 +1023,8 @@ Item {
         // The link was edited: show what is known for it, and have anything unanswered checked again.
         function linkEdited(): void {
             const known = answers[linkKey()]
-            if (known) { autoName = known.name; autoSource = "server"; autoDetail = known.detail; probedKey = linkKey(); return }
-            autoName = root.downloads.suggestedName(sourceInput.text); autoSource = "link"; autoDetail = ""
+            if (known) { autoName = known.name; probeOutcome = "answered"; autoDetail = known.detail; probedKey = linkKey(); return }
+            autoName = root.downloads.suggestedName(sourceInput.text); probeOutcome = "none"; autoDetail = ""
             probedKey = ""
             probeTimer.restart()
         }
@@ -1044,7 +1051,7 @@ Item {
                 if (fromServer && name !== "") addDialog.answers[addDialog.probingKey] = {name: name, detail: sizeLabel}
                 if (url === sourceInput.text) {
                     if (name !== "") addDialog.autoName = name
-                    addDialog.autoSource = fromServer ? "server" : "link"
+                    addDialog.probeOutcome = fromServer ? "answered" : sizeLabel !== "" ? "refused" : "unreachable"
                     addDialog.autoDetail = sizeLabel
                 }
                 addDialog.advance()
@@ -1092,17 +1099,33 @@ Item {
                 FormField {
                     id: nameInput; objectName: "exampleNameInput"; Layout.fillWidth: true; Accessible.name: qsTr("File name"); maximumLength: 180
                     placeholderText: root.live ? (addDialog.autoName || qsTr("Automatic from the link")) : ""
+                    Accessible.description: addDialog.statusVisible ? addDialog.statusText : ""
                     onAccepted: addExample.clicked(); onTextChanged: existingCheck.restart()
-                }
-                Item { implicitWidth: 1; visible: nameHint.visible }
-                RowLayout {
-                    id: nameHint; objectName: "addNameHint"; Layout.fillWidth: true; spacing: Tokens.spacingS
-                    visible: root.live && nameInput.text.trim() === "" && addDialog.hintText !== ""
-                    QQC2.BusyIndicator { running: addDialog.probing; visible: running; implicitWidth: Tokens.iconSmall; implicitHeight: Tokens.iconSmall }
-                    QQC2.Label {
-                        objectName: "addNameHintText"; Layout.fillWidth: true
-                        text: addDialog.hintText; textFormat: Text.PlainText; elide: Text.ElideRight
-                        font: Tokens.smallFont; color: theme.secondary
+                    // The style's own right padding, kept so the text is only pushed in while a status shows.
+                    property real basePadding: 0
+                    Component.onCompleted: basePadding = rightPadding
+                    Binding {
+                        target: nameInput; property: "rightPadding"; when: addDialog.statusVisible
+                        value: nameInput.basePadding + nameStatus.width + Tokens.spacingM
+                    }
+                    Row {
+                        id: nameStatus; objectName: "addNameStatus"
+                        visible: addDialog.statusVisible; spacing: Tokens.spacingS
+                        anchors { right: parent.right; rightMargin: Tokens.spacingM; verticalCenter: parent.verticalCenter }
+                        QQC2.BusyIndicator { running: addDialog.probing; visible: running; width: Tokens.iconSmall; height: Tokens.iconSmall }
+                        QQC2.Label {
+                            objectName: "addNameStatusSize"
+                            visible: !addDialog.probing && addDialog.probeOutcome === "answered"
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: addDialog.autoDetail; textFormat: Text.PlainText; font: Tokens.smallFont; color: theme.secondary
+                        }
+                        Kirigami.Icon {
+                            objectName: "addNameStatusWarning"
+                            visible: !addDialog.probing && (addDialog.probeOutcome === "refused" || addDialog.probeOutcome === "unreachable")
+                            source: "dialog-warning"; width: Tokens.iconSmall; height: Tokens.iconSmall
+                        }
+                        HoverHandler { id: statusHover }
+                        QQC2.ToolTip { visible: statusHover.hovered && addDialog.statusText !== ""; delay: Tokens.toolTipDelay; text: addDialog.statusText }
                     }
                 }
                 FormLabel { text: qsTr("Save in:") }

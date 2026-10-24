@@ -696,7 +696,8 @@ void ServiceDownloads::readFrames() {
             const QString name = cleanFileName(result["suggestedName"].toString());
             // An error page's own name or type says nothing about the file: keep the link's name.
             reportLinkProbe(fromServer ? withTypeExtension(name, result["contentType"].toString()) : QString(),
-                            probeSize(requiresAuth, status, size).second, fromServer);
+                            // No size to show when the server did not say; error labels still explain themselves.
+                            fromServer && size < 0 ? QString() : probeSize(requiresAuth, status, size).second, fromServer);
         }
         if (m_commandOperation == "browser.dismiss" && result["ok"].toBool()) m_dismissedRequest = m_browserCommandId;
         m_browserCommandId.clear();

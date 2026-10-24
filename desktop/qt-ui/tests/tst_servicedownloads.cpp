@@ -2060,26 +2060,59 @@ private slots:
         QCOMPARE(model.suggestedName("https://example.invalid/a%2Fb"), "b");
         QCOMPARE(model.suggestedName("https://example.invalid/..%2F.."), ""); // Nothing but dots: no usable name.
         QCOMPARE(model.suggestedName("https://example.invalid/a%01b"), "a_b");
-        // Pasting a link shows the offline name at once; the server's answer replaces it.
-        openAdd("https://example.invalid/MTc5Mjg0");
+        // The status (spinner, size, warning) sits inside the File name field: it must never change
+        // the dialog's height, and the text is only pushed in while a status shows.
+        auto *addDialog = object("addExampleDialog"); QVERIFY(addDialog);
+        const auto statusText = [&] { return addDialog->property("statusText").toString(); };
+        const auto statusVisible = [&] { return addDialog->property("statusVisible").toBool(); };
+        const auto nameField = [&] { return object("exampleNameInput"); };
+        const auto capture = qEnvironmentVariable("QT_ADAPTER_CAPTURE_DIR");
+        const auto snap = [&](const QString &state) {
+            if (capture.isEmpty()) return;
+            auto *field = qobject_cast<QQuickItem *>(nameField()); QVERIFY(field && field->window());
+            QVERIFY(waitForRenderedFrame(field->window())); QVERIFY(field->window()->grabWindow().save(capture + "/add-name-" + state + ".png"));
+        };
+        QMetaObject::invokeMethod(view.rootObject(), "openAddDialog");
+        const double baseHeight = addDialog->property("implicitHeight").toDouble();
+        const auto sameHeight = [&] { return qFuzzyCompare(addDialog->property("implicitHeight").toDouble(), baseHeight); };
+        QVERIFY(baseHeight > 0); QVERIFY(!statusVisible());
+        // Pasting a link shows the offline name at once, with nothing to say about it yet.
+        service.holdLinkProbe = true;
+        object("exampleUrlInput")->setProperty("text", "https://example.invalid/MTc5Mjg0");
         QCOMPARE(placeholder(), "MTc5Mjg0");
-        QTRY_COMPARE(placeholder(), "era133_FR_vod.mp4"); // Extensionless name gets video/mp4's suffix.
-        QTRY_VERIFY(object("addNameHintText")->property("text").toString().startsWith("From the server"));
+        QVERIFY(!statusVisible()); QVERIFY(sameHeight());
+        const double basePadding = nameField()->property("rightPadding").toDouble();
+        // The check is running: a spinner in the field.
+        QTRY_VERIFY(!service.held.isEmpty());
+        QVERIFY(statusVisible()); QCOMPARE(statusText(), "Checking the link…"); QVERIFY(sameHeight());
+        QVERIFY(nameField()->property("rightPadding").toDouble() > basePadding);
+        snap("checking");
+        service.holdLinkProbe = false; service.releaseHeld();
+        // The server's answer replaces the name (an extensionless one gets video/mp4's suffix) and shows its size.
+        QTRY_COMPARE(placeholder(), "era133_FR_vod.mp4");
+        QTRY_COMPARE(statusText(), "Name and size from the server");
+        QVERIFY(statusVisible()); QVERIFY(sameHeight());
+        QVERIFY(!object("addNameStatusSize")->property("text").toString().isEmpty());
+        QVERIFY(object("addNameStatusSize")->property("visible").toBool());
+        snap("answered");
         // Clearing the link and pasting it again brings the server's name straight back.
         object("exampleUrlInput")->setProperty("text", "");
         QCOMPARE(placeholder(), "Automatic from the link");
         object("exampleUrlInput")->setProperty("text", "https://example.invalid/MTc5Mjg0");
         QTRY_COMPARE(placeholder(), "era133_FR_vod.mp4");
-        QVERIFY(object("addNameHintText")->property("text").toString().startsWith("From the server"));
+        QCOMPARE(statusText(), "Name and size from the server");
+        QVERIFY(sameHeight());
         // An empty name adds under the automatic one.
         QVERIFY(QMetaObject::invokeMethod(object("confirmStartDownload"), "clicked"));
         QTRY_COMPARE(lastAdd()["name"].toString(), "era133_FR_vod.mp4");
         QTRY_VERIFY(!view.rootObject()->property("addDialogVisible").toBool());
-        // A typed name always wins, and hides the hint.
+        // A typed name always wins, and hides the status.
         const int probesBefore = int(std::count_if(service.commandLog.cbegin(), service.commandLog.cend(), [](const QJsonObject &c) { return c["op"] == "download.probe"; }));
         openAdd("https://example.invalid/other", "mine.bin");
         QTRY_VERIFY(std::count_if(service.commandLog.cbegin(), service.commandLog.cend(), [](const QJsonObject &c) { return c["op"] == "download.probe"; }) > probesBefore);
-        QVERIFY(!object("addNameHint")->property("visible").toBool());
+        QVERIFY(!statusVisible()); QVERIFY(!object("addNameStatus")->property("visible").toBool());
+        QVERIFY(sameHeight()); QCOMPARE(nameField()->property("rightPadding").toDouble(), basePadding);
+        snap("typed");
         QVERIFY(QMetaObject::invokeMethod(object("confirmStartDownload"), "clicked"));
         QTRY_COMPARE(lastAdd()["name"].toString(), "mine.bin");
         QTRY_VERIFY(!view.rootObject()->property("addDialogVisible").toBool());
@@ -2105,11 +2138,35 @@ private slots:
         QTest::qWait(150);
         QCOMPARE(placeholder(), "second");
         QTRY_COMPARE(placeholder(), "era133_FR_vod.mp4"); // The second link's own check.
-        // A server that refuses keeps the link's name, labelled as such.
+        // A server that refuses keeps the link's name, with a warning in the field.
         service.linkProbeResult = {{"ok", true}, {"statusCode", 404}, {"requiresAuth", false}, {"size", "-1"}, {"suggestedName", "gone"}, {"contentType", QJsonValue::Null}};
         object("exampleUrlInput")->setProperty("text", "https://example.invalid/missing");
-        QTRY_COMPARE(object("addNameHintText")->property("text").toString(), "From the link · Unavailable");
+        QTRY_COMPARE(statusText(), "The server said: Unavailable. Using the name from the link.");
         QCOMPARE(placeholder(), "missing");
+        QVERIFY(statusVisible()); QVERIFY(sameHeight());
+        QVERIFY(object("addNameStatusWarning")->property("visible").toBool());
+        QVERIFY(!object("addNameStatusSize")->property("visible").toBool());
+        snap("refused");
+        // A server that cannot be reached, and one that answers without a size.
+        service.linkProbeResult = {{"ok", false}, {"error", "unreachable fixture"}};
+        object("exampleUrlInput")->setProperty("text", "https://example.invalid/down");
+        QTRY_COMPARE(statusText(), "Couldn't reach the server. Using the name from the link.");
+        QCOMPARE(placeholder(), "down");
+        QVERIFY(statusVisible()); QVERIFY(sameHeight());
+        snap("unreachable");
+        service.linkProbeResult = {{"ok", true}, {"statusCode", 200}, {"requiresAuth", false}, {"size", "-1"}, {"suggestedName", "sizeless.mp4"}, {"contentType", "video/mp4"}};
+        object("exampleUrlInput")->setProperty("text", "https://example.invalid/nosize");
+        QTRY_COMPARE(placeholder(), "sizeless.mp4");
+        QCOMPARE(statusText(), "Name and size from the server");
+        QVERIFY(!statusVisible()); QVERIFY(sameHeight()); // Nothing to show without a size.
+        QCOMPARE(nameField()->property("rightPadding").toDouble(), basePadding);
+        // A long name stays clear of the status.
+        service.linkProbeResult = {{"ok", true}, {"statusCode", 200}, {"requiresAuth", false}, {"size", "5039924509"},
+            {"suggestedName", "an_extremely_long_server_supplied_file_name_for_a_recorded_stream_2026-08-21_FR_vod_part_one_of_many.mp4"}, {"contentType", "video/mp4"}};
+        object("exampleUrlInput")->setProperty("text", "https://example.invalid/long");
+        QTRY_VERIFY(placeholder().startsWith("an_extremely_long"));
+        QVERIFY(statusVisible()); QVERIFY(sameHeight());
+        snap("long");
     }
     void duplicatesAreChosenInlineBeforeAdding() {
         FakeService service; service.detailsCapability = true; service.runtimeCapability = true;
