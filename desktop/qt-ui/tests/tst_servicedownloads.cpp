@@ -2717,10 +2717,19 @@ private slots:
             if (!content) content = review->findChild<QQuickItem *>("downloadContent");
             return content && content->property("contentHeight").toReal() > 0;
         }, 5000));
-        const QSize transitioned = review->size();
         const int progressNatural = qCeil(content->property("contentHeight").toReal());
         QVERIFY(progressNatural > 0);
-        QVERIFY2(review->width() == 560, "the progress page uses the download width");
+        // The size eases to the progress page (WindowSizeAnimation) rather than snapping;
+        // it must land on the page's own size well before the old guard timer would.
+        bool eased = false;
+        QVERIFY2(QTest::qWaitFor([&] {
+            const int width = review->width();
+            eased = eased || (width > 560 && width < 720);
+            return width == 560;
+        }, 5000), "the progress page uses the download width");
+        QVERIFY2(eased, "the review eases to the progress width instead of snapping");
+        QTest::qWait(400);
+        const QSize transitioned = review->size();
         QVERIFY2(transitioned.height() != exposed.height(), qPrintable(QStringLiteral("transition kept the review height %1")
             .arg(transitioned.height())));
         QTest::qWait(1200);

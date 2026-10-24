@@ -21,6 +21,8 @@ Item {
     required property var service
     required property string downloadId
     signal closeRequested()
+    // The host is easing its size: no scroll bar flashes in and out of the moving edge.
+    property bool resizing: false
     readonly property string windowTitle: row.state === "downloading" && row.progress >= 0
         ? qsTr("%1% · %2").arg(Math.floor(row.progress * 100)).arg(lastName) : lastName || qsTr("Download")
     PreviewTheme { id: theme }
@@ -67,6 +69,17 @@ Item {
             || item instanceof Flow || item instanceof ListView || item instanceof QQC2.ScrollView)
             item.ensurePolished()
     }
+    NumberAnimation { id: pageFade; property: "opacity"; from: 0; to: 1; duration: Tokens.pageTransitionMs; easing.type: Easing.OutCubic }
+    property Item fadingPage: null
+    function fadeIn(page: Item): void {
+        const window = pane.Window.window
+        if (!window || !window.visible || Tokens.pageTransitionMs <= 0) return
+        pageFade.stop()
+        if (fadingPage) fadingPage.opacity = 1
+        fadingPage = page
+        pageFade.target = page
+        pageFade.restart()
+    }
     function refresh() {
         row = service.downloadState(downloadId); parts = service.downloadParts(downloadId)
         partSlots.update(parts, service.settings.threadCount || 8)
@@ -104,12 +117,16 @@ Item {
     readonly property int partTotalWidth: Tokens.partTotalWidth
     Loader {
         id: completion; anchors.fill: parent; active: pane.completed
+        // A page that appears in an already shown window fades in while the size eases.
+        onLoaded: pane.fadeIn(completion)
         sourceComponent: Component {
             DownloadCompletion { row: pane.row; fileUrl: pane.fileUrl; onCloseRequested: pane.closeRequested() }
         }
     }
     QQC2.ScrollView {
         id: scroller; contentWidth: availableWidth; clip: true; visible: !pane.completed
+        onVisibleChanged: if (visible) pane.fadeIn(scroller)
+        QQC2.ScrollBar.vertical.policy: pane.resizing ? QQC2.ScrollBar.AlwaysOff : QQC2.ScrollBar.AsNeeded
         anchors { left: parent.left; right: parent.right; top: parent.top; bottom: actions.top }
         ColumnLayout {
             id: contentColumn; x: Tokens.dialogPadding

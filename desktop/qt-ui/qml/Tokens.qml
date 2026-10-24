@@ -63,6 +63,9 @@ QtObject {
     readonly property int messageWidth: 380   // centered empty-state and placeholder text
 
     // Top-level windows: shared minimum, default size by window role.
+    // Window resizes and page fades between review, progress and completion; follows the
+    // Plasma animation speed (0 when animations are off).
+    readonly property int pageTransitionMs: Kirigami.Units.longDuration
     readonly property int windowMinimumWidth: 360
     readonly property int windowMinimumHeight: 260
     readonly property int windowMaximumHeight: 16777215 // Qt's unconstrained window maximum

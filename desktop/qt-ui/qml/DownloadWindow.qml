@@ -16,7 +16,9 @@ QQC2.ApplicationWindow {
     flags: Qt.Window
     // Pinned to the page's own width while KWin may still apply remembered geometry
     // (e.g. a just-closed compact completion window's), then freely resizable.
-    minimumWidth: initialConfigure ? content.preferredWidth : Tokens.windowMinimumWidth
+    // Both pins are relaxed while a page change eases the size, or Qt would clamp the
+    // window to the new page's size at once.
+    minimumWidth: initialConfigure && !sizeAnimation.active ? content.preferredWidth : Tokens.windowMinimumWidth
     // Usable screen height for a window of this role; also what a fit is clamped to.
     readonly property real availableHeight: screen
         ? Math.max(Tokens.windowMinimumHeight, screen.desktopAvailableHeight - Tokens.dialogScreenMargin)
@@ -25,15 +27,17 @@ QQC2.ApplicationWindow {
     // view keeps the shared window minimum (eight part rows plus its sections); the
     // completion summary is genuinely content-sized and may be smaller than that minimum.
     readonly property int completionFloor: Tokens.dialogPadding + Tokens.rowHeight
-    minimumHeight: content.completed
+    readonly property real contentMinimumHeight: content.completed
         ? Math.max(completionFloor, Math.min(Math.ceil(content.contentHeight), availableHeight))
         : Math.max(Tokens.windowMinimumHeight, Math.min(Math.ceil(content.contentHeight), availableHeight))
+    minimumHeight: sizeAnimation.active ? completionFloor : contentMinimumHeight
     // Advertise a tight initial native size range so KWin's remembered geometry
     // cannot produce an oversized first buffer. Normal height resizing is restored
     // after the bounded first-configure period; the content minimum remains.
     property bool initialConfigure: true
-    maximumHeight: initialConfigure ? minimumHeight : Tokens.windowMaximumHeight
-    maximumWidth: initialConfigure ? content.preferredWidth : Tokens.windowMaximumHeight
+    maximumHeight: initialConfigure && !sizeAnimation.active ? minimumHeight : Tokens.windowMaximumHeight
+    maximumWidth: initialConfigure && !sizeAnimation.active ? content.preferredWidth : Tokens.windowMaximumHeight
+    WindowSizeAnimation { id: sizeAnimation; window: downloadWindow }
     Timer { id: configureGuard; interval: Tokens.initialConfigureGuardMs; onTriggered: downloadWindow.initialConfigure = false }
     width: Tokens.downloadWindowWidth; height: Tokens.downloadWindowHeight
     // Paint the material as an item, like the main view and dialogs. A translucent window
@@ -60,16 +64,17 @@ QQC2.ApplicationWindow {
         && content.connected && content.partsSupported && content.partsWatched
         && content.parts.available === undefined
     function targetHeight(measured: real): real {
-        const limit = Math.max(minimumHeight, availableHeight)
+        const limit = Math.max(contentMinimumHeight, availableHeight)
         if (!(measured > 0))
-            return Math.max(minimumHeight, Math.min(Tokens.downloadWindowHeight, limit))
-        return Math.max(minimumHeight, Math.min(Math.ceil(measured), limit))
+            return Math.max(contentMinimumHeight, Math.min(Tokens.downloadWindowHeight, limit))
+        return Math.max(contentMinimumHeight, Math.min(Math.ceil(measured), limit))
     }
     // Adopt the content's own height. Measurement is forced on the item tree (layouts only
     // compute implicit sizes while polished), so it works while the window is still hidden.
     // A couple of passes are needed because the new height itself can add a scroll bar or
     // rewrap a label.
-    function fitContent(): void {
+    function fitContent(): void { sizeAnimation.fit(applyFit) }
+    function applyFit(): void {
         if (fitWidthPending) {
             width = content.preferredWidth
             fitWidthPending = false
@@ -130,13 +135,13 @@ QQC2.ApplicationWindow {
         fitTimer.restart()
     }
     // Defer polish outside contentHeight/minimumHeight binding evaluation.
-    onHeightChanged: if (visible && (height < minimumHeight || (initialConfigure && height !== minimumHeight))) {
+    onHeightChanged: if (visible && !sizeAnimation.active && (height < minimumHeight || (initialConfigure && height !== minimumHeight))) {
         // Correct only the geometry here, without recursively polishing a binding.
         height = minimumHeight
         settleFitTimer.restart()
         fitTimer.restart()
     }
-    onMinimumHeightChanged: if (visible && height < minimumHeight) { settleFitTimer.restart(); fitTimer.restart() }
+    onMinimumHeightChanged: if (visible && !sizeAnimation.active && height < minimumHeight) { settleFitTimer.restart(); fitTimer.restart() }
     Connections {
         target: content
         function onPartsChanged() { if (downloadWindow.presentationPending) Qt.callLater(downloadWindow.present) }
@@ -160,7 +165,7 @@ QQC2.ApplicationWindow {
     onClosing: dismissed()
     Shortcut { sequences: [StandardKey.Cancel]; onActivated: downloadWindow.close() }
     DownloadContent {
-        id: content; anchors.fill: parent; service: downloadWindow.service; downloadId: downloadWindow.downloadId
+        id: content; anchors.fill: parent; resizing: sizeAnimation.active; service: downloadWindow.service; downloadId: downloadWindow.downloadId
         onCloseRequested: downloadWindow.close()
     }
 }

@@ -89,6 +89,14 @@ for acknowledgement, so rejection/unknown errors remain visible even with the ma
 window hidden. The review actions wrap into rows at narrow widths. Single-link reviews
 resolve duplicates inline (Keep both / Replace existing) before Download.
 
+Page changes on an already shown window (review → progress, progress → completion, late
+re-fits) ease the surface size instead of snapping: `WindowSizeAnimation` steps the
+floating toplevel's size per frame for `Tokens.pageTransitionMs` (Kirigami's long
+duration, so Plasma's animation speed applies), anchored top-left like KWin's own
+resize, while the incoming page fades in. The window's min/max pins are relaxed for the
+duration, and the scroll bar is held off. Hidden, maximized and fullscreen windows,
+and a zero animation speed, apply the new size at once.
+
 Unknown/partial outcomes never transition and never auto-replay acceptance. The
 durable `outcomeUnknown` reservation continues disabling acceptance. Cookies,
 authentication, headers and raw part exceptions are never displayed. The frontend

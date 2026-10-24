@@ -75,18 +75,22 @@ Item {
         transientParent: null; flags: Qt.Window
         // Width is pinned during the first configure like height, so KWin's remembered
         // geometry from another app window cannot resize the review.
-        minimumWidth: initialConfigure ? targetWidth() : Tokens.windowMinimumWidth
-        maximumWidth: initialConfigure ? targetWidth() : Tokens.windowMaximumHeight
+        // The pins are relaxed while a page change eases the size (WindowSizeAnimation),
+        // or Qt would clamp the window to the new page at once.
+        minimumWidth: initialConfigure && !sizeAnimation.active ? targetWidth() : Tokens.windowMinimumWidth
+        maximumWidth: initialConfigure && !sizeAnimation.active ? targetWidth() : Tokens.windowMaximumHeight
         // Reviews and completion are genuinely content-sized. Advertising the generic
         // 260px progress minimum for a shorter review contradicts fitContentHeight();
         // when configureGuard releases maximumHeight, Qt clamps it up seconds later.
-        minimumHeight: downloadId === "" || completedView
+        minimumHeight: sizeAnimation.active ? Tokens.dialogPadding + Tokens.rowHeight
+            : downloadId === "" || completedView
             ? Math.max(Tokens.dialogPadding + Tokens.rowHeight, Math.min(Math.ceil(measuredHeight()), heightLimit()))
             : Math.max(Tokens.windowMinimumHeight, Math.min(Math.ceil(measuredHeight()), heightLimit()))
         // Content-sized: the review starts as tall as its list, and the same native
         // surface is re-measured when it becomes a progress window or completes.
         property bool initialConfigure: true
-        maximumHeight: initialConfigure ? minimumHeight : Tokens.windowMaximumHeight
+        maximumHeight: initialConfigure && !sizeAnimation.active ? minimumHeight : Tokens.windowMaximumHeight
+        WindowSizeAnimation { id: sizeAnimation; window: dialog }
         Timer { id: configureGuard; interval: Tokens.initialConfigureGuardMs; onTriggered: dialog.initialConfigure = false }
         width: Tokens.reviewWindowWidth; height: Tokens.reviewWindowHeight
         // The window is mapped only after its page has been measured, so the first frame
@@ -152,10 +156,18 @@ Item {
             polishTree(reviewFooter)
         }
         function fitContentSize() {
+            if (fitting) return
+            sizeAnimation.fit(applyContentSize)
+        }
+        function applyContentSize() {
             dialog.width = Math.max(Tokens.windowMinimumWidth, targetWidth())
-            dialog.fitContentHeight()
+            dialog.applyContentHeight()
         }
         function fitContentHeight() {
+            if (fitting) return
+            sizeAnimation.fit(applyContentHeight)
+        }
+        function applyContentHeight() {
             if (fitting) return
             fitting = true
             try {
@@ -166,8 +178,11 @@ Item {
                     const measured = Math.ceil(measuredHeight())
                     if (!(measured > 0)) break
                     // Content-sized on every page: a short single-link review has no filler gap.
+                    // The progress page keeps its own minimum, which minimumHeight no longer
+                    // advertises while the size eases.
                     const floor = Tokens.dialogPadding + Tokens.rowHeight
-                    const target = Math.max(floor, Math.min(measured, heightLimit()))
+                    const pageFloor = downloadId === "" || completedView ? floor : Tokens.windowMinimumHeight
+                    const target = Math.max(pageFloor, Math.min(measured, heightLimit()))
                     if (dialog.height === target) break
                     dialog.height = target
                 }
@@ -190,8 +205,8 @@ Item {
         Timer { id: presentationFitTimer; interval: 150; onTriggered: dialog.fitContentSize() }
         onVisibleChanged: if (visible) { initialConfigure = true; configureGuard.restart(); presentationFitTimer.restart() }
         Timer { id: contentFitTimer; interval: 0; onTriggered: dialog.fitContentHeight() }
-        onHeightChanged: if (visible && height < minimumHeight && !fitting) contentFitTimer.restart()
-        onMinimumHeightChanged: if (visible && height < minimumHeight && !fitting) contentFitTimer.restart()
+        onHeightChanged: if (visible && height < minimumHeight && !fitting && !sizeAnimation.active) contentFitTimer.restart()
+        onMinimumHeightChanged: if (visible && height < minimumHeight && !fitting && !sizeAnimation.active) contentFitTimer.restart()
         Connections { target: dialog.progressContent; function onContentHeightChanged() { contentFitTimer.restart() } }
         onClosing: {
             if (downloadId !== "") root.progressClosed(downloadId)
@@ -326,11 +341,12 @@ Item {
           anchors.fill: parent
           Loader {
             id: progress; anchors.fill: parent; active: dialog.downloadId !== ""; visible: dialog.progressReady
-            sourceComponent: Component { DownloadContent { service: root.service; downloadId: dialog.downloadId; onCloseRequested: dialog.close() } }
+            sourceComponent: Component { DownloadContent { resizing: sizeAnimation.active; service: root.service; downloadId: dialog.downloadId; onCloseRequested: dialog.close() } }
             onLoaded: presentationFitTimer.restart()
           }
           QQC2.ScrollView {
             id: reviewScroll; anchors.fill: parent; contentWidth: availableWidth; clip: true
+            QQC2.ScrollBar.vertical.policy: sizeAnimation.active ? QQC2.ScrollBar.AlwaysOff : QQC2.ScrollBar.AsNeeded
             visible: dialog.downloadId === "" || !dialog.progressReady
             enabled: dialog.downloadId === ""
           ColumnLayout {
