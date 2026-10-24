@@ -24,6 +24,9 @@
 #include <QThread>
 #include <vector>
 
+// The fake service's handshake can exceed QTRY's 5 s default under `ctest -j` load.
+#define QTRY_READY(model) QTRY_COMPARE_WITH_TIMEOUT((model).connectionState(), QStringLiteral("ready"), 20000)
+
 static QByteArray encode(const QJsonObject &object) {
     const auto bytes = QJsonDocument(object).toJson(QJsonDocument::Compact);
     QByteArray result(4, Qt::Uninitialized);
@@ -223,7 +226,7 @@ private slots:
         service.extensionSnapshot = {{"queues", QJsonArray{}}, {"settings", basicSettings()}, {"browserRequests", QJsonArray{}},
             {"browserIntegration", QJsonObject{{"state", "disabled"}, {"error", QJsonValue::Null}, {"enabled", false}, {"port", 15151}, {"auth", false}}},
             {"runtime", QJsonObject{{"mode", "explicit-runtime"}, {"destination", "/downloads"}, {"destinationRoots", QJsonArray{"/downloads"}}, {"redirects", true}, {"proxy", "direct"}}}};
-        ServiceDownloads model(service.descriptor); QTRY_COMPARE(model.connectionState(), "ready");
+        ServiceDownloads model(service.descriptor); QTRY_READY(model);
         QQuickView view; view.setResizeMode(QQuickView::SizeRootObjectToView); view.resize(1000, 700);
         view.setInitialProperties({{"downloads", QVariant::fromValue(&model)}});
         view.setSource(QUrl("qrc:/qt-ui/qml/DownloadsView.qml")); view.show(); QCOMPARE(view.status(), QQuickView::Ready);
@@ -276,7 +279,7 @@ private slots:
                 {"browserIntegration", QJsonObject{{"state", "disabled"}, {"error", QJsonValue::Null}, {"enabled", false}, {"port", 15151}, {"auth", false}}},
                 {"integration", QJsonObject{{"autoStartOnBoot", false}, {"useSystemTray", false}, {"notificationSound", false}, {"notifications", true}}},
                 {"runtime", QJsonObject{{"mode", mode}, {"destination", "/downloads"}, {"destinationRoots", QJsonArray{"/downloads"}}, {"redirects", true}, {"proxy", "direct"}}}};
-            ServiceDownloads model(service.descriptor); QTRY_COMPARE(model.connectionState(), "ready");
+            ServiceDownloads model(service.descriptor); QTRY_READY(model);
             QTRY_COMPARE(model.runtime()["mode"].toString(), mode);
             QQuickView view; view.setResizeMode(QQuickView::SizeRootObjectToView); view.resize(1000, 700);
             view.setInitialProperties({{"downloads", QVariant::fromValue(&model)}});
@@ -309,7 +312,7 @@ private slots:
         service.extensionSnapshot = {{"queues", QJsonArray{}}, {"settings", basicSettings()}, {"browserRequests", QJsonArray{}},
             {"browserIntegration", QJsonObject{{"state", "disabled"}, {"error", QJsonValue::Null}, {"enabled", false}, {"port", 15151}, {"auth", false}}},
             {"runtime", QJsonObject{{"mode", "explicit-runtime"}, {"destination", "/downloads"}, {"destinationRoots", QJsonArray{"/downloads"}}, {"redirects", true}, {"proxy", "direct"}}}};
-        ServiceDownloads model(service.descriptor); QTRY_COMPARE(model.connectionState(), "ready");
+        ServiceDownloads model(service.descriptor); QTRY_READY(model);
         QQuickView view; view.setResizeMode(QQuickView::SizeRootObjectToView); view.resize(1000, 700);
         view.setInitialProperties({{"downloads", QVariant::fromValue(&model)}});
         view.setSource(QUrl("qrc:/qt-ui/qml/DownloadsView.qml")); view.show(); QCOMPARE(view.status(), QQuickView::Ready);
@@ -390,7 +393,7 @@ private slots:
         service.extensionSnapshot = {{"queues", QJsonArray{}}, {"settings", basicSettings()}, {"browserRequests", QJsonArray{}},
             {"browserIntegration", QJsonObject{{"state", "disabled"}, {"error", QJsonValue::Null}, {"enabled", false}, {"port", 15151}, {"auth", false}}},
             {"runtime", QJsonObject{{"mode", "explicit-runtime"}, {"destination", "/downloads"}, {"destinationRoots", QJsonArray{"/downloads"}}, {"redirects", true}, {"proxy", "direct"}}}};
-        ServiceDownloads model(service.descriptor); QTRY_COMPARE(model.connectionState(), "ready");
+        ServiceDownloads model(service.descriptor); QTRY_READY(model);
         QQuickView view; view.setResizeMode(QQuickView::SizeRootObjectToView); view.resize(1000, 700);
         view.setInitialProperties({{"downloads", QVariant::fromValue(&model)}});
         view.setSource(QUrl("qrc:/qt-ui/qml/DownloadsView.qml")); view.show(); QCOMPARE(view.status(), QQuickView::Ready);
@@ -443,7 +446,7 @@ private slots:
         auto row = service.rows.first().toObject(); row["details"] = QJsonObject{{"url", "https://example.invalid/x"}, {"folder", "/downloads"}, {"error", QJsonValue::Null}, {"fileChecksum", QJsonValue::Null}};
         service.rows = QJsonArray{row};
         service.extensionSnapshot = {{"settings", basicSettings()}, {"queues", QJsonArray{}}, {"checksum", QJsonValue::Null}};
-        ServiceDownloads model(service.descriptor); QTRY_COMPARE(model.connectionState(), "ready");
+        ServiceDownloads model(service.descriptor); QTRY_READY(model);
         QCOMPARE(model.rowCount(), 1);
         service.extensionSnapshot["checksum"] = value;
         QTRY_VERIFY(model.connectionState() != "ready"); QCOMPARE(model.rowCount(), 1); QVERIFY(model.checksum().isEmpty());
@@ -455,7 +458,7 @@ private slots:
             {"state", "completed"}, {"dateAdded", "1234"}, {"details", QJsonObject{{"url", "https://example.invalid/x"}, {"folder", "/downloads"}, {"error", QJsonValue::Null}, {"fileChecksum", "SHA-256:" + hash}}}}};
         service.extensionSnapshot = {{"settings", basicSettings()}, {"queues", QJsonArray{}}, {"checksum", QJsonValue::Null}};
         PreviewDownloads resources; ServiceDownloads model(service.descriptor);
-        std::unique_ptr<QQuickView> view(liveView(model)); QTRY_COMPARE(model.connectionState(), "ready");
+        std::unique_ptr<QQuickView> view(liveView(model)); QTRY_READY(model);
         QVERIFY(QTest::qWaitForWindowExposed(view.get())); QVERIFY(waitForRenderedFrame(view.get()));
         model.select(id); QCOMPARE(model.selectedId(), id);
         QVERIFY(QMetaObject::invokeMethod(view->rootObject(), "openChecksum"));
@@ -493,7 +496,7 @@ private slots:
             QVERIFY(waitForRenderedFrame(content->window())); QVERIFY(content->window()->grabWindow().save(capture + "/checksum-matches.png"));
         }
         service.checksumCapability = false; service.restart("older-checksum");
-        QTRY_VERIFY(!model.capabilities().contains("download.checksum")); QTRY_COMPARE(model.connectionState(), "ready");
+        QTRY_VERIFY(!model.capabilities().contains("download.checksum")); QTRY_READY(model);
         auto *action = view->rootObject()->findChild<QObject *>("checksumDownload"); QVERIFY(action); QVERIFY(!action->property("visible").toBool());
         QVERIFY(!model.checksumCommand(id, "start", "SHA-256", "")); QCOMPARE(service.commands, 4);
         QVERIFY(waitForRenderedFrame(dialogContent->window()));
@@ -510,7 +513,7 @@ private slots:
         service.extensionSnapshot = {{"settings", basicSettings()}, {"queues", QJsonArray{}},
             {"runtime", QJsonObject{{"mode", "explicit-runtime"}, {"destination", "/downloads"}, {"destinationRoots", QJsonArray{"/downloads"}}, {"redirects", true}, {"proxy", "direct"}}}};
         PreviewDownloads resources; ServiceDownloads model(service.descriptor);
-        std::unique_ptr<QQuickView> view(liveView(model)); QTRY_COMPARE(model.connectionState(), "ready");
+        std::unique_ptr<QQuickView> view(liveView(model)); QTRY_READY(model);
         QVERIFY(QMetaObject::invokeMethod(view->rootObject(), "openCategories"));
         auto *dialog = view->rootObject()->findChild<QObject *>("serviceCategoriesDialog"); QVERIFY(dialog);
         QVERIFY(QMetaObject::invokeMethod(dialog, "choose", Q_ARG(QString, "7")));
@@ -534,7 +537,7 @@ private slots:
         // Old services must never receive these extension fields, even if they expose
         // the historical read-only path in category snapshots.
         service.categoryDestinationCapability = false; service.restart("older");
-        QTRY_COMPARE(model.connectionState(), "ready"); QTRY_VERIFY(!model.capabilities().contains("category.destination"));
+        QTRY_READY(model); QTRY_VERIFY(!model.capabilities().contains("category.destination"));
         QVERIFY(QMetaObject::invokeMethod(view->rootObject(), "openCategories"));
         QVERIFY(!toggle->property("visible").toBool());
         QVERIFY(QMetaObject::invokeMethod(dialog, "choose", Q_ARG(QString, "7")));
@@ -857,7 +860,7 @@ private slots:
         bool resumed = false;
         QTRY_VERIFY(resumed || (resumed = model.resumeSelected()));
         QTRY_VERIFY(model.errorMessage().contains("unknown"));
-        QTRY_COMPARE(model.connectionState(), "ready");
+        QTRY_READY(model);
         QTest::qWait(400);
         QCOMPARE(service.commands, 2); // Lost reply was NOT automatically replayed.
         QVERIFY(model.errorMessage().contains("unknown"));
@@ -897,7 +900,7 @@ private slots:
         QTRY_VERIFY(model.errorMessage().contains("not sent"));
         QVERIFY(!model.errorMessage().contains("unknown"));
         service.holdSnapshots = false;
-        QTRY_COMPARE(model.connectionState(), "ready");
+        QTRY_READY(model);
         QTest::qWait(600);
         QCOMPARE(service.commands, 1);
         QVERIFY(model.canResume());
@@ -943,7 +946,7 @@ private slots:
             {"browserIntegration", QJsonObject{{"state", "disabled"}, {"enabled", false}, {"auth", false}, {"port", 15151}, {"error", QJsonValue::Null}}}};
         PreviewDownloads resources; ServiceDownloads model(service.descriptor);
         std::unique_ptr<QQuickView> view(liveView(model));
-        QTRY_COMPARE(model.connectionState(), "ready");
+        QTRY_READY(model);
         QVERIFY(QMetaObject::invokeMethod(view->rootObject(), "openSettings"));
         auto *settings = view->rootObject()->findChild<QObject *>("serviceSettingsDialog"); QVERIFY(settings);
         QTRY_VERIFY(settings->property("opened").toBool());
@@ -984,7 +987,7 @@ private slots:
             {"settingsPolicy", QJsonObject{{"retained", QJsonArray{}}, {"activityAdapter", false}, {"speedLimitActive", false}}}};
         PreviewDownloads resources; ServiceDownloads model(service.descriptor);
         std::unique_ptr<QQuickView> view(liveView(model));
-        QTRY_COMPARE(model.connectionState(), "ready");
+        QTRY_READY(model);
         QVERIFY(QMetaObject::invokeMethod(view->rootObject(), "openSettings"));
         auto *settings = view->rootObject()->findChild<QObject *>("serviceSettingsDialog"); QVERIFY(settings);
         QTRY_VERIFY(settings->property("opened").toBool());
@@ -1017,7 +1020,7 @@ private slots:
             {"settingsPolicy", QJsonObject{{"retained", QJsonArray{}}, {"activityAdapter", false}, {"speedLimitActive", false}}}};
         PreviewDownloads resources; ServiceDownloads model(service.descriptor);
         std::unique_ptr<QQuickView> view(liveView(model));
-        QTRY_COMPARE(model.connectionState(), "ready");
+        QTRY_READY(model);
         QVERIFY(QMetaObject::invokeMethod(view->rootObject(), "openSettings"));
         auto *dialog = view->rootObject()->findChild<QObject *>("serviceSettingsDialog"); QVERIFY(dialog);
         QTRY_VERIFY(dialog->property("opened").toBool());
@@ -1351,7 +1354,7 @@ private slots:
         service.commandResult = {}; service.loseCommandReply = true;
         sent = false; QTRY_VERIFY(sent || (sent = model.removeSelected()));
         QTRY_VERIFY(model.errorMessage().contains("unknown"));
-        QTRY_COMPARE(model.connectionState(), "ready"); QTest::qWait(400); QCOMPARE(service.commands, 3);
+        QTRY_READY(model); QTest::qWait(400); QCOMPARE(service.commands, 3);
         QVERIFY(model.errorMessage().contains("unknown"));
         QVERIFY(QMetaObject::invokeMethod(view.rootObject(), "openRemoveDialog"));
         QFile::remove(service.descriptor); service.clients.last()->abort();
@@ -1594,7 +1597,7 @@ private slots:
         QTRY_COMPARE(model.connectionState(), "disconnected");
         auto *stale = first->findChild<QObject *>("downloadWindowStale");
         QVERIFY(stale); QTRY_VERIFY(stale->property("visible").toBool()); QVERIFY(!resume->property("enabled").toBool());
-        QTRY_COMPARE(model.connectionState(), "ready"); QTest::qWait(500);
+        QTRY_READY(model); QTest::qWait(500);
         QCOMPARE(windowCount(view), windows); QCOMPARE(requested.count(), hinted); QCOMPARE(service.commands, commands);
         // A same-epoch serial regression is malformed and rejected as a whole.
         service.extensionSnapshot["downloadWindows"] = hints(3, {{ids[4], "started"}});
@@ -1604,7 +1607,7 @@ private slots:
         model.clearError();
         service.extensionSnapshot["downloadWindows"] = hints(2, {{ids[0], "started"}, {ids[1], "failed"}});
         service.restart("restarted-epoch");
-        QTRY_COMPARE(model.connectionState(), "ready"); QTest::qWait(500);
+        QTRY_READY(model); QTest::qWait(500);
         QCOMPARE(requested.count(), hinted); QVERIFY(model.errorMessage().isEmpty());
         integration["showDownloadProgressDialog"] = true; service.extensionSnapshot["integration"] = integration;
         QTRY_VERIFY(model.integration()["showDownloadProgressDialog"].toBool());
@@ -1844,7 +1847,7 @@ private slots:
         QTRY_VERIFY(model.errorMessage().contains("unknown")); // Transmitted: outcome unknown...
         QVERIFY(model.errorMessage().contains("not sent"));   // ...and the queued step was dropped.
         QCOMPARE(service.commandLog.size(), 1);
-        QTRY_COMPARE(model.connectionState(), "ready");
+        QTRY_READY(model);
         QTest::qWait(700);
         QCOMPARE(service.commandLog.size(), 1); // The queued step is never replayed automatically.
         QVERIFY(model.errorMessage().contains("unknown"));
@@ -1871,7 +1874,7 @@ private slots:
         QVERIFY(model.errorMessage().contains("unknown"));
         QVERIFY(model.errorMessage().contains("not sent"));
         QCOMPARE(service.commandLog.size(), 1);
-        QTRY_COMPARE(model.connectionState(), "ready");
+        QTRY_READY(model);
         QTest::qWait(700);
         QCOMPARE(service.commandLog.size(), 1);
         QCOMPARE(stateOf(model, ids[2]), "queued"); // The dropped step was never sent.
@@ -1931,7 +1934,7 @@ private slots:
                 {"items", QJsonArray{QJsonObject{{"url", link}, {"name", name}, {"hasHeaders", false}, {"downloadPage", QJsonValue::Null}}}}}}}};
         PreviewDownloads resources; ServiceDownloads model(service.descriptor);
         std::unique_ptr<QQuickView> view(liveView(model));
-        QTRY_COMPARE(model.connectionState(), "ready");
+        QTRY_READY(model);
         QQuickWindow *review = nullptr;
         QTRY_VERIFY((review = view->rootObject()->findChild<QQuickWindow *>("browserRequestDialog")) && review->isVisible());
         auto *notice = review->findChild<QQuickItem *>("browserRequestExisting"); QVERIFY(notice);
@@ -1986,7 +1989,7 @@ private slots:
         QQuickView view; view.setResizeMode(QQuickView::SizeRootObjectToView);
         view.setInitialProperties({{"downloads", QVariant::fromValue(&model)}});
         view.setSource(QUrl("qrc:/qt-ui/qml/DownloadsView.qml")); view.resize(1000, 700); view.show();
-        QCOMPARE(view.status(), QQuickView::Ready); QTRY_COMPARE(model.connectionState(), "ready");
+        QCOMPARE(view.status(), QQuickView::Ready); QTRY_READY(model);
         QTRY_COMPARE(model.rowCount(), 1);
         QTRY_COMPARE(model.settings()["qtDuplicateAction"].toString(), "ask");
         const auto object = [&](const char *name) { return view.rootObject()->findChild<QObject *>(name); };
@@ -2098,7 +2101,7 @@ private slots:
                 {"items", QJsonArray{QJsonObject{{"url", "https://example.invalid/clip.mp4"}, {"name", "clip.mp4"}, {"hasHeaders", false}, {"downloadPage", QJsonValue::Null}}}}}}}};
         PreviewDownloads resources; ServiceDownloads model(service.descriptor);
         std::unique_ptr<QQuickView> view(liveView(model));
-        QTRY_COMPARE(model.connectionState(), "ready");
+        QTRY_READY(model);
         QQuickWindow *review = nullptr;
         QTRY_VERIFY((review = view->rootObject()->findChild<QQuickWindow *>("browserRequestDialog")) && review->isVisible());
         auto *combo = review->findChild<QQuickItem *>("browserRequestCategory"); QVERIFY(combo);
@@ -2181,7 +2184,7 @@ private slots:
                                      QJsonObject{{"url", "https://example.invalid/new.zip"}, {"name", "new.zip"}, {"hasHeaders", false}, {"downloadPage", QJsonValue::Null}}}}}}}};
         PreviewDownloads resources; ServiceDownloads model(service.descriptor);
         std::unique_ptr<QQuickView> view(liveView(model));
-        QTRY_COMPARE(model.connectionState(), "ready");
+        QTRY_READY(model);
         QQuickWindow *review = nullptr;
         QTRY_VERIFY((review = view->rootObject()->findChild<QQuickWindow *>("browserRequestDialog")) && review->isVisible());
         // Rows flag duplicates; the single-link banner is not used for batches.
@@ -2387,7 +2390,7 @@ private slots:
         QJsonArray parts; for (int i = 0; i < 8; ++i) parts.append(partRange(i));
         setParts(service, id, parts);
         PreviewDownloads resources; ServiceDownloads model(service.descriptor);
-        std::unique_ptr<QQuickView> view(liveView(model)); QTRY_COMPARE(model.connectionState(), "ready");
+        std::unique_ptr<QQuickView> view(liveView(model)); QTRY_READY(model);
         QVERIFY(QMetaObject::invokeMethod(view->rootObject(), "showDownloadWindow", Q_ARG(QString, id), Q_ARG(bool, false)));
         auto *window = downloadWindow(*view, id); QVERIFY(window); QVERIFY(QTest::qWaitForWindowExposed(window));
         auto *list = window->findChild<QQuickItem *>("downloadWindowPartList"); QVERIFY(list);
@@ -2422,7 +2425,7 @@ private slots:
         QJsonArray parts; for (int i = 0; i < 24; ++i) parts.append(partRange(i));
         setParts(service, id, parts);
         PreviewDownloads resources; ServiceDownloads model(service.descriptor);
-        std::unique_ptr<QQuickView> view(liveView(model)); QTRY_COMPARE(model.connectionState(), "ready");
+        std::unique_ptr<QQuickView> view(liveView(model)); QTRY_READY(model);
         QVERIFY(QMetaObject::invokeMethod(view->rootObject(), "showDownloadWindow", Q_ARG(QString, id), Q_ARG(bool, false)));
         auto *window = downloadWindow(*view, id); QVERIFY(window); QVERIFY(QTest::qWaitForWindowExposed(window));
         auto *list = window->findChild<QQuickItem *>("downloadWindowPartList"); QVERIFY(list);
@@ -2458,7 +2461,7 @@ private slots:
         QQuickView view; view.setResizeMode(QQuickView::SizeRootObjectToView);
         view.setInitialProperties({{"downloads", QVariant::fromValue(&model)}});
         view.setSource(QUrl("qrc:/qt-ui/qml/DownloadsView.qml")); view.resize(1000, 700); view.show();
-        QCOMPARE(view.status(), QQuickView::Ready); QTRY_COMPARE(model.connectionState(), "ready");
+        QCOMPARE(view.status(), QQuickView::Ready); QTRY_READY(model);
         QVERIFY(QMetaObject::invokeMethod(view.rootObject(), "showDownloadWindow", Q_ARG(QString, id), Q_ARG(bool, false)));
         auto *window = downloadWindow(view, id); QVERIFY(window);
         QVERIFY(QTest::qWaitForWindowExposed(window));
@@ -2554,7 +2557,7 @@ private slots:
         service.extensionSnapshot = {{"settings", basicSettings()}, {"queues", QJsonArray{}}};
         PreviewDownloads resources; ServiceDownloads model(service.descriptor);
         std::unique_ptr<QQuickView> view(liveView(model));
-        QCOMPARE(view->status(), QQuickView::Ready); QTRY_COMPARE(model.connectionState(), "ready");
+        QCOMPARE(view->status(), QQuickView::Ready); QTRY_READY(model);
         // Deliberately leave the parts cache cold. Initial presentation must wait for
         // the window's own first watch response, not rely on a pre-hydrated test fixture.
         QVERIFY(model.downloadParts(id).isEmpty());
@@ -2584,7 +2587,7 @@ private slots:
         const QString id = service.rows.first().toObject()["id"].toString();
         PreviewDownloads resources; ServiceDownloads model(service.descriptor);
         std::unique_ptr<QQuickView> view(liveView(model));
-        QCOMPARE(view->status(), QQuickView::Ready); QTRY_COMPARE(model.connectionState(), "ready");
+        QCOMPARE(view->status(), QQuickView::Ready); QTRY_READY(model);
         QVERIFY(QMetaObject::invokeMethod(view->rootObject(), "showDownloadWindow", Q_ARG(QString, id), Q_ARG(bool, false)));
         auto *window = downloadWindow(*view, id); QVERIFY(window);
         watchFirstFrame(window);
@@ -2654,7 +2657,7 @@ private slots:
             {"outcomeUnknown", false}, {"source", "browser"}}};
         PreviewDownloads resources; ServiceDownloads model(service.descriptor);
         std::unique_ptr<QQuickView> view(liveView(model));
-        QCOMPARE(view->status(), QQuickView::Ready); QTRY_COMPARE(model.connectionState(), "ready");
+        QCOMPARE(view->status(), QQuickView::Ready); QTRY_READY(model);
         QQuickWindow *review = nullptr;
         QTRY_VERIFY((review = view->rootObject()->findChild<QQuickWindow *>("browserRequestDialog")) && review->isVisible());
         watchFirstFrame(review);
@@ -2764,7 +2767,7 @@ private slots:
         QQuickView view; view.setResizeMode(QQuickView::SizeRootObjectToView);
         view.setInitialProperties({{"downloads", QVariant::fromValue(&model)}});
         view.setSource(QUrl("qrc:/qt-ui/qml/DownloadsView.qml")); view.resize(1000, 700); view.show();
-        QCOMPARE(view.status(), QQuickView::Ready); QTRY_COMPARE(model.connectionState(), "ready");
+        QCOMPARE(view.status(), QQuickView::Ready); QTRY_READY(model);
         // Main hidden in tray: a NEW request opens an independent toplevel, not the list.
         view.hide(); service.extensionSnapshot["browserRequests"] = QJsonArray{request("batch", 4)};
         QQuickWindow *review = nullptr;
@@ -2789,7 +2792,7 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(later, "clicked")); QTRY_VERIFY(!next);
         QTest::qWait(400); QCOMPARE(service.commands, 1);
         QVERIFY(!view.rootObject()->findChild<QObject *>("browserRequestDialog"));
-        service.restart("review-new-epoch"); QTRY_COMPARE(model.connectionState(), "ready");
+        service.restart("review-new-epoch"); QTRY_READY(model);
         QTest::qWait(400); QCOMPARE(accepted.count(), 1); QCOMPARE(windowCount(view), 3);
         QVERIFY(QMetaObject::invokeMethod(view.rootObject(), "reviewBrowserRequests"));
         QTRY_VERIFY((next = view.rootObject()->findChild<QQuickWindow *>("browserRequestDialog")) && next->isVisible());
@@ -2816,7 +2819,7 @@ private slots:
         accept = next->findChild<QObject *>("acceptBrowserRequest"); QTRY_VERIFY(accept->property("enabled").toBool());
         QVERIFY(QMetaObject::invokeMethod(accept, "clicked")); QTRY_COMPARE(service.commands, 4);
         service.extensionSnapshot["browserRequests"] = QJsonArray{request("lost", 1, true)};
-        QTRY_VERIFY(model.errorMessage().contains("unknown")); QTRY_COMPARE(model.connectionState(), "ready");
+        QTRY_VERIFY(model.errorMessage().contains("unknown")); QTRY_READY(model);
         QTRY_VERIFY(next->property("outcomeUnknown").toBool()); QTest::qWait(400);
         QCOMPARE(service.commands, 4); QCOMPARE(accepted.count(), 2); QCOMPARE(windowCount(view), 3);
         QVERIFY(next->isVisible()); QVERIFY(!view.isVisible());
@@ -2831,7 +2834,7 @@ private slots:
         view.setInitialProperties({{"downloads", QVariant::fromValue(&model)}});
         view.setSource(QUrl("qrc:/qt-ui/qml/DownloadsView.qml")); view.resize(1000, 650); view.show();
         QCOMPARE(view.status(), QQuickView::Ready);
-        QTRY_COMPARE(model.connectionState(), "ready");
+        QTRY_READY(model);
         QVERIFY(QMetaObject::invokeMethod(view.rootObject(), "openAddDialog"));
         auto *options = view.rootObject()->findChild<QObject *>("openAddHttpOptions");
         QVERIFY(options); QTRY_VERIFY(options->property("enabled").toBool());
@@ -3267,7 +3270,7 @@ private slots:
         view.setSource(QUrl("qrc:/qt-ui/qml/DownloadsView.qml")); view.resize(1000, 650); view.show();
         QCOMPARE(view.status(), QQuickView::Ready);
         QVERIFY(QTest::qWaitForWindowExposed(&view, 5000));
-        QTRY_COMPARE(model.connectionState(), "ready");
+        QTRY_READY(model);
         QVERIFY(model.capabilities().contains("download.windows"));
         QTRY_VERIFY(model.integration()["showDownloadProgressDialog"].toBool());
         QTest::qWait(500); QCOMPARE(windowCount(view), 0); // Earlier smoke events are a baseline.
@@ -3382,7 +3385,7 @@ private slots:
         view.setSource(QUrl("qrc:/qt-ui/qml/DownloadsView.qml"));
         view.resize(1000, 650); view.show();
         QCOMPARE(view.status(), QQuickView::Ready);
-        QTRY_COMPARE(model.connectionState(), "ready");
+        QTRY_READY(model);
         QVERIFY(QMetaObject::invokeMethod(view.rootObject(), "openAddDialog"));
         auto *url = view.rootObject()->findChild<QObject *>("exampleUrlInput");
         auto *name = view.rootObject()->findChild<QObject *>("exampleNameInput");

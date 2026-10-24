@@ -250,11 +250,10 @@ Item {
                             RowLayout {
                                 Layout.preferredWidth: root.controlWidth; spacing: Tokens.spacingS
                                 visible: root.service.capabilities.indexOf("settings.folder") >= 0
-                                FormField { id: defaultFolder; objectName: "settingsDefaultFolder"; Layout.fillWidth: true; maximumLength: 4096; Accessible.name: qsTr("Default download folder"); placeholderText: qsTr("Runtime default") }
+                                FormField { id: defaultFolder; objectName: "settingsDefaultFolder"; Layout.fillWidth: true; maximumLength: 4096; Accessible.name: qsTr("Default download folder"); placeholderText: qsTr("Default folder") }
                                 FolderBrowseButton { objectName: "settingsDefaultFolderBrowse"; field: defaultFolder; title: qsTr("Default Download Folder"); startFolder: root.service.runtime.destination || "" }
-                                IconButton { objectName: "settingsDefaultFolderReset"; text: qsTr("Use runtime default"); icon.name: "edit-clear"; enabled: defaultFolder.text !== ""; onClicked: defaultFolder.text = "" }
+                                IconButton { objectName: "settingsDefaultFolderReset"; text: qsTr("Use the default folder"); icon.name: "edit-clear"; enabled: defaultFolder.text !== ""; onClicked: defaultFolder.text = "" }
                             }
-                            Note { visible: root.service.capabilities.indexOf("settings.folder") >= 0; text: qsTr("Leave empty to use the default folder.") }
                             RowLabel { text: qsTr("Duplicate Links"); visible: root.service.capabilities.indexOf("settings.duplicates") >= 0 }
                             UiComboBox {
                                 id: duplicateAction; objectName: "settingsDuplicateAction"; Layout.preferredWidth: root.controlWidth
