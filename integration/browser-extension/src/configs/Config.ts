@@ -58,12 +58,21 @@ const ConfigType = z.object({
     sendHeaders: z.boolean().catch(true),
     registeredFileTypes: z.array(z.string()).catch(
         [
-            "zip", "rar", "7z", "iso", "tar", "gz",
-            "exe", "msi", "deb", "jar", "apk", "bin",
-            "mp3", "aac",
-            "pdf",
-            "mp4", "3gp", "avi", "mkv", "wav", "mpeg",
-            "srt",
+            // archives
+            "zip", "rar", "7z", "iso", "tar", "gz", "tgz", "bz2", "xz", "zst", "lz", "lzma", "cab",
+            // installers / packages / disk images
+            "exe", "msi", "msix", "appx", "deb", "rpm", "appimage", "flatpak", "dmg", "pkg",
+            "jar", "apk", "xapk", "ipa", "bin", "img", "run",
+            // audio
+            "mp3", "aac", "m4a", "wav", "flac", "ogg", "opus", "wma",
+            // video
+            "mp4", "m4v", "3gp", "avi", "mkv", "mov", "wmv", "flv", "webm", "mpeg", "mpg",
+            "ts", "m2ts", "mts", "vob",
+            // documents / ebooks
+            "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp",
+            "epub", "mobi", "azw3", "djvu", "cbz", "cbr",
+            // subtitles
+            "srt", "ass",
         ]
     ),
     allowPassDownloadIfAppNotRespond: z.boolean().catch(true),
