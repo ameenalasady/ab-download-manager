@@ -504,8 +504,10 @@ Item {
                 hasExisting: Boolean(match)
                 canOpen: Boolean(match && match.fileUrl.toString() !== "")
                 canResume: Boolean(match && ["paused", "failed"].indexOf(match.state) >= 0 && !showsExisting)
-                onShowExisting: root.existingRequested(match.id)
-                onOpenFile: DesktopOpener.openFile(match.fileUrl, dialog)
+                // Both hand the user over to the existing download, so the review closes
+                // like Later does (the opener is asked for its activation token first).
+                onShowExisting: { root.existingRequested(match.id); dialog.close() }
+                onOpenFile: { if (DesktopOpener.openFile(match.fileUrl, dialog)) dialog.close() }
                 onResume: { if (!root.service.busy && root.service.resumeDownload(match.id)) dialog.close() }
                 extraVisible: true
                 RowLayout {

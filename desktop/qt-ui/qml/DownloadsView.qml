@@ -1045,7 +1045,7 @@ Item {
                 canOpen: Boolean(addDialog.existing && addDialog.existing.fileUrl.toString() !== "")
                 canResume: Boolean(addDialog.existing && ["paused", "failed"].indexOf(addDialog.existing.state) >= 0 && !showsExisting)
                 onShowExisting: { root.showDownloadWindow(addDialog.existing.id, false); addDialog.close() }
-                onOpenFile: DesktopOpener.openFile(addDialog.existing.fileUrl, root.Window.window)
+                onOpenFile: { if (DesktopOpener.openFile(addDialog.existing.fileUrl, root.Window.window)) addDialog.close() }
                 onResume: { if (!root.downloads.busy && root.downloads.resumeDownload(addDialog.existing.id)) addDialog.close() }
                 extraVisible: true
                 RowLayout {

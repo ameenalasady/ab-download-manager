@@ -1994,7 +1994,10 @@ private slots:
         QVERIFY(message->property("truncated").toBool());
         if (!capture.isEmpty()) QVERIFY(review->grabWindow().save(capture + "/long-duplicate-narrow.png"));
         QCOMPARE(service.commands, 0);
-        review->close();
+        // Show hands over to the existing download and closes the review like Later does.
+        QPointer<QQuickWindow> guard(review);
+        QVERIFY(QMetaObject::invokeMethod(show, "clicked"));
+        QTRY_VERIFY(!guard || !guard->isVisible());
     }
     void duplicatesAreChosenInlineBeforeAdding() {
         FakeService service; service.detailsCapability = true; service.runtimeCapability = true;
