@@ -53,6 +53,28 @@ class RuntimePolicyTest {
         } finally { root.toFile().deleteRecursively() }
     }
 
+    @Test fun missingDestinationIsRecreatedInsideAnApprovedRootButNeverElsewhere() = runBlocking {
+        val root = Files.createTempDirectory("abdm-runtime-missing-")
+        try {
+            val file = fixture(root); val original = Json.parseToJsonElement(Files.readString(file)).jsonObject
+            val downloads = root.resolve("downloads"); val nested = downloads.resolve("ABDM")
+            fun withDestination(path: Path) = Files.writeString(file, JsonObject(original + ("destination" to JsonPrimitive(path.toString()))).toString())
+            withDestination(nested)
+            val policy = RuntimePolicy.load(file)
+            assertTrue(Files.isDirectory(nested)) // Created by load, below the existing approved root.
+            Files.delete(nested)
+            val lifecycle = ServiceLifecycle(policy.profile, RuntimePolicy.load(file)) // Restart after the folder vanished.
+            try { lifecycle.start(); assertTrue(Files.isDirectory(nested)) } finally { lifecycle.stop() }
+            // Still refused: outside the roots, or below a root that no longer exists.
+            val outside = root.resolve("outside").resolve("ABDM")
+            withDestination(outside); assertFails { RuntimePolicy.load(file) }
+            assertFalse(Files.exists(outside.parent))
+            withDestination(nested); Files.walk(downloads).use { paths -> paths.sorted(Comparator.reverseOrder()).forEach { Files.delete(it) } }
+            assertFails { RuntimePolicy.load(file) }
+            assertFalse(Files.exists(downloads))
+        } finally { root.toFile().deleteRecursively() }
+    }
+
     @Test fun destinationsRejectEscapesSymlinksHardLinksAndMetadataRoots() {
         val root = Files.createTempDirectory("abdm-runtime-destination-")
         try {

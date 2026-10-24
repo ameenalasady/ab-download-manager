@@ -196,6 +196,10 @@ def frontend_command(policy: Path) -> list[str]:
     return [sys.executable, str(Path(__file__).resolve()), "launch", "--runtime-policy", str(policy)]
 
 
+class ServiceStartError(RuntimeError):
+    """The service process exited during startup. The message is fixed text plus the log path."""
+
+
 def ensure_service(profile: Path, arguments: list[str], service: Path = SERVICE, frontend: list[str] | None = None) -> bool:
     require_not_quarantined(profile)
     # Serialize cooperating cold launches separately from the authoritative JVM writer lease.
@@ -225,7 +229,7 @@ def ensure_service(profile: Path, arguments: list[str], service: Path = SERVICE,
         deadline = time.monotonic() + 45
         while time.monotonic() < deadline:
             if process.poll() is not None:
-                raise RuntimeError("Service failed to start; inspect the private profile log")
+                raise ServiceStartError(f"service failed to start; see {profile / 'qt-service.log'}")
             if available(profile):
                 return True
             time.sleep(0.1)
@@ -436,6 +440,9 @@ def main(argv=None) -> int:
             return launch_ui(profile)
     except KeyboardInterrupt:
         return 130
+    except ServiceStartError as error:
+        print(f"abdm-qt: {error}", file=sys.stderr)
+        return 2
     except (OSError, ValueError, KeyError, RuntimeError, TimeoutError) as error:
         # Do not print arbitrary JSON/URLs/secrets from malformed files or service errors.
         print(f"abdm-qt: {type(error).__name__}: operation failed; inspect private local state", file=sys.stderr)

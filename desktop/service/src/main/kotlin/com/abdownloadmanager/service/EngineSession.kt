@@ -80,7 +80,7 @@ class EngineSession(
     private val queueDirectory = directory("config/download_db/queues")
     private val downloads = runtime.destination.toFile().apply {
         if (runtime.isolated) check(mkdirs() || isDirectory)
-        runtime.validateFolder(toPath())
+        runtime.ensureFolder(toPath())
     }
     private val categoryFile = directory("config/download_db/categories").resolve("categories.json")
     private val extraDownloads = ExtraDownloadSettingsStorage(directory("config/download_db/extra_download_settings"), saver, StoredExtraSettings, strictReads = true)
@@ -335,7 +335,7 @@ class EngineSession(
                 ?: error("Category no longer exists")
         }
         val folder = folderOverride ?: category?.takeIf { it.usePath }?.let { Path.of(it.path) } ?: destination().toPath()
-        runtime.validateFolder(folder)
+        runtime.ensureFolder(folder)
         val duplicatePolicy = options["duplicatePolicy"]?.jsonPrimitive?.content ?: "numbered"
         require(duplicatePolicy in setOf("reject", "numbered", "overwrite")) { "Unsupported duplicate policy" }
         if (duplicatePolicy == "reject") {
@@ -440,7 +440,7 @@ class EngineSession(
         // Never trust stored URLs/destinations merely because a directory is inside build/.
         list.getAll().forEach {
             runtime.validateUrl(it.link)
-            runtime.validateFolder(Path.of(it.folder))
+            runtime.validateDestination(Path.of(it.folder))
             require(it is HttpDownloadItem) { "Unsupported stored download type" }
             validateHttpOptions(it)
             require(it.name.length in 1..180 && it.name != "." && it.name != ".." &&
@@ -678,7 +678,7 @@ class EngineSession(
                     runtime.validateUrl(url)
                     val name = BrowserLinks.fileName(request["name"]?.jsonPrimitive?.content, url)
                     val folder = request["folder"]?.jsonPrimitive?.content?.let(Path::of) ?: destination().toPath()
-                    runtime.validateFolder(folder)
+                    runtime.validateDestination(folder)
                     put("name", name); put("existingFile", java.nio.file.Files.exists(folder.resolve(name), java.nio.file.LinkOption.NOFOLLOW_LINKS))
                     put("duplicates", JsonArray(manager.getDownloadList().filter { it.link == url || (it.folder == folder.toString() && it.name == name) }
                         .take(100).map { buildJsonObject { put("id", it.id.toString()); put("name", it.name) } }))
@@ -807,14 +807,14 @@ class EngineSession(
                     require(item.status != DownloadStatus.Downloading && manager.getJobStatusOf(id) !is DownloadJobStatus.IsActive &&
                         manager.downloadJobs.none { it.id == id && it.isDownloadActive.value }) { "Pause download first" }
                     require(queues.getAll().none { it.isQueueActive && id in it.getQueueModel().queueItems }) { "Stop containing queues first" }
-                    runtime.validateFolder(Path.of(item.folder))
+                    runtime.validateDestination(Path.of(item.folder))
                     val draft = item.copy()
                     if (op == "download.move") {
                         draft.name = request["name"]?.jsonPrimitive?.content ?: error("Missing file name")
                         val folder = Path.of(request["folder"]?.jsonPrimitive?.content ?: error("Missing folder"))
                         require(draft.name.length in 1..180 && draft.name != "." && draft.name != ".." &&
                             draft.name.none { it == '/' || it == '\\' || it.isISOControl() }) { "Invalid file name" }
-                        runtime.validateFolder(folder)
+                        runtime.ensureFolder(folder)
                         // Store and compare the canonical spelling: "/a/b/" and "/a/b" are one folder.
                         draft.folder = folder.toString()
                         val target = File(draft.folder, draft.name)
@@ -848,7 +848,7 @@ class EngineSession(
                     require(listOf("name", "folder").none { it in request }) { "Moving/renaming payloads is not supported by source/options editing" }
                     val draft = item.copy()
                     request["url"]?.let { draft.link = it.jsonPrimitive.content }
-                    runtime.validateUrl(draft.link); runtime.validateFolder(Path.of(draft.folder))
+                    runtime.validateUrl(draft.link); runtime.validateDestination(Path.of(draft.folder))
                     applyHttpOptions(draft, request)
                     manual.removeFromQueue(id)
                     // Drains a just-paused active scope before changing the original job's configuration.
@@ -864,7 +864,7 @@ class EngineSession(
                     val item = list.getById(id) ?: error("Download no longer exists")
                     require(item.status != DownloadStatus.Completed) { "Completed download cannot be resumed or paused" }
                     if (op == "pause") facade.manualPause(id) else {
-                        runtime.validateUrl(item.link); runtime.validateFolder(Path.of(item.folder))
+                        runtime.validateUrl(item.link); runtime.ensureFolder(Path.of(item.folder))
                         facade.userManualResume(id)
                     }
                     put("id", id.toString())
@@ -1068,8 +1068,8 @@ class EngineSession(
                 "Category destinations are unavailable in isolated mode"
             } else {
                 require(c.path.length in 1..4096 && c.path.none { it.isISOControl() }) { "Invalid category path" }
+                // Location only: a stored folder may have been deleted since; adding re-creates it.
                 runtime.validateDestination(Path.of(c.path))
-                if (c.usePath) runtime.validateFolder(Path.of(c.path))
             }
             require(c.items.size == c.items.distinct().size) { "Duplicate category membership" }
             require(c.acceptedFileTypes.size <= 128 && c.acceptedFileTypes.all {

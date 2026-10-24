@@ -52,6 +52,16 @@ class RuntimePolicy private constructor(
         validateDestination(path)
         require(Files.isDirectory(path, NOFOLLOW_LINKS) && Files.isWritable(path)) { "Destination folder must already exist and be writable" }
     }
+    /** Like [validateFolder], but creates a missing folder. Only ever creates folders beneath an
+     * already existing, explicitly approved root, after the location itself passed validation. */
+    fun ensureFolder(path: Path): Path {
+        if (isolated) require(path == destination) { "Stored destination escapes fixture Downloads" }
+        validateDestination(path)
+        if (!Files.exists(path, NOFOLLOW_LINKS)) Files.createDirectories(path)
+        noSymlinkAncestors(path)
+        require(Files.isDirectory(path, NOFOLLOW_LINKS) && Files.isWritable(path)) { "Destination folder must be a writable directory" }
+        return path
+    }
     /** Runs before every engine request, including redirected requests, not merely Add. */
     fun networkInterceptor() = Interceptor { chain ->
         try { validateUrl(chain.request().url.toString()) } catch (e: Exception) { throw IOException("Request rejected by runtime policy", e) }
@@ -146,7 +156,7 @@ class RuntimePolicy private constructor(
                 parseProxy(policy.jsonObject)
             }.orEmpty()
             require(hostProxies.size <= 32) { "Too many explicit host proxy rules" }
-            return RuntimePolicy(profile, path("destination"), roots, false, doc.getValue("redirects").jsonPrimitive.boolean, proxy, hostProxies).also { it.validateFolder(it.destination) }
+            return RuntimePolicy(profile, path("destination"), roots, false, doc.getValue("redirects").jsonPrimitive.boolean, proxy, hostProxies).also { it.ensureFolder(it.destination) }
         }
         private fun privateOwned(path: Path) {
             require(Files.getOwner(path) == java.nio.file.FileSystems.getDefault().userPrincipalLookupService.lookupPrincipalByName(System.getProperty("user.name"))) { "Runtime path owner mismatch" }
