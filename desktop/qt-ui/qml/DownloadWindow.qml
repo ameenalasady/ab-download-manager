@@ -30,7 +30,11 @@ QQC2.ApplicationWindow {
     readonly property real contentMinimumHeight: content.completed
         ? Math.max(completionFloor, Math.min(Math.ceil(content.contentHeight), availableHeight))
         : Math.max(Tokens.windowMinimumHeight, Math.min(Math.ceil(content.contentHeight), availableHeight))
-    minimumHeight: sizeAnimation.active ? completionFloor : contentMinimumHeight
+    // The advertised minimum follows what the last fit committed to, not the live content:
+    // when the part table appears, the minimum would otherwise jump first and the
+    // compositor would enforce it at once, defeating the eased resize that follows.
+    property real committedMinimumHeight: Tokens.windowMinimumHeight
+    minimumHeight: sizeAnimation.active ? completionFloor : committedMinimumHeight
     // Advertise a tight initial native size range so KWin's remembered geometry
     // cannot produce an oversized first buffer. Normal height resizing is restored
     // after the bounded first-configure period; the content minimum remains.
@@ -82,6 +86,7 @@ QQC2.ApplicationWindow {
         for (let pass = 0; pass < 3; ++pass) {
             const measured = content.ensureMeasured()
             if (!(measured > 0)) return
+            committedMinimumHeight = contentMinimumHeight
             const target = targetHeight(measured)
             if (height === target) return
             height = target

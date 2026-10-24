@@ -69,16 +69,17 @@ Item {
             || item instanceof Flow || item instanceof ListView || item instanceof QQC2.ScrollView)
             item.ensurePolished()
     }
-    NumberAnimation { id: pageFade; property: "opacity"; from: 0; to: 1; duration: Tokens.pageTransitionMs; easing.type: Easing.OutCubic }
-    property Item fadingPage: null
-    function fadeIn(page: Item): void {
+    Component {
+        id: fadeComponent
+        NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Tokens.pageTransitionMs; easing.type: Easing.OutCubic }
+    }
+    // Pages and the part table fade in when they appear in an already shown window.
+    function fadeIn(item: Item): void {
         const window = pane.Window.window
         if (!window || !window.visible || Tokens.pageTransitionMs <= 0) return
-        pageFade.stop()
-        if (fadingPage) fadingPage.opacity = 1
-        fadingPage = page
-        pageFade.target = page
-        pageFade.restart()
+        const fade = fadeComponent.createObject(item, {target: item}) as NumberAnimation
+        fade.stopped.connect(fade.destroy)
+        fade.start()
     }
     function refresh() {
         row = service.downloadState(downloadId); parts = service.downloadParts(downloadId)
@@ -212,6 +213,7 @@ Item {
                 Rectangle {
                     id: pieces; objectName: "downloadWindowPieces"; Layout.fillWidth: true; implicitHeight: Tokens.progressHeight; color: theme.border; clip: true
                     visible: pane.parts.available === true && Number(pane.row.size) > 0
+                    onVisibleChanged: if (visible) pane.fadeIn(pieces)
                     Repeater {
                         model: pane.parts.items || []
                         delegate: Rectangle {
@@ -233,7 +235,9 @@ Item {
                 StatusMessage { type: Kirigami.MessageType.Warning; visible: pane.parts.truncated === true; message: qsTr("Showing the first 256 parts.") }
                 RowLayout {
                     Layout.fillWidth: true; Layout.leftMargin: Tokens.cellPadding; Layout.rightMargin: Tokens.cellPadding
+                    id: partHeader
                     spacing: Tokens.spacingS; visible: partList.count > 0
+                    onVisibleChanged: if (visible) pane.fadeIn(partHeader)
                     PartCell { Layout.preferredWidth: pane.partIndexWidth; text: "#"; color: theme.secondary; font.weight: Font.DemiBold }
                     PartCell { Layout.fillWidth: true; text: qsTr("Status"); color: theme.secondary; font.weight: Font.DemiBold }
                     PartCell { Layout.preferredWidth: pane.partBytesWidth; text: qsTr("Downloaded"); color: theme.secondary; font.weight: Font.DemiBold }
@@ -246,6 +250,7 @@ Item {
                     // frame (no delegates yet) as it does once scrolling is live.
                     Layout.fillWidth: true; Layout.preferredHeight: Math.min(partList.count, pane.visiblePartRows) * Tokens.rowHeightCompact + 2 * inset
                     visible: partList.count > 0
+                    onVisibleChanged: if (visible) pane.fadeIn(partFrame)
                     ListView {
                         id: partList; objectName: "downloadWindowPartList"
                         anchors.fill: parent; anchors.margins: Tokens.separatorWidth

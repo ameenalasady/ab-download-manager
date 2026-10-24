@@ -82,10 +82,13 @@ Item {
         // Reviews and completion are genuinely content-sized. Advertising the generic
         // 260px progress minimum for a shorter review contradicts fitContentHeight();
         // when configureGuard releases maximumHeight, Qt clamps it up seconds later.
+        // A progress page's minimum follows what the last fit committed to, not the live
+        // content (a part table appearing would otherwise make the compositor enforce the
+        // new minimum before the eased resize starts). The review keeps its live measure.
+        property real committedMinimumHeight: Tokens.dialogPadding + Tokens.rowHeight
         minimumHeight: sizeAnimation.active ? Tokens.dialogPadding + Tokens.rowHeight
-            : downloadId === "" || completedView
-            ? Math.max(Tokens.dialogPadding + Tokens.rowHeight, Math.min(Math.ceil(measuredHeight()), heightLimit()))
-            : Math.max(Tokens.windowMinimumHeight, Math.min(Math.ceil(measuredHeight()), heightLimit()))
+            : downloadId !== "" ? committedMinimumHeight
+            : Math.max(Tokens.dialogPadding + Tokens.rowHeight, Math.min(Math.ceil(measuredHeight()), heightLimit()))
         // Content-sized: the review starts as tall as its list, and the same native
         // surface is re-measured when it becomes a progress window or completes.
         property bool initialConfigure: true
@@ -183,6 +186,7 @@ Item {
                     const floor = Tokens.dialogPadding + Tokens.rowHeight
                     const pageFloor = downloadId === "" || completedView ? floor : Tokens.windowMinimumHeight
                     const target = Math.max(pageFloor, Math.min(measured, heightLimit()))
+                    committedMinimumHeight = target
                     if (dialog.height === target) break
                     dialog.height = target
                 }

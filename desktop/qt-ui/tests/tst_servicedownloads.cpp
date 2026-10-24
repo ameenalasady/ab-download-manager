@@ -2443,6 +2443,33 @@ private slots:
         QCOMPARE(model.downloadParts(id)["items"].toList().size(), 9); // Raw piece-bar data is untouched.
         window->close();
     }
+    void partTableAppearingEasesTheWindowHeight() {
+        FakeService service; service.partsCapability = true;
+        service.extensionSnapshot = {{"settings", basicSettings()}, {"queues", QJsonArray{}}};
+        const QString id = service.rows.first().toObject()["id"].toString();
+        setParts(service, id, QJsonArray{partRange(0)});
+        PreviewDownloads resources; ServiceDownloads model(service.descriptor);
+        std::unique_ptr<QQuickView> view(liveView(model)); QTRY_READY(model);
+        QVERIFY(QMetaObject::invokeMethod(view->rootObject(), "showDownloadWindow", Q_ARG(QString, id), Q_ARG(bool, false)));
+        auto *window = downloadWindow(*view, id); QVERIFY(window); QVERIFY(QTest::qWaitForWindowExposed(window));
+        auto *list = window->findChild<QQuickItem *>("downloadWindowPartList"); QVERIFY(list);
+        QTRY_COMPARE(list->property("count").toInt(), 1);
+        QTest::qWait(1800); // Past the initial-configure guard, as when a download has just started.
+        const int before = window->height();
+        // More part rows appear: the window grows by easing, it is not snapped to the new
+        // minimum the moment the content changes.
+        QJsonArray parts; for (int i = 0; i < 8; ++i) parts.append(partRange(i));
+        setParts(service, id, parts);
+        QList<int> heights;
+        QVERIFY(QTest::qWaitFor([&] { heights.append(window->height()); return list->property("count").toInt() == 8; }, 5000));
+        for (int i = 0; i < 60; ++i) { QTest::qWait(10); heights.append(window->height()); }
+        const int after = window->height();
+        QVERIFY2(after > before, qPrintable(QStringLiteral("window did not grow: %1 -> %2").arg(before).arg(after)));
+        QVERIFY2(std::any_of(heights.cbegin(), heights.cend(), [&](int h) { return h > before && h < after; }),
+            qPrintable(QStringLiteral("window snapped from %1 to %2 without easing").arg(before).arg(after)));
+        QCOMPARE(window->height(), window->minimumHeight());
+        window->close();
+    }
     void progressPartsKeepScrollPositionDuringUpdatesAndTurnover() {
         FakeService service; service.partsCapability = true;
         service.extensionSnapshot = {{"settings", basicSettings()}, {"queues", QJsonArray{}}};
