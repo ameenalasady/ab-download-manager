@@ -1102,8 +1102,17 @@ private slots:
         QCOMPARE(mode->property("count").toInt(), 3);
         QCOMPARE(mode->property("currentIndex").toInt(), 2);
         QVERIFY(notice->property("visible").toBool());
-        // Applying the Downloads page never rewrites the kept activity-dependent mode.
+        // Apply is enabled only while the page differs from the stored settings.
+        auto *threads = view.rootObject()->findChild<QObject *>("settingsThreadCount"); QVERIFY(threads);
+        const QString storedThreads = threads->property("text").toString();
+        QTRY_VERIFY(!apply->property("enabled").toBool());
+        threads->setProperty("text", storedThreads + "1");
         QTRY_VERIFY(apply->property("enabled").toBool());
+        threads->setProperty("text", storedThreads);
+        QTRY_VERIFY(!apply->property("enabled").toBool());
+        threads->setProperty("text", storedThreads + "1");
+        QTRY_VERIFY(apply->property("enabled").toBool());
+        // Applying the Downloads page never rewrites the kept activity-dependent mode.
         QVERIFY(QMetaObject::invokeMethod(apply, "click"));
         QTRY_COMPARE(service.commands, 1);
         auto patch = service.lastCommand["settings"].toObject();

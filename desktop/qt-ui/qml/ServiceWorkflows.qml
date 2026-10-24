@@ -73,33 +73,72 @@ Item {
         property string storedSpeedMode: "Disabled"
         readonly property var sizeChoices: root.unitChoices(["BinaryBytes", "DecimalBytes"], root.service.settings.sizeUnit || "")
         readonly property var speedChoices: root.unitChoices(["BinaryBytes", "DecimalBytes", "BinaryBits", "DecimalBits"], root.service.settings.speedUnit || "")
+        // The service's stored values, in the same form the controls hold them.
+        readonly property var stored: {
+            const s = root.service.settings || {}, b = root.service.browserIntegration || {}, i = root.service.integration || {}
+            return {
+                appearance: {size: Math.max(0, sizeChoices.indexOf(s.sizeUnit)), speed: Math.max(0, speedChoices.indexOf(s.speedUnit))},
+                downloads: {threads: String(s.threadCount), concurrent: String(s.maxConcurrentDownloads), retries: String(s.maxDownloadRetryCount),
+                    minPart: String(s.minPartSize), dynamic: Boolean(s.dynamicPartCreation), sparse: Boolean(s.useSparseFileAllocation),
+                    modified: Boolean(s.useServerLastModifiedTime), average: Boolean(s.useAverageSpeed),
+                    speedMode: ["Disabled", "Enabled", "EnabledWhenBessy"].indexOf(s.useSpeedLimit || "Disabled"),
+                    speedLimit: String(s.speedLimit || "262144"), useCategory: s.useCategoryByDefault !== false,
+                    folder: (root.service.runtime || {}).destination || "",
+                    duplicates: Math.max(0, ["ask", "numbered", "existing"].indexOf(s.qtDuplicateAction || "ask"))},
+                browser: {enabled: b.enabled !== false, port: String(b.port || 15151), auth: Boolean(b.auth), key: ""},
+                desktop: {boot: i.autoStartOnBoot !== false, tray: i.useSystemTray !== false, sound: i.notificationSound !== false,
+                    success: i.successNotificationSound || "", error: i.errorNotificationSound || "", general: i.generalNotificationSound || "",
+                    progress: i.showDownloadProgressDialog !== false, completion: i.showDownloadCompletionDialog !== false}
+            }
+        }
+        // The same shape, read live from the controls.
+        readonly property var draft: ({
+            appearance: {size: sizeUnit.currentIndex, speed: speedUnit.currentIndex},
+            downloads: {threads: threads.text, concurrent: concurrent.text, retries: retries.text, minPart: minPart.text,
+                dynamic: dynamic.checked, sparse: sparse.checked, modified: modified.checked, average: average.checked,
+                speedMode: speedMode.currentIndex, speedLimit: speedLimit.text, useCategory: useCategory.checked,
+                folder: defaultFolder.text, duplicates: duplicateAction.currentIndex},
+            browser: {enabled: apiEnabled.checked, port: apiPort.text, auth: apiAuth.checked, key: apiKey.text},
+            desktop: {boot: startOnBoot.checked, tray: systemTray.checked, sound: notificationSound.checked,
+                success: successSound.text.trim(), error: errorSound.text.trim(), general: generalSound.text.trim(),
+                progress: progressWindow.checked, completion: completionWindow.checked}
+        })
+        // Apply buttons are enabled only while a page's controls differ from what the service stores.
+        function changed(key: string): bool { return JSON.stringify(draft[key]) !== JSON.stringify(stored[key]) }
+        // Emptying the folder resets it; once applied the service reports the runtime default, so show it.
+        property string lastStoredFolder: ""
+        onStoredChanged: {
+            const folder = stored.downloads.folder
+            if (folder !== lastStoredFolder && defaultFolder.text === "") defaultFolder.text = folder
+            lastStoredFolder = folder
+        }
         function loadDraft() {
-            const s = root.service.settings
-            defaultFolder.text = root.service.runtime.destination || ""
-            duplicateAction.currentIndex = Math.max(0, ["ask", "numbered", "existing"].indexOf(s.qtDuplicateAction || "ask"))
-            threads.text = String(s.threadCount); concurrent.text = String(s.maxConcurrentDownloads)
-            retries.text = String(s.maxDownloadRetryCount); minPart.text = String(s.minPartSize)
-            dynamic.checked = Boolean(s.dynamicPartCreation); sparse.checked = Boolean(s.useSparseFileAllocation)
-            modified.checked = Boolean(s.useServerLastModifiedTime)
-            average.checked = Boolean(s.useAverageSpeed)
-            storedSpeedMode = s.useSpeedLimit || "Disabled"
-            speedMode.currentIndex = ["Disabled", "Enabled", "EnabledWhenBessy"].indexOf(storedSpeedMode)
-            speedLimit.text = String(s.speedLimit || "262144")
-            useCategory.checked = s.useCategoryByDefault !== false
-            sizeUnit.currentIndex = Math.max(0, sizeChoices.indexOf(s.sizeUnit))
-            speedUnit.currentIndex = Math.max(0, speedChoices.indexOf(s.speedUnit))
-            const b = root.service.browserIntegration || {}
-            apiEnabled.checked = b.enabled !== false; apiPort.text = String(b.port || 15151)
-            apiAuth.checked = Boolean(b.auth); apiKey.text = ""
-            const i = root.service.integration || {}
-            startOnBoot.checked = i.autoStartOnBoot !== false
-            systemTray.checked = i.useSystemTray !== false
-            notificationSound.checked = i.notificationSound !== false
-            successSound.text = i.successNotificationSound || ""
-            errorSound.text = i.errorNotificationSound || ""
-            generalSound.text = i.generalNotificationSound || ""
-            progressWindow.checked = i.showDownloadProgressDialog !== false
-            completionWindow.checked = i.showDownloadCompletionDialog !== false
+            const d = stored.downloads
+            defaultFolder.text = d.folder; lastStoredFolder = d.folder
+            duplicateAction.currentIndex = d.duplicates
+            threads.text = d.threads; concurrent.text = d.concurrent
+            retries.text = d.retries; minPart.text = d.minPart
+            dynamic.checked = d.dynamic; sparse.checked = d.sparse
+            modified.checked = d.modified
+            average.checked = d.average
+            storedSpeedMode = (root.service.settings || {}).useSpeedLimit || "Disabled"
+            speedMode.currentIndex = d.speedMode
+            speedLimit.text = d.speedLimit
+            useCategory.checked = d.useCategory
+            sizeUnit.currentIndex = stored.appearance.size
+            speedUnit.currentIndex = stored.appearance.speed
+            const b = stored.browser
+            apiEnabled.checked = b.enabled; apiPort.text = b.port
+            apiAuth.checked = b.auth; apiKey.text = ""
+            const i = stored.desktop
+            startOnBoot.checked = i.boot
+            systemTray.checked = i.tray
+            notificationSound.checked = i.sound
+            successSound.text = i.success
+            errorSound.text = i.error
+            generalSound.text = i.general
+            progressWindow.checked = i.progress
+            completionWindow.checked = i.completion
         }
         title: qsTr("Settings")
         preferredWidth: Tokens.dialogWidthLarge; preferredHeight: Tokens.dialogHeightLarge
@@ -157,7 +196,7 @@ Item {
                             }
                             SectionApply {
                                 objectName: "applyDesktopIntegration"
-                                text: qsTr("Apply Desktop Integration"); enabled: !root.service.busy
+                                text: qsTr("Apply Desktop Integration"); enabled: !root.service.busy && settingsDialog.changed("desktop")
                                 // Only fields shown on this page are written.
                                 onClicked: {
                                     const patch = root.explicitRuntime ? {autoStartOnBoot: startOnBoot.checked, useSystemTray: systemTray.checked, notificationSound: notificationSound.checked} : {}
@@ -321,6 +360,7 @@ Item {
                     objectName: "applyServiceSettings"; text: qsTr("Apply"); icon.name: "dialog-ok-apply"; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.ApplyRole
                     // Each page applies only its own fields.
                     enabled: !root.service.busy && root.service.capabilities.indexOf("settings.update") >= 0
+                        && settingsDialog.changed(["appearance", "downloads", "browser"][settingsDialog.page])
                         && (settingsDialog.page === 2 ? root.browserSettings && apiPort.acceptableInput
                               && (!apiAuth.checked || apiKey.text !== "" || Boolean((root.service.browserIntegration || {}).auth))
                             : settingsDialog.page === 0 ? root.displaySettings
