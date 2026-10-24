@@ -983,6 +983,8 @@ Item {
         // Link + connection options a check was last started for / is running for.
         property string probedKey: ""
         property string probingKey: ""
+        // Server answers worth reusing while the dialog stays open, by link + options.
+        property var answers: ({})
         // -1: none; otherwise the start flag of a Download/Add click waiting for the check.
         property int pendingStart: -1
         property bool forceSubmit: false
@@ -998,7 +1000,7 @@ Item {
         function effectiveName(): string { const typed = nameInput.text.trim(); return typed !== "" ? typed : autoName }
         function linkKey(): string { return JSON.stringify([sourceInput.text.trim(), root.addOptions]) }
         function resetAuto(): void {
-            autoName = ""; autoSource = "link"; autoDetail = ""; probedKey = ""; probingKey = ""; pendingStart = -1
+            autoName = ""; autoSource = "link"; autoDetail = ""; probedKey = ""; probingKey = ""; pendingStart = -1; answers = ({})
             probeTimer.stop()
         }
         // True when a check for the current link is running or has just been started.
@@ -1010,6 +1012,14 @@ Item {
             if (root.downloads.probeLink(sourceInput.text, root.addOptions)) { probing = true; probingKey = key; probedKey = key; return true }
             if (root.downloads.busy) probeTimer.restart()
             return false
+        }
+        // The link was edited: show what is known for it, and have anything unanswered checked again.
+        function linkEdited(): void {
+            const known = answers[linkKey()]
+            if (known) { autoName = known.name; autoSource = "server"; autoDetail = known.detail; probedKey = linkKey(); return }
+            autoName = root.downloads.suggestedName(sourceInput.text); autoSource = "link"; autoDetail = ""
+            probedKey = ""
+            probeTimer.restart()
         }
         function hold(start: bool): void { pendingStart = start ? 1 : 0; probeTimer.stop(); advance() }
         // Moves a held Download/Add on after each answer: check the current link, else submit as it is.
@@ -1031,6 +1041,7 @@ Item {
             target: root.live ? root.downloads : null
             function onLinkProbed(url: string, name: string, sizeLabel: string, fromServer: bool) {
                 addDialog.probing = false
+                if (fromServer && name !== "") addDialog.answers[addDialog.probingKey] = {name: name, detail: sizeLabel}
                 if (url === sourceInput.text) {
                     if (name !== "") addDialog.autoName = name
                     addDialog.autoSource = fromServer ? "server" : "link"
@@ -1075,8 +1086,7 @@ Item {
                     onTextChanged: {
                         existingCheck.restart()
                         if (!root.live) return
-                        addDialog.autoName = root.downloads.suggestedName(text); addDialog.autoSource = "link"; addDialog.autoDetail = ""
-                        probeTimer.restart()
+                        addDialog.linkEdited()
                     } }
                 FormLabel { text: qsTr("File name:") }
                 FormField {

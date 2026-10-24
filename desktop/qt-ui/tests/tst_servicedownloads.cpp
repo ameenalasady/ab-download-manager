@@ -2065,6 +2065,12 @@ private slots:
         QCOMPARE(placeholder(), "MTc5Mjg0");
         QTRY_COMPARE(placeholder(), "era133_FR_vod.mp4"); // Extensionless name gets video/mp4's suffix.
         QTRY_VERIFY(object("addNameHintText")->property("text").toString().startsWith("From the server"));
+        // Clearing the link and pasting it again brings the server's name straight back.
+        object("exampleUrlInput")->setProperty("text", "");
+        QCOMPARE(placeholder(), "Automatic from the link");
+        object("exampleUrlInput")->setProperty("text", "https://example.invalid/MTc5Mjg0");
+        QTRY_COMPARE(placeholder(), "era133_FR_vod.mp4");
+        QVERIFY(object("addNameHintText")->property("text").toString().startsWith("From the server"));
         // An empty name adds under the automatic one.
         QVERIFY(QMetaObject::invokeMethod(object("confirmStartDownload"), "clicked"));
         QTRY_COMPARE(lastAdd()["name"].toString(), "era133_FR_vod.mp4");
