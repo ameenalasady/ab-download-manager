@@ -23,4 +23,11 @@ public:
     Q_INVOKABLE bool showInFolder(const QUrl &url, QWindow *window = nullptr);
     // A web page (http/https only, no embedded credentials) in the user's browser.
     Q_INVOKABLE bool openWebPage(const QUrl &url, QWindow *window = nullptr);
+    // Folder chooser of the USER'S session (FileChooser portal), for the same private-HOME
+    // reason as above. Returns a request token (empty if nothing could be started); the
+    // answer arrives as folderChosen(token, path), path empty on cancel or an unusable pick.
+    // `current` (optional) is the folder the chooser starts in.
+    Q_INVOKABLE QString chooseFolder(const QString &title, const QString &current, QWindow *window = nullptr);
+signals:
+    void folderChosen(const QString &token, const QString &path);
 };

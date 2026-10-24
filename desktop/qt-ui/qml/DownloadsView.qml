@@ -854,7 +854,11 @@ Item {
                 FormLabel { text: qsTr("Name:") }
                 FormField { id: moveName; objectName: "moveDownloadName"; Layout.fillWidth: true; maximumLength: 180; Accessible.name: qsTr("File name") }
                 FormLabel { text: qsTr("Location:") }
-                FormField { id: moveFolder; objectName: "moveDownloadFolder"; Layout.fillWidth: true; readOnly: !root.explicitRuntime; Accessible.name: qsTr("Download location") }
+                RowLayout {
+                    Layout.fillWidth: true; spacing: Tokens.spacingS
+                    FormField { id: moveFolder; objectName: "moveDownloadFolder"; Layout.fillWidth: true; readOnly: !root.explicitRuntime; Accessible.name: qsTr("Download location") }
+                    FolderBrowseButton { objectName: "moveDownloadFolderBrowse"; field: moveFolder; title: qsTr("Move to"); startFolder: (root.downloads.runtime || {}).destination || "" }
+                }
             }
         }
         footer: DialogFooter {
@@ -1001,12 +1005,16 @@ Item {
                 FormLabel { text: qsTr("File name:") }
                 FormField { id: nameInput; objectName: "exampleNameInput"; Layout.fillWidth: true; Accessible.name: qsTr("File name"); maximumLength: 180; onAccepted: addExample.clicked(); onTextChanged: existingCheck.restart() }
                 FormLabel { text: qsTr("Save in:") }
+                RowLayout {
+                    Layout.fillWidth: true; spacing: Tokens.spacingS
                 FormField {
                     id: locationInput; objectName: "addDownloadLocation"; Layout.fillWidth: true; readOnly: !root.explicitRuntime
                     placeholderText: root.live && root.downloads.capabilities.indexOf("category.destination") >= 0 ? qsTr("Category destination or default (optional override)") : ""
                     color: readOnly ? theme.secondary : theme.text; Accessible.name: qsTr("Download location")
                     Accessible.description: readOnly ? qsTr("Fixed by the test profile") : ""
                     onTextChanged: existingCheck.restart()
+                }
+                FolderBrowseButton { objectName: "addDownloadLocationBrowse"; field: locationInput; title: qsTr("Save in"); startFolder: (root.downloads.runtime || {}).destination || "" }
                 }
                 FormLabel { text: qsTr("Category:"); visible: addCategory.visible }
                 UiComboBox { id: addCategory; objectName: "addCategorySelection"; Layout.fillWidth: true; visible: root.live && root.downloads.capabilities.indexOf("category.create") >= 0; model: addDialog.categoryChoices; textRole: "name"; Accessible.name: qsTr("Download category")

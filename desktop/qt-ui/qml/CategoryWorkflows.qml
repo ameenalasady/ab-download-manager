@@ -133,10 +133,15 @@ Item {
                             id: usePath; objectName: "categoryUsePath"; visible: root.destinationEditable
                             text: qsTr("Download Location"); Layout.topMargin: Tokens.spacingS
                         }
-                        Field {
-                            id: path; objectName: "categoryPath"; visible: root.destinationEditable
-                            enabled: usePath.checked; maximumLength: 4096
-                            Accessible.name: qsTr("Category download location")
+                        RowLayout {
+                            Layout.fillWidth: true; spacing: Tokens.spacingS
+                            visible: root.destinationEditable
+                            Field {
+                                id: path; objectName: "categoryPath"; Layout.fillWidth: true
+                                enabled: usePath.checked; maximumLength: 4096
+                                Accessible.name: qsTr("Category download location")
+                            }
+                            FolderBrowseButton { objectName: "categoryPathBrowse"; field: path; title: qsTr("Category Download Location"); startFolder: (root.service.runtime || {}).destination || "" }
                         }
                         Hint {
                             visible: root.destinationEditable

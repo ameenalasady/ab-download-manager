@@ -1,5 +1,7 @@
 #include "desktopopener.h"
+#include <QDBusAbstractAdaptor>
 #include <QDBusConnection>
+#include <QDBusMessage>
 #include <QDBusObjectPath>
 #include <QDBusUnixFileDescriptor>
 #include <QFile>
@@ -32,6 +34,30 @@ public:
     int uris = 0;
     QString uri;
 };
+// FileChooser shares the portal object's path with OpenURI, so it is an adaptor on the same object.
+class FileChooserFixture : public QDBusAbstractAdaptor {
+    Q_OBJECT
+    Q_CLASSINFO("D-Bus Interface", "org.freedesktop.portal.FileChooser")
+public:
+    explicit FileChooserFixture(QObject *parent) : QDBusAbstractAdaptor(parent) {}
+    int calls = 0;
+    QString title;
+    QVariantMap options;
+    uint code = 0;
+    QStringList uris;
+public slots:
+    QDBusObjectPath OpenFile(const QString &, const QString &value, const QVariantMap &opts) {
+        ++calls; title = value; options = opts;
+        const QString sender = QDBusConnection::sessionBus().baseService().mid(1).replace('.', '_');
+        const QString path = QStringLiteral("/org/freedesktop/portal/desktop/request/%1/%2").arg(sender, opts.value("handle_token").toString());
+        QTimer::singleShot(0, this, [this, path] {
+            auto signal = QDBusMessage::createSignal(path, "org.freedesktop.portal.Request", "Response");
+            signal << code << QVariantMap{{"uris", uris}};
+            QDBusConnection::sessionBus().send(signal);
+        });
+        return QDBusObjectPath(path);
+    }
+};
 class FileManagerFixture : public QObject {
     Q_OBJECT
     Q_CLASSINFO("D-Bus Interface", "org.freedesktop.FileManager1")
@@ -45,6 +71,42 @@ public slots:
 class DesktopOpenerTest : public QObject {
     Q_OBJECT
 private slots:
+    void choosesFoldersThroughTheFileChooserPortal() {
+        QVERIFY2(!qEnvironmentVariableIsEmpty("ABDM_OPENER_PRIVATE_BUS"), "Run via the CTest dbus-run-session wrapper only");
+        auto bus = QDBusConnection::sessionBus(); QVERIFY(bus.isConnected());
+        PortalFixture portal; FileChooserFixture chooser(&portal);
+        QVERIFY(bus.registerService("org.freedesktop.portal.Desktop"));
+        QVERIFY(bus.registerObject("/org/freedesktop/portal/desktop", &portal, QDBusConnection::ExportAdaptors));
+        QTemporaryDir dir; QVERIFY(dir.isValid());
+        const QString file = dir.filePath("plain.txt");
+        QFile payload(file); QVERIFY(payload.open(QIODevice::WriteOnly)); payload.close();
+        DesktopOpener opener;
+        QSignalSpy spy(&opener, &DesktopOpener::folderChosen);
+
+        chooser.code = 0; chooser.uris = {QUrl::fromLocalFile(dir.path()).toString()};
+        const QString first = opener.chooseFolder("Pick", dir.path());
+        QVERIFY(!first.isEmpty());
+        QTRY_COMPARE(spy.count(), 1);
+        QCOMPARE(spy.at(0).at(0).toString(), first);
+        QCOMPARE(spy.at(0).at(1).toString(), dir.path());
+        QCOMPARE(chooser.title, QStringLiteral("Pick"));
+        QCOMPARE(chooser.options.value("directory").toBool(), true);
+        QCOMPARE(chooser.options.value("current_folder").toByteArray(), QFile::encodeName(dir.path()) + '\0');
+
+        // Cancel, a plain file and a remote URI all report an empty path; a missing start folder is not sent.
+        const QList<QPair<uint, QStringList>> bad{{1, {}}, {0, {QUrl::fromLocalFile(file).toString()}}, {0, {"https://example.invalid/x"}}};
+        for (const auto &answer : bad) {
+            chooser.code = answer.first; chooser.uris = answer.second; spy.clear();
+            const QString token = opener.chooseFolder("Pick", "/does/not/exist");
+            QVERIFY(!token.isEmpty() && token != first);
+            QTRY_COMPARE(spy.count(), 1);
+            QCOMPARE(spy.at(0).at(0).toString(), token);
+            QVERIFY(spy.at(0).at(1).toString().isEmpty());
+            QVERIFY(!chooser.options.contains("current_folder"));
+        }
+        bus.unregisterObject("/org/freedesktop/portal/desktop");
+        bus.unregisterService("org.freedesktop.portal.Desktop");
+    }
     void usesSessionServicesWithARealFileDescriptor() {
         QVERIFY2(!qEnvironmentVariableIsEmpty("ABDM_OPENER_PRIVATE_BUS"), "Run via the CTest dbus-run-session wrapper only");
         auto bus = QDBusConnection::sessionBus(); QVERIFY(bus.isConnected());

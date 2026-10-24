@@ -524,11 +524,15 @@ Item {
             }
             FormGrid {
                 FormLabel { text: qsTr("Save in:") }
+                RowLayout {
+                    Layout.fillWidth: true; spacing: Tokens.spacingS
                 FormField {
                     id: location; objectName: "browserRequestLocation"; Layout.fillWidth: true; readOnly: !root.explicitRuntime
                     placeholderText: root.service.capabilities.indexOf("category.destination") >= 0 ? qsTr("Category destination or default (optional override)") : ""
                     color: readOnly ? theme.secondary : theme.text
                     Accessible.name: qsTr("Download location")
+                }
+                FolderBrowseButton { objectName: "browserRequestLocationBrowse"; field: location; title: qsTr("Save in"); startFolder: (root.service.runtime || {}).destination || "" }
                 }
                 FormLabel { text: qsTr("Category:"); visible: category.visible }
                 UiComboBox {

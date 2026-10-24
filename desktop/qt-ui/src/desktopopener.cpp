@@ -4,6 +4,8 @@
 #include <QDBusPendingCallWatcher>
 #include <QDBusPendingReply>
 #include <QDBusUnixFileDescriptor>
+#include <QApplication>
+#include <QFileDialog>
 #include <QDesktopServices>
 #include <QDir>
 #include <QFile>
@@ -119,3 +121,69 @@ bool DesktopOpener::openWebPage(const QUrl &url, QWindow *window) {
     });
     return true;
 }
+
+namespace {
+// Receives the single Response of one portal request, then deletes itself.
+class FolderResponse : public QObject {
+    Q_OBJECT
+public:
+    FolderResponse(const QString &token, QObject *parent) : QObject(parent), token(token) {}
+    QString token;
+signals:
+    void finished(const QString &token, const QString &path);
+public slots:
+    void Response(uint code, const QVariantMap &results) {
+        QString path;
+        const QStringList uris = results.value(QStringLiteral("uris")).toStringList();
+        if (code == 0 && !uris.isEmpty()) {
+            const QUrl url(uris.first());
+            if (url.isLocalFile()) {
+                const QString clean = QDir::cleanPath(url.toLocalFile());
+                if (QDir::isAbsolutePath(clean) && QFileInfo(clean).isDir()) path = clean;
+            }
+        }
+        emit finished(token, path);
+        deleteLater();
+    }
+};
+}
+
+QString DesktopOpener::chooseFolder(const QString &title, const QString &current, QWindow *) {
+    static int counter = 0;
+    auto bus = QDBusConnection::sessionBus();
+    if (!bus.isConnected()) return {};
+    const QString token = QStringLiteral("abdm%1").arg(++counter);
+    QString sender = bus.baseService();
+    sender.remove(0, 1);
+    sender.replace(QLatin1Char('.'), QLatin1Char('_'));
+    const QString requestPath = QStringLiteral("/org/freedesktop/portal/desktop/request/%1/%2").arg(sender, token);
+    // Subscribe before the call so a fast answer cannot be missed.
+    auto *response = new FolderResponse(token, this);
+    bus.connect(QString(), requestPath, QStringLiteral("org.freedesktop.portal.Request"), QStringLiteral("Response"),
+        response, SLOT(Response(uint, QVariantMap)));
+    connect(response, &FolderResponse::finished, this, &DesktopOpener::folderChosen);
+    QVariantMap options{{QStringLiteral("handle_token"), token}, {QStringLiteral("directory"), true}, {QStringLiteral("modal"), true}};
+    const QString start = QDir::cleanPath(current.trimmed());
+    if (QDir::isAbsolutePath(start) && QFileInfo(start).isDir())
+        options.insert(QStringLiteral("current_folder"), QFile::encodeName(start) + '\0');
+    auto message = QDBusMessage::createMethodCall(QStringLiteral("org.freedesktop.portal.Desktop"),
+        QStringLiteral("/org/freedesktop/portal/desktop"), QStringLiteral("org.freedesktop.portal.FileChooser"), QStringLiteral("OpenFile"));
+    message << QString() << title << options;
+    auto *watcher = new QDBusPendingCallWatcher(bus.asyncCall(message, 5000), this);
+    connect(watcher, &QDBusPendingCallWatcher::finished, this, [this, watcher, response, token, title, start] {
+        if (watcher->isError()) {
+            qWarning().noquote() << "DesktopOpener:" << watcher->error().name() << watcher->error().message();
+            response->deleteLater();
+            QTimer::singleShot(0, this, [this, token, title, start] {
+                QString path;
+                if (qobject_cast<QApplication *>(QCoreApplication::instance()))
+                    path = QFileDialog::getExistingDirectory(nullptr, title, start);
+                emit folderChosen(token, path);
+            });
+        }
+        watcher->deleteLater();
+    });
+    return token;
+}
+
+#include "desktopopener.moc"

@@ -256,6 +256,8 @@ private slots:
         QTRY_COMPARE(service.lastCommand["op"].toString(), "browser.probe"); QCOMPARE(service.lastCommand["index"].toInt(), 1);
         auto *size = visualChild(qobject_cast<QQuickItem *>(list), "browserRequestSize-1"); QVERIFY(size); QTRY_COMPARE(size->property("text").toString(), "3 MiB");
         auto *location = review->findChild<QObject *>("browserRequestLocation"); QVERIFY(location); location->setProperty("text", "/downloads/nested");
+        // A folder picker sits beside the field; it is never clicked here (that would reach a real session bus).
+        QVERIFY(review->findChild<QObject *>("browserRequestLocationBrowse"));
         auto *category = review->findChild<QObject *>("browserRequestCategory"); QVERIFY(category); category->setProperty("currentIndex", 1);
         QTRY_VERIFY(!model.busy()); if (hold) QTest::qWait(hold);
         auto *accept = review->findChild<QObject *>("pauseBrowserRequest"); QVERIFY(accept); QVERIFY(QMetaObject::invokeMethod(accept, "clicked"));
@@ -514,8 +516,10 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(dialog, "choose", Q_ARG(QString, "7")));
         auto *toggle = dialog->findChild<QObject *>("categoryUsePath"); QVERIFY(toggle);
         auto *path = dialog->findChild<QObject *>("categoryPath"); QVERIFY(path);
+        auto *pathBrowse = dialog->findChild<QObject *>("categoryPathBrowse"); QVERIFY(pathBrowse);
         QTRY_VERIFY(toggle->property("visible").toBool()); QVERIFY(toggle->property("checked").toBool());
         QCOMPARE(path->property("text").toString(), "/downloads/custom");
+        QVERIFY(pathBrowse->property("enabled").toBool()); // Follows the "Download Location" toggle.
         path->setProperty("text", "/downloads/edited");
         QTest::qWait(600); QCOMPARE(path->property("text").toString(), "/downloads/edited");
         QVERIFY(QMetaObject::invokeMethod(dialog->findChild<QObject *>("applyServiceCategory"), "clicked"));
