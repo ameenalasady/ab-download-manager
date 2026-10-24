@@ -1659,6 +1659,20 @@ private slots:
             QCOMPARE(model.completedFileUrl(ids[2], true), QUrl::fromLocalFile(QDir(folder).absolutePath()));
             QVERIFY(model.completedFileUrl(ids[3], false).isEmpty()); // Symlink refused.
             QVERIFY(model.completedFileUrl(ids[0], false).isEmpty()); // Not completed.
+            // An extensionless name takes its icon from the completed file's content.
+            {
+                auto bare = service.rows[2].toObject(); bare["name"] = "1Q4YkrC7"; service.rows[2] = bare;
+                QTRY_COMPARE(model.downloadState(ids[2])["name"].toString(), "1Q4YkrC7");
+                QCOMPARE(model.downloadState(ids[2])["iconName"].toString(), "text-x-generic"); // Unrecognisable content.
+                QFile video(QDir(folder).filePath("1Q4YkrC7")); QVERIFY(video.open(QIODevice::WriteOnly));
+                video.write(QByteArray::fromHex("000000186674797069736f6d0000020069736f6d6d703431")); video.write(QByteArray(64, '\0')); video.close();
+                bare["state"] = "paused"; service.rows[2] = bare;
+                QTRY_COMPARE(model.downloadState(ids[2])["state"].toString(), "paused");
+                QCOMPARE(model.downloadState(ids[2])["iconName"].toString(), "text-x-generic"); // Not completed: not read.
+                bare["state"] = "completed"; service.rows[2] = bare;
+                QTRY_COMPARE(model.downloadState(ids[2])["state"].toString(), "completed");
+                QVERIFY(model.downloadState(ids[2])["iconName"].toString().startsWith("video-"));
+            }
             QVariant shown;
             QVERIFY(QMetaObject::invokeMethod(view.rootObject(), "showDownloadWindow", Q_RETURN_ARG(QVariant, shown), Q_ARG(QString, ids[2]), Q_ARG(bool, false)));
             auto *done2 = downloadWindow(view, ids[2]);

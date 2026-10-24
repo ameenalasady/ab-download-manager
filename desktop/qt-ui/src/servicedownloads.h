@@ -1,7 +1,9 @@
 #pragma once
 
 #include <QAbstractListModel>
+#include <QHash>
 #include <QJsonObject>
+#include <QPair>
 #include <QSet>
 #include <QLocalSocket>
 #include <QTimer>
@@ -222,6 +224,8 @@ private:
     QHash<QString, QSet<QString>> m_categoryMembers;
     QStringList m_capabilities;
     QVector<QJsonObject> m_rows;
+    QString fileIcon(const QJsonObject &row) const;
+    mutable QHash<QString, QPair<QString, QString>> m_contentIcons;
     // A user command issued while a snapshot request is in flight. Sent once, right
     // after that reply; dropped (reported as not sent) if the connection ends first.
     QJsonObject m_deferred;

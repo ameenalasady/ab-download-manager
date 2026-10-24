@@ -8,6 +8,8 @@
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QIcon>
+#include <QMimeDatabase>
 #include <QRegularExpression>
 #include <QSet>
 #include <QUuid>
@@ -74,14 +76,38 @@ QString ServiceDownloads::fileCategory(const QString &name) {
     return "documents";
 }
 
-static QString fileIcon(const QString &name) {
-    const QString category = ServiceDownloads::fileCategory(name);
-    if (category == "compressed") return QStringLiteral("package-x-generic");
-    if (category == "programs") return QStringLiteral("application-x-executable");
-    if (category == "videos") return QStringLiteral("video-x-generic");
-    if (category == "music") return QStringLiteral("audio-x-generic");
-    if (category == "pictures") return QStringLiteral("image-x-generic");
-    return QStringLiteral("text-x-generic");
+// The completed file's path when it is a plain regular file inside its download folder.
+static QString completedFilePath(const QJsonObject &row) {
+    if (row["state"].toString() != "completed") return {};
+    const QString directory = row["details"].toObject()["folder"].toString(), name = row["name"].toString();
+    if (!QDir::isAbsolutePath(directory) || name.isEmpty() || name.contains('/') || name == "." || name == "..") return {};
+    const QFileInfo dir(directory), file(QDir(directory).filePath(name));
+    if (!dir.isDir() || file.isSymLink() || !file.isFile()) return {};
+    return file.absoluteFilePath();
+}
+
+static QString themeIconFor(const QMimeType &mime) {
+    if (QIcon::hasThemeIcon(mime.iconName())) return mime.iconName();
+    // Generic names (video-x-generic…) exist in every icon theme; fall back to them without probing.
+    return mime.genericIconName().isEmpty() ? QStringLiteral("text-x-generic") : mime.genericIconName();
+}
+
+// Icon from the file's MIME type: by name first, then by content once the file is completed
+// (names such as "1Q4YkrC7" carry no extension).
+QString ServiceDownloads::fileIcon(const QJsonObject &row) const {
+    const QString name = row["name"].toString();
+    static const QMimeDatabase db;
+    const QMimeType byName = db.mimeTypeForFile(name, QMimeDatabase::MatchExtension);
+    if (!byName.isDefault()) return themeIconFor(byName);
+    const QString signature = name + '\n' + row["state"].toString() + '\n' + row["details"].toObject()["folder"].toString();
+    const QString id = row["id"].toString();
+    const auto cached = m_contentIcons.constFind(id);
+    if (cached != m_contentIcons.constEnd() && cached->first == signature) return cached->second;
+    const QString path = completedFilePath(row);
+    const QString icon = path.isEmpty() ? QStringLiteral("text-x-generic")
+        : themeIconFor(db.mimeTypeForFile(path, QMimeDatabase::MatchContent));
+    m_contentIcons.insert(id, {signature, icon});
+    return icon;
 }
 
 ServiceDownloads::ServiceDownloads(const QString &descriptor, QObject *parent)
@@ -692,7 +718,7 @@ QVariant ServiceDownloads::data(const QModelIndex &index, int role) const {
         if (!m_capabilities.contains("monitor.stats") || row["state"] != "downloading") return QStringLiteral("—");
         return etaText(row["remainingTime"].toString().toLongLong());
     }
-    case PreviewDownloads::IconName: return fileIcon(row["name"].toString());
+    case PreviewDownloads::IconName: return fileIcon(row);
     case PreviewDownloads::DateLabel: return QDateTime::fromMSecsSinceEpoch(row["dateAdded"].toString().toLongLong()).toString(QStringLiteral("dd MMM, HH:mm"));
     case PreviewDownloads::Selected: return m_selection.contains(row["id"].toString());
     default: return {};
@@ -902,7 +928,7 @@ QVariantMap ServiceDownloads::downloadState(const QString &id) const {
             {"progress", size > 0 ? std::clamp(double(done) / size, 0.0, 1.0) : -1.0},
             {"sizeLabel", size < 0 ? tr("Unknown") : sizeText(size, sizeUnit())}, {"downloadedLabel", sizeText(done, sizeUnit())},
             {"speedLabel", speed > 0 ? sizeText(speed, m_settings.value("speedUnit", "BinaryBytes").toString()) + "/s" : QString()},
-            {"etaLabel", eta >= 0 ? etaText(eta) : QString()}, {"iconName", fileIcon(row["name"].toString())}};
+            {"etaLabel", eta >= 0 ? etaText(eta) : QString()}, {"iconName", fileIcon(row)}};
         if (m_capabilities.contains("download.details")) {
             const auto details = row["details"].toObject();
             result.insert("url", details["url"].toString()); result.insert("folder", details["folder"].toString());
@@ -919,11 +945,9 @@ QUrl ServiceDownloads::completedFileUrl(const QString &id, bool folder) const {
     if (m_runtime.value("mode") != "explicit-runtime" || !m_capabilities.contains("download.details")) return {};
     for (const auto &row : m_rows) {
         if (row["id"].toString() != id || row["state"].toString() != "completed") continue;
-        const QString directory = row["details"].toObject()["folder"].toString(), name = row["name"].toString();
-        if (!QDir::isAbsolutePath(directory) || name.isEmpty() || name.contains('/') || name == "." || name == "..") return {};
-        const QFileInfo dir(directory), file(QDir(directory).filePath(name));
-        if (!dir.isDir() || file.isSymLink() || !file.isFile()) return {};
-        return QUrl::fromLocalFile(folder ? dir.absoluteFilePath() : file.absoluteFilePath());
+        const QString path = completedFilePath(row);
+        if (path.isEmpty()) return {};
+        return QUrl::fromLocalFile(folder ? QFileInfo(path).absolutePath() : path);
     }
     return {};
 }

@@ -34,7 +34,8 @@ Item {
         return qsTr("Documents")
     }
     function categoryIcon(uri: string): string {
-        if (["package-x-generic", "application-x-archive", "application-pdf", "video-x-generic", "audio-x-generic", "image-x-generic", "text-x-generic"].indexOf(uri) >= 0) return uri
+        // Row icons arrive as theme names (from the file's MIME type); category icons as stored URIs.
+        if (uri.indexOf(":") < 0 && /^[a-z0-9][a-z0-9.+-]*$/.test(uri)) return uri
         const legacy = ({"FileZip": "package-x-generic", "FileApplication": "application-x-executable", "FileVideo": "video-x-generic",
                  "FileMusic": "audio-x-generic", "FilePicture": "image-x-generic", "FileDocument": "text-x-generic"})[uri]
         return legacy || CategoryIcons.themeIcon(uri)
