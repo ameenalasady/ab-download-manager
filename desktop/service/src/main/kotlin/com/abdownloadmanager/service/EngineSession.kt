@@ -645,10 +645,16 @@ class EngineSession(
                     runtime.validateUrl(url)
                     val draft = HttpDownloadItem(link = url, id = -1, folder = destination().path, name = "probe")
                     applyHttpOptions(draft, reviewItem?.options(JsonObject(emptyMap())) ?: request)
-                    val info = withTimeout(8000) { http.head(draft, 0, 255) }
+                    // The Qt frontend drops a connection that stays silent for 5 s; the New Download
+                    // dialog's probe must fail inside that, so a slow server just yields no answer.
+                    val info = withTimeout(if (op == "download.probe") 4000 else 8000) { http.head(draft, 0, 255) }
                     put("statusCode", info.statusCode); put("requiresAuth", info.requiresAuth)
                     put("size", (info.totalLength ?: -1).toString()); put("resumeSupport", info.resumeSupport)
                     put("suggestedName", BrowserLinks.fileName(info.fileName, url))
+                    // Only the bare media type; never the raw header (parameters, vendor text).
+                    val mediaType = info.responseHeaders["content-type"]?.substringBefore(';')?.trim()?.lowercase()
+                        ?.takeIf { it.length <= 100 && it.matches(Regex("[a-z0-9][a-z0-9.+-]*/[a-z0-9][a-z0-9.+-]*")) }
+                    put("contentType", mediaType?.let(::JsonPrimitive) ?: JsonNull)
                     // Do not return captured request/response headers, cookies, redirects,
                     // credentials, ETag or last-modified raw values.
                 }
@@ -694,7 +700,8 @@ class EngineSession(
                 }
                 "add" -> {
                     val url = request["url"]?.jsonPrimitive?.content ?: error("Missing URL")
-                    val name = request["name"]?.jsonPrimitive?.content ?: error("Missing file name")
+                    // A missing or blank name is chosen from the link, like browser requests do.
+                    val name = request["name"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() } ?: BrowserLinks.fileName(null, url)
                     val id = addOne(url, name, request["folder"]?.jsonPrimitive?.content?.let(Path::of),
                         request["categoryId"]?.jsonPrimitive?.content ?: "auto", request)
                     if (request["start"]?.jsonPrimitive?.booleanOrNull == true) facade.userManualResume(id)

@@ -124,6 +124,30 @@ QString ServiceDownloads::fileIcon(const QJsonObject &row) const {
     return entry.icon;
 }
 
+// Same cleaning as the service's BrowserLinks.fileName: separators and control characters become
+// "_", edge dots go, and an over-long name is cut while keeping a short extension.
+static QString cleanFileName(QString value) {
+    for (QChar &c : value) if (c == '/' || c == '\\' || c.category() == QChar::Other_Control) c = '_';
+    value = value.trimmed();
+    while (value.startsWith('.')) value.remove(0, 1);
+    while (value.endsWith('.')) value.chop(1);
+    if (value.size() > 180) {
+        const QString extension = value.contains('.') ? value.section('.', -1) : QString();
+        value = extension.size() >= 1 && extension.size() <= 16 ? value.left(179 - extension.size()) + '.' + extension : value.left(180);
+    }
+    return value;
+}
+// A name without a known extension gets the one for the server's media type ("video/mp4" -> ".mp4").
+static QString withTypeExtension(const QString &name, const QString &contentType) {
+    static const QMimeDatabase db;
+    if (name.isEmpty() || contentType.isEmpty()
+        || QStringList{"application/octet-stream", "binary/octet-stream", "text/html"}.contains(contentType)
+        || !db.mimeTypeForFile(name, QMimeDatabase::MatchExtension).isDefault()) return name;
+    const QMimeType type = db.mimeTypeForName(contentType);
+    const QString suffix = type.isValid() && !type.isDefault() ? type.preferredSuffix() : QString();
+    if (suffix.isEmpty()) return name;
+    return name.left(180 - 1 - suffix.size()) + '.' + suffix;
+}
 ServiceDownloads::ServiceDownloads(const QString &descriptor, QObject *parent)
     : QAbstractListModel(parent), m_descriptor(descriptor), m_clientId(QUuid::createUuid().toString(QUuid::WithoutBraces)) {
     m_socket.setReadBufferSize(maxFrame + 4);
@@ -631,7 +655,10 @@ void ServiceDownloads::readFrames() {
                && reply["commandId"].toString() == m_pending) {
         m_pending.clear();
         const auto result = reply["result"].toObject();
-        if (m_commandOperation == "browser.probe" && !result["ok"].toBool()) {
+        if (m_commandOperation == "download.probe" && !result["ok"].toBool()) {
+            // An unreachable link is not an error for the dialog: it keeps the name from the link.
+            reportLinkProbe(QString(), QString(), false);
+        } else if (m_commandOperation == "browser.probe" && !result["ok"].toBool()) {
             // One unreachable link is that row's answer, not a reason to skip the rest.
             emit browserMetadataReady(m_probeRequest, m_probeIndex, QStringLiteral("-1"), tr("Unavailable"), QStringLiteral("failed"));
         } else if (!result["ok"].toBool()) {
@@ -661,6 +688,16 @@ void ServiceDownloads::readFrames() {
             const auto shown = probeSize(result["requiresAuth"].toBool(), result["statusCode"].toInt(), size);
             emit browserMetadataReady(requestId, index, shown.first, shown.second, QStringLiteral("done"));
         }
+        if (m_commandOperation == "download.probe" && result["ok"].toBool()) {
+            bool ok = false; const auto size = result["size"].toString().toLongLong(&ok);
+            if (!ok || size < -1) { invalid(); return; }
+            const int status = result["statusCode"].toInt(); const bool requiresAuth = result["requiresAuth"].toBool();
+            const bool fromServer = status >= 200 && status < 300 && !requiresAuth;
+            const QString name = cleanFileName(result["suggestedName"].toString());
+            // An error page's own name or type says nothing about the file: keep the link's name.
+            reportLinkProbe(fromServer ? withTypeExtension(name, result["contentType"].toString()) : QString(),
+                            probeSize(requiresAuth, status, size).second, fromServer);
+        }
         if (m_commandOperation == "browser.dismiss" && result["ok"].toBool()) m_dismissedRequest = m_browserCommandId;
         m_browserCommandId.clear();
         const bool stopped = m_commandOperation == "service.shutdown" && result["ok"].toBool();
@@ -682,7 +719,10 @@ void ServiceDownloads::disconnected() {
     // Resolve every in-flight step exactly once: a deferred command was never transmitted, a
     // transmitted one has an unknown outcome, and queued batch steps are never replayed.
     const QString target = m_commandTarget;
-    const bool deferred = !m_deferred.isEmpty(), transmitted = !m_pending.isEmpty() && !deferred;
+    // A background link check that never finished is just an unanswered question, not a lost command.
+    const bool probing = m_commandOperation == "download.probe" && !m_pending.isEmpty();
+    if (probing) reportLinkProbe(QString(), QString(), false);
+    const bool deferred = !m_deferred.isEmpty() && !probing, transmitted = !m_pending.isEmpty() && m_deferred.isEmpty() && !probing;
     QStringList notices;
     if (transmitted) {
         m_uncertain = true;
@@ -1143,12 +1183,39 @@ bool ServiceDownloads::editDownload(const QString &id, const QVariantMap &option
 bool ServiceDownloads::addCategorizedDownload(const QString &url, const QString &name, bool start, const QString &categoryId) {
     return addConfiguredDownload(url, name, start, categoryId, {});
 }
-bool ServiceDownloads::addConfiguredDownload(const QString &url, const QString &name, bool start, const QString &categoryId, const QVariantMap &options) {
+QString ServiceDownloads::suggestedName(const QString &url) const {
+    const QUrl parsed(url.trimmed(), QUrl::StrictMode);
+    if (!parsed.isValid() || !QStringList{"http", "https"}.contains(parsed.scheme()) || parsed.host().isEmpty()) return {};
+    return cleanFileName(parsed.path(QUrl::FullyDecoded).section('/', -1));
+}
+void ServiceDownloads::reportLinkProbe(const QString &name, const QString &sizeLabel, bool fromServer) {
+    QMetaObject::invokeMethod(this, [this, url = m_linkProbeUrl, name, sizeLabel, fromServer] { emit linkProbed(url, name, sizeLabel, fromServer); },
+                              Qt::QueuedConnection);
+}
+bool ServiceDownloads::probeLink(const QString &url, const QVariantMap &options) {
+    // Silent refusals: this runs in the background while the user is still typing.
+    QUrl parsed;
+    if (m_state != "ready" || !m_pending.isEmpty() || !m_capabilities.contains("download.probe") || !acceptableLink(url, &parsed)) return false;
+    auto request = QJsonObject::fromVariantMap(options);
+    request.remove("duplicatePolicy"); request.remove("folder");
+    request["op"] = "download.probe"; request["url"] = parsed.toString();
+    if (!command(request)) return false;
+    m_linkProbeUrl = url;
+    return true;
+}
+bool ServiceDownloads::acceptableLink(const QString &url, QUrl *parsedOut) const {
     const QUrl parsed(url.trimmed(), QUrl::StrictMode);
     const bool isolated = m_runtime.value("mode", "isolated") != "explicit-runtime";
     if (url.size() > 2048 || !parsed.isValid() || !QStringList{"http", "https"}.contains(parsed.scheme()) || parsed.host().isEmpty()
         || !parsed.userInfo().isEmpty() || parsed.hasFragment() || parsed.port() == 15151
-        || (isolated && (parsed.scheme() != "http" || parsed.host() != "127.0.0.1" || parsed.port() < 1 || parsed.port() > 65535))) {
+        || (isolated && (parsed.scheme() != "http" || parsed.host() != "127.0.0.1" || parsed.port() < 1 || parsed.port() > 65535))) return false;
+    if (parsedOut) *parsedOut = parsed;
+    return true;
+}
+bool ServiceDownloads::addConfiguredDownload(const QString &url, const QString &name, bool start, const QString &categoryId, const QVariantMap &options) {
+    QUrl parsed;
+    if (!acceptableLink(url, &parsed)) {
+        const bool isolated = m_runtime.value("mode", "isolated") != "explicit-runtime";
         fail(isolated ? tr("Enter a loopback HTTP fixture URL with an explicit port, not the production integration port.")
                       : tr("Enter an HTTP(S) URL without embedded credentials or fragments. Port 15151 is forbidden.")); return false;
     }

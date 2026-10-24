@@ -90,6 +90,9 @@ public:
     // Holds snapshot replies so a test can issue a command while one is in flight.
     bool holdSnapshots = false;
     QList<QPair<QLocalSocket *, QByteArray>> held;
+    // New Download's link check: download.probe answers linkProbeResult (held when holdLinkProbe).
+    bool linkProbeCapability = false, holdLinkProbe = false;
+    QJsonObject linkProbeResult;
     void releaseHeld() { for (const auto &entry : std::as_const(held)) entry.first->write(entry.second); held.clear(); }
     FakeService() {
         const auto socketPath = directory.filePath("service.sock");
@@ -131,6 +134,7 @@ public:
                     if (sortCapability) caps.append("settings.sort");
                     if (reviewCapability) { caps.append("links.review"); caps.append("browser.probe"); }
                     if (probeBatchCapability) caps.append("browser.probeBatch");
+                    if (linkProbeCapability) caps.append("download.probe");
                     if (categoryIconCapability) caps.append("category.icon");
                     if (categoryDestinationCapability) caps.append("category.destination");
                     if (checksumCapability) caps.append("download.checksum");
@@ -191,6 +195,10 @@ public:
                     }
                     if (reviewCapability && request["op"] == "browser.probe")
                         reply["result"] = QJsonObject{{"ok", true}, {"requestId", request["requestId"]}, {"index", request["index"]}, {"statusCode", 206}, {"size", "3145728"}};
+                    if (linkProbeCapability && request["op"] == "download.probe") {
+                        reply["result"] = linkProbeResult;
+                        if (holdLinkProbe) { held.append({client, encode(reply)}); return; }
+                    }
                     if (fulfillBrowserAccept && request["op"] == "browser.accept" && reply["result"].toObject()["ok"].toBool()) {
                         QJsonArray ids;
                         for (const auto &value : request["items"].toArray()) {
@@ -2015,6 +2023,87 @@ private slots:
         QPointer<QQuickWindow> guard(review);
         QVERIFY(QMetaObject::invokeMethod(show, "clicked"));
         QTRY_VERIFY(!guard || !guard->isVisible());
+    }
+    void automaticNameFollowsTheLinkUntilTyped() {
+        FakeService service; service.detailsCapability = true; service.runtimeCapability = true; service.linkProbeCapability = true;
+        service.linkProbeResult = {{"ok", true}, {"statusCode", 200}, {"requiresAuth", false}, {"size", "5039924509"},
+            {"resumeSupport", true}, {"suggestedName", "era133_FR_vod"}, {"contentType", "video/mp4"}};
+        const QString folder = service.directory.filePath("Downloads"); QVERIFY(QDir().mkpath(folder));
+        service.rows = QJsonArray{QJsonObject{{"id", "9007199254740993"}, {"name", "archive.zip"}, {"size", "1000"},
+            {"downloaded", "1000"}, {"state", "completed"}, {"dateAdded", "1234"},
+            {"details", QJsonObject{{"url", "https://example.invalid/archive.zip"}, {"folder", folder}, {"error", QJsonValue::Null}}}}};
+        service.extensionSnapshot = {{"queues", QJsonArray{}}, {"settings", basicSettings()},
+            {"runtime", QJsonObject{{"mode", "explicit-runtime"}, {"destination", folder}, {"destinationRoots", QJsonArray{folder}}, {"redirects", true}, {"proxy", "direct"}}},
+            {"browserRequests", QJsonArray{}}, {"browserIntegration", QJsonObject{{"state", "disabled"}, {"enabled", false}, {"auth", false}, {"port", 15151}, {"error", QJsonValue::Null}}}};
+        PreviewDownloads resources; ServiceDownloads model(service.descriptor);
+        QQuickView view; view.setResizeMode(QQuickView::SizeRootObjectToView);
+        view.setInitialProperties({{"downloads", QVariant::fromValue(&model)}});
+        view.setSource(QUrl("qrc:/qt-ui/qml/DownloadsView.qml")); view.resize(1000, 700); view.show();
+        QCOMPARE(view.status(), QQuickView::Ready); QTRY_READY(model);
+        QTRY_COMPARE(model.rowCount(), 1);
+        QTRY_VERIFY(model.capabilities().contains("download.probe"));
+        const auto object = [&](const char *name) { return view.rootObject()->findChild<QObject *>(name); };
+        const auto placeholder = [&] { return object("exampleNameInput")->property("placeholderText").toString(); };
+        const auto lastAdd = [&] {
+            for (int i = service.commandLog.size() - 1; i >= 0; --i) if (service.commandLog[i]["op"] == "add") return service.commandLog[i];
+            return QJsonObject();
+        };
+        const auto openAdd = [&](const QString &link, const QString &typed = QString()) {
+            QMetaObject::invokeMethod(view.rootObject(), "openAddDialog");
+            object("exampleUrlInput")->setProperty("text", link);
+            if (!typed.isEmpty()) object("exampleNameInput")->setProperty("text", typed);
+        };
+        // Offline first: the link's own last path segment, decoded and cleaned.
+        QCOMPARE(model.suggestedName("https://example.invalid/dir/My%20Video.mp4?token=1"), "My Video.mp4");
+        QCOMPARE(model.suggestedName("https://example.invalid/"), "");
+        QCOMPARE(model.suggestedName("ht"), "");
+        QCOMPARE(model.suggestedName("https://example.invalid/a%2Fb"), "b");
+        QCOMPARE(model.suggestedName("https://example.invalid/..%2F.."), ""); // Nothing but dots: no usable name.
+        QCOMPARE(model.suggestedName("https://example.invalid/a%01b"), "a_b");
+        // Pasting a link shows the offline name at once; the server's answer replaces it.
+        openAdd("https://example.invalid/MTc5Mjg0");
+        QCOMPARE(placeholder(), "MTc5Mjg0");
+        QTRY_COMPARE(placeholder(), "era133_FR_vod.mp4"); // Extensionless name gets video/mp4's suffix.
+        QTRY_VERIFY(object("addNameHintText")->property("text").toString().startsWith("From the server"));
+        // An empty name adds under the automatic one.
+        QVERIFY(QMetaObject::invokeMethod(object("confirmStartDownload"), "clicked"));
+        QTRY_COMPARE(lastAdd()["name"].toString(), "era133_FR_vod.mp4");
+        QTRY_VERIFY(!view.rootObject()->property("addDialogVisible").toBool());
+        // A typed name always wins, and hides the hint.
+        const int probesBefore = int(std::count_if(service.commandLog.cbegin(), service.commandLog.cend(), [](const QJsonObject &c) { return c["op"] == "download.probe"; }));
+        openAdd("https://example.invalid/other", "mine.bin");
+        QTRY_VERIFY(std::count_if(service.commandLog.cbegin(), service.commandLog.cend(), [](const QJsonObject &c) { return c["op"] == "download.probe"; }) > probesBefore);
+        QVERIFY(!object("addNameHint")->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(object("confirmStartDownload"), "clicked"));
+        QTRY_COMPARE(lastAdd()["name"].toString(), "mine.bin");
+        QTRY_VERIFY(!view.rootObject()->property("addDialogVisible").toBool());
+        // Download before the check ran is held for it, then goes out once under the probed name.
+        service.holdLinkProbe = true;
+        const int addsBefore = int(std::count_if(service.commandLog.cbegin(), service.commandLog.cend(), [](const QJsonObject &c) { return c["op"] == "add"; }));
+        openAdd("https://example.invalid/slow");
+        QVERIFY(QMetaObject::invokeMethod(object("confirmStartDownload"), "clicked"));
+        QTRY_VERIFY(!service.held.isEmpty());
+        QVERIFY(view.rootObject()->property("addDialogVisible").toBool());
+        QVERIFY(!object("confirmStartDownload")->property("enabled").toBool()); // One click, one add.
+        QCOMPARE(int(std::count_if(service.commandLog.cbegin(), service.commandLog.cend(), [](const QJsonObject &c) { return c["op"] == "add"; })), addsBefore);
+        service.holdLinkProbe = false; service.releaseHeld();
+        QTRY_COMPARE(lastAdd()["name"].toString(), "era133_FR_vod.mp4");
+        QTRY_VERIFY(!view.rootObject()->property("addDialogVisible").toBool());
+        QCOMPARE(int(std::count_if(service.commandLog.cbegin(), service.commandLog.cend(), [](const QJsonObject &c) { return c["op"] == "add"; })), addsBefore + 1);
+        // An answer for a link that has since been replaced never names the new one.
+        service.holdLinkProbe = true;
+        openAdd("https://example.invalid/first");
+        QTRY_VERIFY(!service.held.isEmpty());
+        object("exampleUrlInput")->setProperty("text", "https://example.invalid/second");
+        service.holdLinkProbe = false; service.releaseHeld();
+        QTest::qWait(150);
+        QCOMPARE(placeholder(), "second");
+        QTRY_COMPARE(placeholder(), "era133_FR_vod.mp4"); // The second link's own check.
+        // A server that refuses keeps the link's name, labelled as such.
+        service.linkProbeResult = {{"ok", true}, {"statusCode", 404}, {"requiresAuth", false}, {"size", "-1"}, {"suggestedName", "gone"}, {"contentType", QJsonValue::Null}};
+        object("exampleUrlInput")->setProperty("text", "https://example.invalid/missing");
+        QTRY_COMPARE(object("addNameHintText")->property("text").toString(), "From the link · Unavailable");
+        QCOMPARE(placeholder(), "missing");
     }
     void duplicatesAreChosenInlineBeforeAdding() {
         FakeService service; service.detailsCapability = true; service.runtimeCapability = true;

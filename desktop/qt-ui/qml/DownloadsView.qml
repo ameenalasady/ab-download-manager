@@ -60,16 +60,19 @@ Item {
         return qsTr("Uncategorized")
     }
     function sendDownload(start: bool, policy: string): bool {
-        return live ? downloads.addConfiguredDownload(sourceInput.text, nameInput.text, start, addCategory.model[addCategory.currentIndex].id,
+        return live ? downloads.addConfiguredDownload(sourceInput.text, addDialog.effectiveName(), start, addCategory.model[addCategory.currentIndex].id,
                         Object.assign({}, addOptions, {duplicatePolicy: policy}, explicitRuntime && locationInput.text !== "" ? {folder: locationInput.text} : {}))
                     : downloads.addDownload(sourceInput.text, nameInput.text, start)
     }
     function submitDownload(start: bool): bool {
         if (!live) return sendDownload(start, "numbered")
         downloads.clearError()
+        // The service takes one command at a time, so a running link check is waited for; an empty
+        // name ("automatic") also waits for the check that finds it.
+        if (!addDialog.forceSubmit && (addDialog.probing || (nameInput.text.trim() === "" && !addDialog.nameSettled))) { addDialog.hold(start); return false }
         const folder = explicitRuntime ? locationInput.text : downloads.runtime.destination
-        const matches = downloads.findDuplicates(sourceInput.text, nameInput.text, folder)
-        const exists = downloads.destinationExists(folder, nameInput.text)
+        const matches = downloads.findDuplicates(sourceInput.text, addDialog.effectiveName(), folder)
+        const exists = downloads.destinationExists(folder, addDialog.effectiveName())
         if (!matches.length && !exists) return sendDownload(start, "numbered")
         const preference = downloads.settings.qtDuplicateAction || "ask"
         if (preference === "existing" && matches.length) {
@@ -970,7 +973,73 @@ Item {
         id: addDialog; objectName: "addExampleDialog"; property var categoryChoices: []
         title: qsTr("New Download")
         preferredWidth: Tokens.dialogWidthMedium
-        onClosed: { root.addOptions = ({}); sourceInput.text = ""; nameInput.text = "" }
+        onClosed: { root.addOptions = ({}); sourceInput.text = ""; nameInput.text = ""; resetAuto() }
+        // Automatic file name: shown as the File name placeholder while that field is empty. It starts as
+        // the link's own last path segment and is replaced by the server's answer to a header-only check.
+        property string autoName: ""
+        property string autoSource: "link"
+        property string autoDetail: ""
+        property bool probing: false
+        // Link + connection options a check was last started for / is running for.
+        property string probedKey: ""
+        property string probingKey: ""
+        // -1: none; otherwise the start flag of a Download/Add click waiting for the check.
+        property int pendingStart: -1
+        property bool forceSubmit: false
+        readonly property bool canProbe: root.live && root.downloads.capabilities.indexOf("download.probe") >= 0
+        readonly property bool nameSettled: !canProbe || sourceInput.text.trim() === "" || (!probing && linkKey() === probedKey)
+        readonly property string hintText: {
+            if (probing) return qsTr("Checking link…")
+            if (autoName === "") return ""
+            const source = autoSource === "server" ? qsTr("From the server") : qsTr("From the link")
+            return autoDetail !== "" ? qsTr("%1 · %2").arg(source).arg(autoDetail) : source
+        }
+        onAutoNameChanged: existingCheck.restart()
+        function effectiveName(): string { const typed = nameInput.text.trim(); return typed !== "" ? typed : autoName }
+        function linkKey(): string { return JSON.stringify([sourceInput.text.trim(), root.addOptions]) }
+        function resetAuto(): void {
+            autoName = ""; autoSource = "link"; autoDetail = ""; probedKey = ""; probingKey = ""; pendingStart = -1
+            probeTimer.stop()
+        }
+        // True when a check for the current link is running or has just been started.
+        function startProbe(): bool {
+            if (!canProbe || !visible || sourceInput.text.trim() === "") return false
+            const key = linkKey()
+            if (probing) return key === probingKey
+            if (key === probedKey) return false
+            if (root.downloads.probeLink(sourceInput.text, root.addOptions)) { probing = true; probingKey = key; probedKey = key; return true }
+            if (root.downloads.busy) probeTimer.restart()
+            return false
+        }
+        function hold(start: bool): void { pendingStart = start ? 1 : 0; probeTimer.stop(); advance() }
+        // Moves a held Download/Add on after each answer: check the current link, else submit as it is.
+        function advance(): void {
+            if (pendingStart < 0) return
+            if (!probing && nameInput.text.trim() === "" && linkKey() !== probedKey && startProbe()) return
+            if (probing) return
+            const start = pendingStart === 1
+            pendingStart = -1
+            forceSubmit = true
+            const done = root.submitDownload(start)
+            forceSubmit = false
+            if (done) accept()
+        }
+        Timer { id: probeTimer; interval: 600; onTriggered: addDialog.startProbe() }
+        // A held click never waits longer than the check can take (the service gives up after 4 s).
+        Timer { interval: 7000; running: addDialog.pendingStart >= 0; onTriggered: { addDialog.probing = false; addDialog.advance() } }
+        Connections {
+            target: root.live ? root.downloads : null
+            function onLinkProbed(url: string, name: string, sizeLabel: string, fromServer: bool) {
+                addDialog.probing = false
+                if (url === sourceInput.text) {
+                    if (name !== "") addDialog.autoName = name
+                    addDialog.autoSource = fromServer ? "server" : "link"
+                    addDialog.autoDetail = sizeLabel
+                }
+                addDialog.advance()
+            }
+        }
+        Connections { target: root; function onAddOptionsChanged() { probeTimer.restart() } }
         // Known duplicates are shown while typing, before Download is pressed. The lookups
         // are synchronous, so they run once typing pauses rather than on every key.
         property var existing: null
@@ -980,15 +1049,15 @@ Item {
         property string checkedKey: ""
         property string inlinePolicy: "numbered"
         function inputKey(): string {
-            return JSON.stringify([sourceInput.text, nameInput.text, root.explicitRuntime ? locationInput.text : (root.downloads.runtime || {}).destination])
+            return JSON.stringify([sourceInput.text, effectiveName(), root.explicitRuntime ? locationInput.text : (root.downloads.runtime || {}).destination])
         }
         function checkExisting(): void {
             checkedKey = inputKey()
             if (!root.live || !visible || sourceInput.text.trim() === "") { existing = null; matches = []; fileExists = false; return }
             const folder = root.explicitRuntime ? locationInput.text : root.downloads.runtime.destination
-            matches = root.downloads.findDuplicates(sourceInput.text, nameInput.text, folder)
+            matches = root.downloads.findDuplicates(sourceInput.text, effectiveName(), folder)
             existing = matches.length ? matches[0] : null
-            fileExists = root.downloads.destinationExists(folder, nameInput.text)
+            fileExists = root.downloads.destinationExists(folder, effectiveName())
         }
         // Replacing needs a recorded download at the same destination that is not transferring.
         function replaceable(candidates: var): bool {
@@ -1002,9 +1071,30 @@ Item {
             spacing: Tokens.contentSpacing
             FormGrid {
                 FormLabel { text: qsTr("Download link:") }
-                FormField { id: sourceInput; objectName: "exampleUrlInput"; Layout.fillWidth: true; Accessible.name: qsTr("Download link"); maximumLength: 2048; placeholderText: root.live && !root.explicitRuntime ? "http://127.0.0.1:PORT/file" : "https://"; onTextChanged: existingCheck.restart() }
+                FormField { id: sourceInput; objectName: "exampleUrlInput"; Layout.fillWidth: true; Accessible.name: qsTr("Download link"); maximumLength: 2048; placeholderText: root.live && !root.explicitRuntime ? "http://127.0.0.1:PORT/file" : "https://"
+                    onTextChanged: {
+                        existingCheck.restart()
+                        if (!root.live) return
+                        addDialog.autoName = root.downloads.suggestedName(text); addDialog.autoSource = "link"; addDialog.autoDetail = ""
+                        probeTimer.restart()
+                    } }
                 FormLabel { text: qsTr("File name:") }
-                FormField { id: nameInput; objectName: "exampleNameInput"; Layout.fillWidth: true; Accessible.name: qsTr("File name"); maximumLength: 180; onAccepted: addExample.clicked(); onTextChanged: existingCheck.restart() }
+                FormField {
+                    id: nameInput; objectName: "exampleNameInput"; Layout.fillWidth: true; Accessible.name: qsTr("File name"); maximumLength: 180
+                    placeholderText: root.live ? (addDialog.autoName || qsTr("Automatic from the link")) : ""
+                    onAccepted: addExample.clicked(); onTextChanged: existingCheck.restart()
+                }
+                Item { implicitWidth: 1; visible: nameHint.visible }
+                RowLayout {
+                    id: nameHint; objectName: "addNameHint"; Layout.fillWidth: true; spacing: Tokens.spacingS
+                    visible: root.live && nameInput.text.trim() === "" && addDialog.hintText !== ""
+                    QQC2.BusyIndicator { running: addDialog.probing; visible: running; implicitWidth: Tokens.iconSmall; implicitHeight: Tokens.iconSmall }
+                    QQC2.Label {
+                        objectName: "addNameHintText"; Layout.fillWidth: true
+                        text: addDialog.hintText; textFormat: Text.PlainText; elide: Text.ElideRight
+                        font: Tokens.smallFont; color: theme.secondary
+                    }
+                }
                 FormLabel { text: qsTr("Save in:") }
                 RowLayout {
                     Layout.fillWidth: true; spacing: Tokens.spacingS
@@ -1039,7 +1129,7 @@ Item {
                 visible: Boolean(addDialog.existing) || addDialog.fileExists
                 title: addDialog.existing ? qsTr("Already in your downloads") : qsTr("File already exists")
                 detail: addDialog.existing ? qsTr("%1 · %2").arg(addDialog.existing.name).arg(root.stateLabel(addDialog.existing.state))
-                    : qsTr("“%1” is already in the download folder.").arg(nameInput.text.trim())
+                    : qsTr("“%1” is already in the download folder.").arg(addDialog.effectiveName())
                 readonly property bool showsExisting: (root.downloads.settings.qtDuplicateAction || "ask") === "existing" && Boolean(addDialog.existing)
                 hasExisting: Boolean(addDialog.existing)
                 canOpen: Boolean(addDialog.existing && addDialog.existing.fileUrl.toString() !== "")
@@ -1085,8 +1175,8 @@ Item {
             StatusMessage { type: Kirigami.MessageType.Error; message: root.downloads.errorMessage }
         }
         footer: DialogFooter {
-            UiButton { id: startDownloadButton; objectName: "confirmStartDownload"; text: qsTr("Download"); icon.name: "download"; visible: root.live; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.AcceptRole; onClicked: { if (root.submitDownload(true)) addDialog.accept() } }
-            UiButton { id: addExample; objectName: "confirmAddExample"; text: root.live ? qsTr("Add Paused") : qsTr("Add"); icon.name: "list-add"; QQC2.DialogButtonBox.buttonRole: root.live ? QQC2.DialogButtonBox.AlternateRole : QQC2.DialogButtonBox.AcceptRole; onClicked: { if (root.submitDownload(false)) addDialog.accept() } }
+            UiButton { id: startDownloadButton; objectName: "confirmStartDownload"; text: qsTr("Download"); icon.name: "download"; visible: root.live; enabled: addDialog.pendingStart < 0; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.AcceptRole; onClicked: { if (root.submitDownload(true)) addDialog.accept() } }
+            UiButton { id: addExample; objectName: "confirmAddExample"; text: root.live ? qsTr("Add Paused") : qsTr("Add"); icon.name: "list-add"; enabled: addDialog.pendingStart < 0; QQC2.DialogButtonBox.buttonRole: root.live ? QQC2.DialogButtonBox.AlternateRole : QQC2.DialogButtonBox.AcceptRole; onClicked: { if (root.submitDownload(false)) addDialog.accept() } }
             UiButton { text: qsTr("Cancel"); icon.name: "dialog-cancel"; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.RejectRole; onClicked: addDialog.reject() }
         }
     }

@@ -56,6 +56,11 @@ public:
     QHash<int, QByteArray> roleNames() const override;
     bool liveMode() const { return true; }
     QVariantMap runtime() const { return m_runtime; }
+    // Offline file name for a link (decoded last path segment), or empty when there is none.
+    Q_INVOKABLE QString suggestedName(const QString &url) const;
+    // Asks the service what it knows about the link; the answer arrives as linkProbed. False
+    // (silently) when the link is unusable, the service lacks download.probe or is busy.
+    Q_INVOKABLE bool probeLink(const QString &url, const QVariantMap &options);
     Q_INVOKABLE bool addConfiguredDownload(const QString &url, const QString &name, bool start, const QString &categoryId, const QVariantMap &options);
     Q_INVOKABLE bool editDownload(const QString &id, const QVariantMap &options);
     Q_INVOKABLE bool canMutateDownload(const QString &id, const QString &operation) const;
@@ -180,6 +185,9 @@ signals:
     void browserRequestDismissed(const QString &requestId);
     // Check Sizes outcome of one review row. state: "pending", "done" or "failed".
     void browserMetadataReady(const QString &requestId, int index, const QString &size, const QString &sizeLabel, const QString &state);
+    // Outcome of probeLink. name is empty when the link could not be checked; fromServer is
+    // false when the service answered with an error, so the name is only the link's own.
+    void linkProbed(const QString &url, const QString &name, const QString &sizeLabel, bool fromServer);
     void serviceStopped();
 private:
     void connectService();
@@ -200,6 +208,11 @@ private:
     QString m_descriptor, m_token, m_epoch, m_clientId, m_pending, m_state = "disconnected";
     QString m_category = "all", m_search, m_selected, m_anchor, m_error, m_commandOperation, m_selectOnSnapshot;
     QString m_probeRequest; int m_probeIndex = -1; // In-flight browser.probe, for its failure reply.
+    QString m_linkProbeUrl; // In-flight download.probe, echoed in linkProbed.
+    bool acceptableLink(const QString &url, QUrl *parsed = nullptr) const;
+    // Queued: the answer often triggers a command (a held Download), which must not start inside
+    // the reply handler that is still finishing the previous command.
+    void reportLinkProbe(const QString &name, const QString &sizeLabel, bool fromServer);
     QHash<QString, QString> m_probeSeen; // Review row -> last emitted browser.probeBatch outcome.
     QPair<QString, QString> probeSize(bool requiresAuth, int status, qint64 size) const;
     QSet<QString> m_selection;

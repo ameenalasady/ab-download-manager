@@ -51,4 +51,33 @@ class ReadOnlyWorkflowsTest {
             assertEquals("keep-fixture", Files.readString(existing))
         } finally { lifecycle.stop(); server.stop(0); root.toFile().deleteRecursively() }
     }
+    @Test fun probeReportsOnlyAWellFormedMediaTypeAndAddNamesBlankNamesFromTheLink() = runBlocking {
+        val root = Files.createTempDirectory("abdm-readonly-workflow-")
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/") { e ->
+            // Media type with parameters in mixed case, and one that is not a media type at all.
+            e.responseHeaders.add("Content-Type", if (e.requestURI.path.endsWith("/vod")) "Video/MP4; charset=binary" else "weird text!!")
+            e.responseHeaders.add("Content-Range", "bytes 0-255/4096")
+            e.sendResponseHeaders(206, 256); e.responseBody.use { it.write(ByteArray(256)) }; e.close()
+        }
+        server.start()
+        val lifecycle = ServiceLifecycle(root)
+        try {
+            val engine = lifecycle.start()
+            val base = "http://127.0.0.1:${server.address.port}"
+            suspend fun probe(path: String) = engine.command(buildJsonObject { put("op", "download.probe"); put("url", "$base$path") })
+            val vod = probe("/MTc5Mjg0/vod")
+            assertEquals("video/mp4", vod.getValue("contentType").jsonPrimitive.content)
+            assertEquals("vod", vod.getValue("suggestedName").jsonPrimitive.content)
+            assertEquals(JsonNull, probe("/other").getValue("contentType"))
+            for (name in listOf<String?>(null, "", "  ")) {
+                engine.command(buildJsonObject {
+                    put("op", "add"); put("url", "$base/MTc5Mjg0/vod"); name?.let { put("name", it) }; put("duplicatePolicy", "numbered")
+                })
+            }
+            val names = engine.snapshot().getValue("rows").jsonArray.map { it.jsonObject.getValue("name").jsonPrimitive.content }
+            assertEquals(3, names.size)
+            assertTrue(names.all { it == "vod" || it.startsWith("vod") }, names.toString())
+        } finally { lifecycle.stop(); server.stop(0); root.toFile().deleteRecursively() }
+    }
 }
