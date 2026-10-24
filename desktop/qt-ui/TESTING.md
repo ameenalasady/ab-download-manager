@@ -47,11 +47,14 @@ PYTHONDONTWRITEBYTECODE=1 python3 scripts/qt-service/runtime_smoke.py --native-u
 
 ## Running one Qt case
 
-`ctest` sets `QT_QPA_PLATFORM=offscreen` and `QT_QUICK_BACKEND=software`. A direct run
-does not, and would open windows on the live display, so set them yourself:
+`ctest` sets `QT_QPA_PLATFORM=offscreen`, `QT_QUICK_BACKEND=software` and
+`QTEST_DISABLE_STACK_DUMP=1`. A direct run does not, and would open windows on the live
+display, so set them yourself. Without the last one, a heap abort can leave the test hung
+forever (Qt Test's crash handler deadlocks in `fork()`); it also ignores SIGTERM, so a
+stuck run needs `kill -9` or `timeout -s KILL`:
 
 ```sh
-QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software \
+QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software QTEST_DISABLE_STACK_DUMP=1 \
   build/fast-tests/qt-ui/tst_servicedownloads duplicatesAreChosenInlineBeforeAdding
 ```
 

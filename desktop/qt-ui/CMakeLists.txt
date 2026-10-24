@@ -37,12 +37,15 @@ if(BUILD_TESTING AND TARGET Qt6::Test)
     target_link_libraries(tst_previewdownloads PRIVATE qtui-preview Qt6::Test)
     add_test(NAME qt-ui-previewdownloads COMMAND tst_previewdownloads)
 
+    # Qt Test's crash handler forks to print a stack. After a glibc heap abort the crashing thread
+    # still holds the malloc lock, so that fork deadlocks and the test hangs instead of failing.
+    # QTEST_DISABLE_STACK_DUMP makes an abort fail at once.
     add_executable(tst_servicedownloads tests/tst_servicedownloads.cpp)
     target_link_libraries(tst_servicedownloads PRIVATE qtui-preview Qt6::Test
         Qt6::Quick Qt6::QuickControls2 Qt6::Widgets)
     add_test(NAME qt-ui-servicedownloads COMMAND tst_servicedownloads)
     set_tests_properties(qt-ui-servicedownloads PROPERTIES
-        ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QTEST_DISABLE_STACK_DUMP=1")
 
     find_program(DBUS_RUN_SESSION dbus-run-session)
     if(DBUS_RUN_SESSION)
@@ -50,19 +53,19 @@ if(BUILD_TESTING AND TARGET Qt6::Test)
         target_link_libraries(tst_desktopopener PRIVATE qtui-preview Qt6::Test Qt6::DBus Qt6::Widgets)
         add_test(NAME qt-ui-desktopopener COMMAND "${DBUS_RUN_SESSION}" -- $<TARGET_FILE:tst_desktopopener>)
         set_tests_properties(qt-ui-desktopopener PROPERTIES
-            ENVIRONMENT "QT_QPA_PLATFORM=offscreen;ABDM_OPENER_PRIVATE_BUS=1")
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen;ABDM_OPENER_PRIVATE_BUS=1;QTEST_DISABLE_STACK_DUMP=1")
     endif()
 
     add_executable(tst_nativewindowstyle tests/tst_nativewindowstyle.cpp)
     target_link_libraries(tst_nativewindowstyle PRIVATE qtui-preview Qt6::Test Qt6::Quick Qt6::Widgets)
     add_test(NAME qt-ui-nativewindowstyle COMMAND tst_nativewindowstyle)
     set_tests_properties(qt-ui-nativewindowstyle PROPERTIES
-        ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QTEST_DISABLE_STACK_DUMP=1")
 
     add_executable(tst_downloadsview tests/tst_downloadsview.cpp)
     target_link_libraries(tst_downloadsview PRIVATE qtui-preview Qt6::Test
         Qt6::Quick Qt6::QuickControls2 Qt6::Widgets)
     add_test(NAME qt-ui-downloadsview COMMAND tst_downloadsview)
     set_tests_properties(qt-ui-downloadsview PROPERTIES
-        ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QTEST_DISABLE_STACK_DUMP=1")
 endif()
