@@ -83,7 +83,7 @@ Item {
     }
     function refresh() {
         row = service.downloadState(downloadId); parts = service.downloadParts(downloadId)
-        partSlots.update(parts, service.settings.threadCount || 8)
+        partSlots.update(parts, service.settings.threadCount || 8, service.settings.sizeUnit || "BinaryBytes")
         if (row.available) lastName = row.name
         fileUrl = service.completedFileUrl(downloadId, false)
     }

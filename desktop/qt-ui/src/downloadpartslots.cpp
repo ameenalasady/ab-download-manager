@@ -1,4 +1,5 @@
 #include "downloadpartslots.h"
+#include "servicedownloads.h"
 #include <QSet>
 #include <algorithm>
 
@@ -11,6 +12,9 @@ QVariantMap vacant() {
     return {{"id", QString()}, {"state", "idle"}, {"downloadedLabel", QStringLiteral("—")},
             {"sizeLabel", QStringLiteral("—")}, {"progress", -1.0}};
 }
+bool finished(const QVariantMap &part) {
+    return !part.value("id").toString().isEmpty() && part.value("state").toString() == "completed";
+}
 }
 
 int DownloadPartSlots::rowCount(const QModelIndex &parent) const {
@@ -18,23 +22,36 @@ int DownloadPartSlots::rowCount(const QModelIndex &parent) const {
 }
 QVariant DownloadPartSlots::data(const QModelIndex &index, int role) const {
     if (!index.isValid() || index.row() < 0 || index.row() >= m_slots.size() || role != PartData) return {};
-    return m_slots[index.row()];
+    return presented(m_slots[index.row()]);
 }
 QHash<int, QByteArray> DownloadPartSlots::roleNames() const { return {{PartData, "modelData"}}; }
-void DownloadPartSlots::replace(int row, const QVariantMap &part) {
-    if (m_slots[row] == part) return;
-    m_slots[row] = part;
+QVariantMap DownloadPartSlots::presented(const Slot &slot) const {
+    if (slot.carriedDone == 0 && slot.carriedSize == 0) return slot.range;
+    auto part = slot.range;
+    const auto length = part.value("length");
+    part["downloadedLabel"] = ServiceDownloads::formatSize(slot.carriedDone + part.value("downloaded").toString().toLongLong(), m_sizeUnit);
+    if (!length.isNull()) part["sizeLabel"] = ServiceDownloads::formatSize(slot.carriedSize + length.toString().toLongLong(), m_sizeUnit);
+    return part;
+}
+void DownloadPartSlots::replace(int row, const Slot &slot) {
+    if (m_slots[row].range == slot.range && m_slots[row].carriedDone == slot.carriedDone
+        && m_slots[row].carriedSize == slot.carriedSize) return;
+    m_slots[row] = slot;
     emit dataChanged(index(row), index(row), {PartData});
 }
-void DownloadPartSlots::append(const QVariantMap &part) {
+void DownloadPartSlots::append(const Slot &slot) {
     const int row = m_slots.size();
     beginInsertRows({}, row, row);
-    m_slots.append(part);
+    m_slots.append(slot);
     endInsertRows();
 }
-void DownloadPartSlots::update(const QVariantMap &projection, int initialSlots) {
+void DownloadPartSlots::update(const QVariantMap &projection, int initialSlots, const QString &sizeUnit) {
     // A cold cache is not a retirement. Keep cached rows while disconnected.
     if (!projection.contains("available")) return;
+    if (sizeUnit != m_sizeUnit) {
+        m_sizeUnit = sizeUnit;
+        if (!m_slots.isEmpty()) emit dataChanged(index(0), index(m_slots.size() - 1), {PartData});
+    }
     if (!projection.value("available").toBool()) {
         if (m_slots.isEmpty()) return;
         beginRemoveRows({}, 0, m_slots.size() - 1);
@@ -56,8 +73,8 @@ void DownloadPartSlots::update(const QVariantMap &projection, int initialSlots) 
         int fillers = std::max(0, std::min(std::clamp(initialSlots, 1, 256), int(items.size())) - activeCount);
         for (const auto &value : items) {
             const auto part = value.toMap();
-            if (active(part)) append(part);
-            else if (fillers > 0) { append(part); --fillers; }
+            if (active(part)) append({part});
+            else if (fillers > 0) { append({part}); --fillers; }
         }
         return;
     }
@@ -65,9 +82,11 @@ void DownloadPartSlots::update(const QVariantMap &projection, int initialSlots) 
     // Preserve every continuing range in its current slot, regardless of wire
     // ordering. Length/downloaded/state may change even when the offset does not.
     for (int row = 0; row < m_slots.size(); ++row) {
-        const auto id = m_slots[row].value("id").toString();
+        const auto id = m_slots[row].range.value("id").toString();
         const auto found = ranges.constFind(id);
-        replace(row, found == ranges.cend() ? vacant() : found.value());
+        // A range that left the projection empties the row and its running total.
+        if (found == ranges.cend()) replace(row, {vacant()});
+        else replace(row, {found.value(), m_slots[row].carriedDone, m_slots[row].carriedSize});
         if (found != ranges.cend()) assigned.insert(id);
     }
     // Only new live work needs a slot. Finished ranges that polling never saw
@@ -77,9 +96,18 @@ void DownloadPartSlots::update(const QVariantMap &projection, int initialSlots) 
         if (!active(part) || assigned.contains(id)) continue;
         int free = -1;
         for (int row = 0; row < m_slots.size(); ++row)
-            if (!active(m_slots[row])) { free = row; break; }
-        if (free >= 0) replace(free, part);
-        else append(part);
+            if (!active(m_slots[row].range)) { free = row; break; }
+        if (free >= 0) {
+            // The row keeps counting past a part it finished; an idle or empty one adds nothing.
+            Slot slot{part, m_slots[free].carriedDone, m_slots[free].carriedSize};
+            const auto &previous = m_slots[free].range;
+            if (finished(previous)) {
+                const auto done = previous.value("downloaded").toString().toLongLong();
+                slot.carriedDone += done;
+                slot.carriedSize += previous.value("length").isNull() ? done : previous.value("length").toString().toLongLong();
+            }
+            replace(free, slot);
+        } else append({part});
         assigned.insert(id);
     }
 }

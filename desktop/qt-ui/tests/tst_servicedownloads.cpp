@@ -2556,12 +2556,24 @@ private slots:
         QCOMPARE(at(0)["length"].toString(), "80"); QCOMPARE(at(0)["downloaded"].toString(), "50");
         QCOMPARE(at(1)["id"].toString(), QString::number(base + 12));
         QCOMPARE(at(2)["id"].toString(), QString::number(base + 13));
+        // A row that finished a part keeps counting when it starts the next one; the range
+        // itself stays exact. A row whose previous range was only idle carries nothing.
+        QCOMPARE(at(1)["downloaded"].toString(), "0"); QCOMPARE(at(1)["length"].toString(), "100");
+        QCOMPARE(at(1)["downloadedLabel"].toString(), "100 B"); QCOMPARE(at(1)["sizeLabel"].toString(), "200 B");
+        QVERIFY(!at(2).contains("downloadedLabel")); QVERIFY(!at(2).contains("sizeLabel")); // The service's labels, untouched.
+        parts[parts.size() - 2] = range(base + 12, "downloading", 40);
+        update(parts); QCOMPARE(at(1)["downloadedLabel"].toString(), "140 B"); QCOMPARE(at(1)["sizeLabel"].toString(), "200 B");
         QCOMPARE(at(3)["id"].toString(), QString::number(base + 3));
         QVERIFY(!changes.isEmpty()); QCOMPARE(resets.count(), 0); QCOMPARE(inserts.count(), 0); QCOMPARE(removes.count(), 0);
         changes.clear(); update(parts); QCOMPARE(changes.count(), 0);
         // Missing ranges vacate slots, never leave stale offsets/progress presented as live.
         parts.removeAt(3); update(parts); QCOMPARE(at(3)["id"].toString(), QString());
         QCOMPARE(at(3)["state"].toString(), "idle");
+        // The running total is gone with the range; a vacated row starts fresh.
+        parts.append(range(base + 14, "connecting", 0)); update(parts);
+        QCOMPARE(at(3)["id"].toString(), QString::number(base + 14));
+        QVERIFY(!at(3).contains("downloadedLabel")); QCOMPARE(at(3)["downloaded"].toString(), "0");
+        parts.removeLast(); update(parts);
         slotModel.update({}, 8); QCOMPARE(slotModel.rowCount(), 12); // Cold/disconnected cache is not retirement.
         slotModel.update({{"available", false}, {"items", QVariantList{}}}, 8);
         QCOMPARE(slotModel.rowCount(), 0); QCOMPARE(removes.count(), 1); QCOMPARE(resets.count(), 0);
@@ -2605,6 +2617,12 @@ private slots:
         QCOMPARE(sameSlot->property("modelData").toMap()["offset"].toString(), partRange(8)["offset"].toString());
         QCOMPARE(sameSlot->property("modelData").toMap()["downloaded"].toString(), "0");
         QCOMPARE(sameSlot->property("modelData").toMap()["length"].toString(), "100");
+        // The row carries the 100 bytes it finished: totals continue, they do not restart.
+        QCOMPARE(sameSlot->property("modelData").toMap()["downloadedLabel"].toString(), "100 B");
+        QCOMPARE(sameSlot->property("modelData").toMap()["sizeLabel"].toString(), "200 B");
+        parts[parts.size() - 1] = partRange(8, "downloading", 50); setParts(service, id, parts);
+        QTRY_COMPARE(sameSlot->property("modelData").toMap()["downloadedLabel"].toString(), "150 B");
+        QCOMPARE(sameSlot->property("modelData").toMap()["sizeLabel"].toString(), "200 B");
         // A snapshot reorder cannot renumber a still-running range or rebuild slots.
         QJsonArray reversed; for (auto i = parts.size(); i > 0; --i) reversed.append(parts[i - 1]);
         setParts(service, id, reversed); QTest::qWait(600);
