@@ -3094,9 +3094,7 @@ private slots:
             QVERIFY(reviewFrame(view, capture + "/capture-only-http-small.png", QSize(760, 600)));
         }
         QCOMPARE(service.commands, 0);
-        // Do not destroy the engine in the middle of native popup/deferred style
-        // construction. This capture-only case previously returned immediately
-        // after opening a second native dialog, intermittently corrupting teardown.
+        // Close both dialogs so teardown starts from a settled UI.
         auto *http = view.rootObject()->findChild<QObject *>("httpOptionsDialog"); QVERIFY(http);
         QTRY_VERIFY(http->property("opened").toBool());
         auto *content = http->property("contentItem").value<QQuickItem *>(); QVERIFY(content);
@@ -3106,6 +3104,25 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(add, "close")); QTRY_VERIFY(!add->property("visible").toBool());
         view.close(); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         view.setSource(QUrl()); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    }
+    void destroyingAConnectedModelRunsNoSlots() {
+        // ~QLocalSocket emits disconnected() after the model's later members are destroyed.
+        // Its slots must not run then: clearing a destroyed, partly received reply buffer
+        // released freed memory ("corrupted double-linked list" at teardown).
+        FakeService service; service.rows = {};
+        bool emitted = false;
+        {
+            ServiceDownloads model(service.descriptor);
+            QTRY_READY(model);
+            // Leave a partial reply in the model's input buffer.
+            service.holdSnapshots = true;
+            QTRY_VERIFY(!service.held.isEmpty());
+            const auto [client, reply] = service.held.takeFirst();
+            client->write(reply.left(reply.size() / 2)); client->flush();
+            QTest::qWait(100);
+            connect(&model, &ServiceDownloads::viewChanged, &service, [&emitted] { emitted = true; });
+        }
+        QVERIFY(!emitted);
     }
     void browserRequestsAreValidatedAndAcceptedWithoutSecrets() {
         FakeService service; service.browserCapability = true;

@@ -51,6 +51,7 @@ class ServiceDownloads : public QAbstractListModel
     Q_PROPERTY(QString errorTarget READ errorTarget NOTIFY errorChanged)
 public:
     explicit ServiceDownloads(const QString &descriptor, QObject *parent = nullptr);
+    ~ServiceDownloads() override;
     int rowCount(const QModelIndex &parent = {}) const override;
     QVariant data(const QModelIndex &, int role) const override;
     QHash<int, QByteArray> roleNames() const override;

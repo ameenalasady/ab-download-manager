@@ -169,6 +169,13 @@ ServiceDownloads::ServiceDownloads(const QString &descriptor, QObject *parent)
     QTimer::singleShot(0, this, &ServiceDownloads::connectService);
 }
 
+ServiceDownloads::~ServiceDownloads() {
+    // ~QLocalSocket closes a live connection and emits disconnected(). Members declared after
+    // m_socket (m_input, the timers, ...) are already destroyed by then, so our slots must not
+    // run: disconnected() clearing a destroyed m_input released freed memory and corrupted the heap.
+    m_socket.disconnect(this);
+}
+
 void ServiceDownloads::connectService() {
     struct stat st{};
     const QByteArray path = QFile::encodeName(m_descriptor);
