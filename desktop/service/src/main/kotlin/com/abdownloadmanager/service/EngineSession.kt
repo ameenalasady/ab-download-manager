@@ -170,6 +170,9 @@ class EngineSession(
     private var eventSubscription: Job? = null
     private var activityTicker: Job? = null
     private var limitActive: Boolean? = null
+    private var deletedFiles: FolderDeletionWatcher? = null
+    private var deletedFilesJob: Job? = null
+    private val deletedFilesWake = kotlinx.coroutines.channels.Channel<Unit>(kotlinx.coroutines.channels.Channel.CONFLATED)
     // Latest request to show the window: serial, xdg-activation token, action, target.
     private var activationSerial = 0L
     private var activation: JsonObject? = null
@@ -181,6 +184,7 @@ class EngineSession(
         const val MAX_WINDOW_EVENTS = 32
         const val MAX_PART_DOWNLOADS = 16
         const val MAX_PARTS = 256
+        const val DELETED_FILES_RECHECK_MS = 10_000L
         val capabilities = listOf("snapshot", "add", "pause", "resume", "settings.update", "queue.create",
             "queue.update", "queue.schedule", "queue.add", "queue.remove", "queue.move", "queue.start", "queue.stop", "queue.delete",
             "category.create", "category.update", "category.delete", "category.move", "category.assign", "monitor.stats", "settings.speed",
@@ -190,7 +194,7 @@ class EngineSession(
             "system.activity", "download.probe", "download.review", "history.page", "history.delta", "download.windows", "download.parts",
             "download.replace", "download.delete", "settings.folder", "settings.duplicates",
             "download.reset", "download.move", "download.links", "download.checksum", "settings.sort", "category.icon", "category.destination", "settings.notificationSounds", "queue.powerAction", "power.execute", "power.cancel",
-            "queue.startAll", "queue.stopAll", "download.stopAll", "links.review", "browser.probe", "browser.probeBatch")
+            "queue.startAll", "queue.stopAll", "download.stopAll", "links.review", "browser.probe", "browser.probeBatch", "settings.trackDeletedFiles")
     }
 
     /** A frontend polled; browser requests then wait for it instead of launching one.
@@ -404,6 +408,94 @@ class EngineSession(
         return targets.map { it.id }
     }
 
+    /** Removes one inactive download from the list, keeping or deleting its files. Owner thread. */
+    private suspend fun forget(id: Long, keepFiles: Boolean) = jobControl.mutate {
+        require(!checksum.isReading(id)) { "Cancel checksum calculation before removing this download" }
+        checksum.invalidate(id)
+        val item = list.getById(id) ?: error("Download no longer exists")
+        require(item.status != DownloadStatus.Downloading && manager.getJobStatusOf(id) !is DownloadJobStatus.IsActive &&
+            manager.downloadJobs.none { it.id == id && it.isDownloadActive.value }) {
+            "Pause download before removing it"
+        }
+        val memberships = queues.getAll().filter { id in it.getQueueModel().queueItems }
+        require(memberships.none { it.isQueueActive }) { "Stop containing queues before removing the download" }
+        // Detach ALL producers synchronously before any suspending persistence.
+        // A scheduled queue starting during I/O can no longer resume this ID.
+        manual.removeFromQueue(id)
+        memberships.forEach { it.removeFromQueue(id) }
+        categories.removeItemInCategories(listOf(id))
+        try {
+            memberships.forEach { it.persistNow() }
+            categories.persistNow()
+            if (keepFiles) {
+                facade.forgetDownloadKeepingFiles(id)
+            } else {
+                facade.removeDownload(id, alsoRemoveFile = true, context = EmptyContext)
+            }
+        } catch (e: CancellationException) { throw e }
+        catch (e: Exception) {
+            if (keepFiles) { throw DownloadForgetPartiallyApplied(id, e) }
+            else { throw DownloadDeletePartiallyApplied(id, e) }
+        }
+        finally {
+            // Core drains jobs before deleting metadata. Never save a retired
+            // object at shutdown (or overwrite a replacement after a failed delete).
+            ownedJobs.removeAll { it.id == id && it.scope.coroutineContext.job.isCompleted }
+            ownedJobs.addAll(manager.downloadJobs)
+        }
+    }
+
+    /** Original trackDeletedFilesOnDisk: while enabled, downloads whose file was deleted or
+     * moved away outside the app leave the list (their records only; nothing is deleted).
+     * Folder watches make this immediate; a slow re-check covers anything a watch missed.
+     * Owner thread. */
+    private fun updateDeletedFileTracking() {
+        val wanted = preferences.snapshot().getValue("trackDeletedFilesOnDisk").jsonPrimitive.boolean
+        if (wanted == (deletedFilesJob != null)) return
+        deletedFilesJob?.cancel(); deletedFilesJob = null
+        deletedFiles?.close(); deletedFiles = null
+        if (!wanted) return
+        val watcher = FolderDeletionWatcher { deletedFilesWake.trySend(Unit) }
+        deletedFiles = watcher
+        deletedFilesJob = queueScope.launch {
+            while (isActive) {
+                // Watch first, so a deletion during the check below still wakes the next pass.
+                watcher.watch(list.getAll().map { Path.of(it.folder) }.toSet())
+                forgetMissingFiles()
+                withTimeoutOrNull(DELETED_FILES_RECHECK_MS) { deletedFilesWake.receive() }
+                // Let a rename or rewrite in progress settle first, as the original does.
+                delay(500)
+                while (deletedFilesWake.tryReceive().isSuccess) Unit
+            }
+        }
+    }
+
+    private suspend fun forgetMissingFiles() {
+        for (item in list.getAll()) {
+            if (!isFileMissing(item)) continue
+            // Busy downloads (checksum running, queue active) are retried on the next pass.
+            // A started removal always finishes, even if tracking is switched off meanwhile.
+            runCatching { withContext(NonCancellable) { forget(item.id, keepFiles = true) } }
+        }
+    }
+
+    /** Completed downloads whose file is gone, and paused/failed ones that had progress but
+     * whose partial file is gone. Never active ones, and never when the folder itself is
+     * gone: that may be an unmounted drive rather than a deletion. */
+    private suspend fun isFileMissing(item: IDownloadItem): Boolean {
+        val folder = File(item.folder)
+        if (!folder.isDirectory) return false
+        val file = File(folder, item.name)
+        val candidates = if (item.status == DownloadStatus.Completed) listOf(file) else {
+            val job = manager.downloadJobs.find { it.id == item.id } ?: return false
+            if (item.status == DownloadStatus.Downloading || job.isDownloadActive.value ||
+                manager.getJobStatusOf(item.id) is DownloadJobStatus.IsActive || job.getDownloadedSize() <= 0) return false
+            // Either naming, since the incomplete-extension setting may have changed since it started.
+            listOf(file, IncompleteFileUtil.addIncompleteIndicator(file, item.id))
+        }
+        return candidates.none { java.nio.file.Files.exists(it.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS) }
+    }
+
     /** Default destination for new downloads: the stored original defaultDownloadFolder when
      * it is (still) an existing writable folder inside the runtime roots, else the runtime's. */
     private fun destination(): java.io.File = preferences.defaultFolder()
@@ -465,6 +557,7 @@ class EngineSession(
             queueScope.launch { requestActivation(token, notice.action, notice.downloadId) }
         }
         updateActivityMonitor()
+        updateDeletedFileTracking()
         bridge.apply(preferences.browser())
     }
 
@@ -883,42 +976,10 @@ class EngineSession(
                     }
                     put("id", id.toString())
                 }
-                "download.forget" -> jobControl.mutate {
+                "download.forget" -> {
                     val id = request["id"]?.jsonPrimitive?.content?.toLongOrNull() ?: error("Invalid stable ID")
-                    require(!checksum.isReading(id)) { "Cancel checksum calculation before removing this download" }
-                    checksum.invalidate(id)
                     val keepFiles = request["keepFiles"]?.jsonPrimitive?.booleanOrNull ?: error("Missing keepFiles parameter")
-                    val item = list.getById(id) ?: error("Download no longer exists")
-                    require(item.status != DownloadStatus.Downloading && manager.getJobStatusOf(id) !is DownloadJobStatus.IsActive &&
-                        manager.downloadJobs.none { it.id == id && it.isDownloadActive.value }) {
-                        "Pause download before removing it"
-                    }
-                    val memberships = queues.getAll().filter { id in it.getQueueModel().queueItems }
-                    require(memberships.none { it.isQueueActive }) { "Stop containing queues before removing the download" }
-                    // Detach ALL producers synchronously before any suspending persistence.
-                    // A scheduled queue starting during I/O can no longer resume this ID.
-                    manual.removeFromQueue(id)
-                    memberships.forEach { it.removeFromQueue(id) }
-                    categories.removeItemInCategories(listOf(id))
-                    try {
-                        memberships.forEach { it.persistNow() }
-                        categories.persistNow()
-                        if (keepFiles) {
-                            facade.forgetDownloadKeepingFiles(id)
-                        } else {
-                            facade.removeDownload(id, alsoRemoveFile = true, context = EmptyContext)
-                        }
-                    } catch (e: CancellationException) { throw e }
-                    catch (e: Exception) {
-                        if (keepFiles) { throw DownloadForgetPartiallyApplied(id, e) }
-                        else { throw DownloadDeletePartiallyApplied(id, e) }
-                    }
-                    finally {
-                        // Core drains jobs before deleting metadata. Never save a retired
-                        // object at shutdown (or overwrite a replacement after a failed delete).
-                        ownedJobs.removeAll { it.id == id && it.scope.coroutineContext.job.isCompleted }
-                        ownedJobs.addAll(manager.downloadJobs)
-                    }
+                    forget(id, keepFiles)
                     put("id", id.toString())
                 }
                 "settings.update" -> {
@@ -934,6 +995,7 @@ class EngineSession(
                     policyController.apply(preferences.policy())
                     limitActive = preferences.speedLimitActive()
                     updateActivityMonitor()
+                    updateDeletedFileTracking()
                 }
                 "queue.create" -> {
                     val name = queueName(request)
@@ -1118,6 +1180,7 @@ class EngineSession(
             queues.closeAndJoin()
             categories.closeAndJoin()
             queueScope.coroutineContext.job.cancelAndJoin()
+            deletedFiles?.close(); deletedFiles = null; deletedFilesJob = null
             // Include Resuming/PreparingFile jobs, not just Downloading as stopAll currently does.
             // Keep references even after core removes completed jobs. Cancellation alone is
             // insufficient: join every writer before saving finally and releasing the lease.

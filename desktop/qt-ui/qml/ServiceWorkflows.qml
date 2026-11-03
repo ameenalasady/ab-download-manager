@@ -29,6 +29,7 @@ Item {
     readonly property bool browserSettings: service.capabilities.indexOf("browser.settings") >= 0
     readonly property bool integrationSettings: service.capabilities.indexOf("settings.integration") >= 0
     readonly property bool windowSettings: service.capabilities.indexOf("download.windows") >= 0
+    readonly property bool trackDeletedSetting: service.capabilities.indexOf("settings.trackDeletedFiles") >= 0
     readonly property bool explicitRuntime: service.runtime && service.runtime.mode === "explicit-runtime"
     readonly property bool soundFiles: explicitRuntime && service.capabilities.indexOf("settings.notificationSounds") >= 0
     readonly property bool queuePowerActions: explicitRuntime && service.capabilities.indexOf("queue.powerAction") >= 0
@@ -83,7 +84,7 @@ Item {
                     modified: Boolean(s.useServerLastModifiedTime), average: Boolean(s.useAverageSpeed),
                     speedMode: ["Disabled", "Enabled", "EnabledWhenBessy"].indexOf(s.useSpeedLimit || "Disabled"),
                     speedLimit: String(s.speedLimit || "262144"), useCategory: s.useCategoryByDefault !== false,
-                    folder: (root.service.runtime || {}).destination || "",
+                    folder: (root.service.runtime || {}).destination || "", trackDeleted: Boolean(s.trackDeletedFilesOnDisk),
                     duplicates: Math.max(0, ["ask", "numbered", "existing"].indexOf(s.qtDuplicateAction || "ask"))},
                 browser: {enabled: b.enabled !== false, port: String(b.port || 15151), auth: Boolean(b.auth), key: ""},
                 desktop: {boot: i.autoStartOnBoot !== false, tray: i.useSystemTray !== false, sound: i.notificationSound !== false,
@@ -97,7 +98,7 @@ Item {
             downloads: {threads: threads.text, concurrent: concurrent.text, retries: retries.text, minPart: minPart.text,
                 dynamic: dynamic.checked, sparse: sparse.checked, modified: modified.checked, average: average.checked,
                 speedMode: speedMode.currentIndex, speedLimit: speedLimit.text, useCategory: useCategory.checked,
-                folder: defaultFolder.text, duplicates: duplicateAction.currentIndex},
+                folder: defaultFolder.text, trackDeleted: trackDeleted.checked, duplicates: duplicateAction.currentIndex},
             browser: {enabled: apiEnabled.checked, port: apiPort.text, auth: apiAuth.checked, key: apiKey.text},
             desktop: {boot: startOnBoot.checked, tray: systemTray.checked, sound: notificationSound.checked,
                 success: successSound.text.trim(), error: errorSound.text.trim(), general: generalSound.text.trim(),
@@ -125,6 +126,7 @@ Item {
             speedMode.currentIndex = d.speedMode
             speedLimit.text = d.speedLimit
             useCategory.checked = d.useCategory
+            trackDeleted.checked = d.trackDeleted
             sizeUnit.currentIndex = stored.appearance.size
             speedUnit.currentIndex = stored.appearance.speed
             const b = stored.browser
@@ -337,6 +339,8 @@ Item {
                             }
                             RowLabel { text: qsTr("Use Category By Default"); visible: root.displaySettings }
                             Check { id: useCategory; objectName: "settingsUseCategory"; visible: root.displaySettings; Accessible.name: qsTr("Use category by default when adding a download") }
+                            RowLabel { text: qsTr("Track Deleted Files On Disk"); visible: root.trackDeletedSetting }
+                            Check { id: trackDeleted; objectName: "settingsTrackDeleted"; visible: root.trackDeletedSetting; Accessible.name: qsTr("Remove a download from the list when its file is deleted or moved outside the app") }
                         }
                         StatusMessage {
                             objectName: "settingsBusyModeNotice"; type: Kirigami.MessageType.Warning
@@ -387,6 +391,7 @@ Item {
                                 patch.useSpeedLimit = ["Disabled", "Enabled", "EnabledWhenBessy"][speedMode.currentIndex]
                         }
                         if (root.displaySettings) patch.useCategoryByDefault = useCategory.checked
+                        if (root.trackDeletedSetting) patch.trackDeletedFilesOnDisk = trackDeleted.checked
                         if (root.service.capabilities.indexOf("settings.folder") >= 0) patch.defaultDownloadFolder = defaultFolder.text
                         if (root.service.capabilities.indexOf("settings.duplicates") >= 0) patch.qtDuplicateAction = ["ask", "numbered", "existing"][duplicateAction.currentIndex]
                         root.service.updateSettings(patch)

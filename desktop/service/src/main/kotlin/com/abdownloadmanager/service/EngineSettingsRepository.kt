@@ -42,6 +42,8 @@ class EngineSettingsRepository(
         // destination already exists. Never an automatic overwrite; that stays a per-add choice.
         put("qtDuplicateAction", "ask")
         put("qtSortColumn", "dateAdded"); put("qtSortDescending", true)
+        // DefaultAppSettings: off. Executed by the service (EngineSession deleted-file tracking).
+        put("trackDeletedFilesOnDisk", false)
     }
     private val writable = defaults.keys
     private val browserKeys = setOf("apiEnabled", "apiPort", "apiAuthEnabled", "apiAuthKey")

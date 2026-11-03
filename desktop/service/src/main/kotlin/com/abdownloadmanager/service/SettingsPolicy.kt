@@ -13,6 +13,8 @@ enum class SettingPolicy(val wire: String) {
     EngineBootOnly("engine-boot"),
     /** Writable presentation preference with no side effects; interpreted by the frontend. */
     Display("display"),
+    /** Writable and executed by the service itself (deleted-file tracking). */
+    Service("service"),
     /** Desktop/notification integration or an automatic destructive action. Retained, reported, never executed. */
     Platform("platform"),
     /** Original browser-integration HTTP API. Executed by [BrowserBridge] in explicit-runtime mode only. */
@@ -53,8 +55,9 @@ object OriginalAppSettings {
         "successNotificationSound" to SettingPolicy.Integration, "apiEnabled" to SettingPolicy.Browser,
         "apiPort" to SettingPolicy.Browser, "apiAuthKey" to SettingPolicy.Browser,
         "apiAuthEnabled" to SettingPolicy.Browser, "useSystemTray" to SettingPolicy.Integration,
-        // Both remove records/files automatically in the original; never run here.
-        "trackDeletedFilesOnDisk" to SettingPolicy.Platform,
+        // Removes records (never files) of downloads deleted outside the app.
+        "trackDeletedFilesOnDisk" to SettingPolicy.Service,
+        // Deletes files automatically in the original; never run here.
         "deletePartialFileOnDownloadCancellation" to SettingPolicy.Platform,
         "defaultDownloadFolder" to SettingPolicy.Destination, "ignoreSSLCertificates" to SettingPolicy.RuntimeOverride,
         "userAgent" to SettingPolicy.RuntimeOverride,

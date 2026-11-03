@@ -68,7 +68,7 @@ class SettingsPolicyTest {
             assertFalse(reloaded.getValue("useCategoryByDefault").jsonPrimitive.boolean)
             val before = file.readText()
             for (invalid in listOf(buildJsonObject { put("sizeUnit", "Nibbles") }, buildJsonObject { put("useCategoryByDefault", "yes") },
-                buildJsonObject { put("apiEnabled", false) }, buildJsonObject { put("trackDeletedFilesOnDisk", false) },
+                buildJsonObject { put("apiEnabled", false) }, buildJsonObject { put("deletePartialFileOnDownloadCancellation", false) },
                 buildJsonObject { put("defaultDownloadFolder", "/tmp") }, buildJsonObject { put("appendExtensionToIncompleteDownloads", true) })) {
                 assertFails { settings.update(invalid) }; assertEquals(before, file.readText())
             }
@@ -84,7 +84,9 @@ class SettingsPolicyTest {
                 OriginalAppSettings.policies[it] == SettingPolicy.Browser && it !in view })
             assertEquals(BrowserSettings(true, 15151, null), settings.browser())
             assertEquals(buildJsonObject { put("enabled", true); put("port", 15151); put("auth", false) }, settings.browserSnapshot())
-            assertTrue(view.getValue("trackDeletedFilesOnDisk").getValue("value").jsonPrimitive.boolean)
+            // Executed by the service now: an ordinary writable setting, not a retained one.
+            assertFalse("trackDeletedFilesOnDisk" in view)
+            assertTrue(settings.snapshot().getValue("trackDeletedFilesOnDisk").jsonPrimitive.boolean)
             // Custom sound files are now executed (notification sound-file hint), so they are
             // integration settings shown for editing, not retained-only; still never in this view.
             assertEquals(SettingPolicy.Integration, OriginalAppSettings.policies["generalNotificationSound"])
@@ -172,15 +174,14 @@ class SettingsPolicyTest {
         try {
             val file = root.resolve("app-data/config/appSettings.json").toFile()
             file.parentFile.mkdirs()
-            // Original destructive auto-removal enabled and a record whose payload is missing.
-            file.writeText("""{"trackDeletedFilesOnDisk":true,"apiEnabled":true,"autoStartOnBoot":true,"useSpeedLimit":"EnabledWhenBessy"}""")
+            file.writeText("""{"deletePartialFileOnDownloadCancellation":true,"apiEnabled":true,"autoStartOnBoot":true,"useSpeedLimit":"EnabledWhenBessy"}""")
             val engine = lifecycle.start()
             assertTrue("settings.policy" in EngineSession.capabilities && "settings.display" in EngineSession.capabilities)
             val snapshot = engine.snapshot()
             val policy = snapshot.getValue("settingsPolicy").jsonObject
             assertFalse(policy.getValue("speedLimitActive").jsonPrimitive.boolean)
             assertTrue(policy.getValue("retained").jsonArray.any {
-                it.jsonObject.getValue("key").jsonPrimitive.content == "trackDeletedFilesOnDisk" && it.jsonObject.getValue("value").jsonPrimitive.boolean
+                it.jsonObject.getValue("key").jsonPrimitive.content == "deletePartialFileOnDownloadCancellation" && it.jsonObject.getValue("value").jsonPrimitive.boolean
             })
             engine.command(buildJsonObject {
                 put("op", "settings.update"); put("settings", buildJsonObject { put("sizeUnit", "DecimalBytes") })
@@ -188,7 +189,7 @@ class SettingsPolicyTest {
             assertEquals("DecimalBytes", engine.snapshot().getValue("settings").jsonObject.getValue("sizeUnit").jsonPrimitive.content)
             lifecycle.stop()
             val stored = Json.parseToJsonElement(file.readText()).jsonObject
-            assertTrue(stored.getValue("trackDeletedFilesOnDisk").jsonPrimitive.boolean)
+            assertTrue(stored.getValue("deletePartialFileOnDownloadCancellation").jsonPrimitive.boolean)
             assertEquals("EnabledWhenBessy", stored.getValue("useSpeedLimit").jsonPrimitive.content)
             // No integration endpoint/autostart artifact is created by retaining these values.
             assertFalse(root.toFile().walkTopDown().any { it.name.endsWith(".desktop") || it.name == "autostart" })
