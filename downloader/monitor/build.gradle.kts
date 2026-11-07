@@ -1,24 +1,15 @@
 plugins {
     id(MyPlugins.kotlinMultiplatform)
     id(Plugins.Kotlin.serialization)
-    id(MyPlugins.composeBase)
-    id(Plugins.Android.multiplatformLibrary)
 }
 kotlin {
     jvm("desktop")
-    android {
-        compileSdk = libs.versions.androidCompileSdk.get().toInt()
-        namespace = "ir.amirab.downloader.monitor"
-        minSdk = 26
-    }
     sourceSets {
         commonMain {
             dependencies {
                 implementation(project(":downloader:core"))
                 implementation(project(":shared:utils"))
                 implementation(libs.kotlin.coroutines.core)
-                // Immutable is a binary annotation, not a runtime UI dependency.
-                compileOnly(libs.compose.runtime)
             }
         }
     }

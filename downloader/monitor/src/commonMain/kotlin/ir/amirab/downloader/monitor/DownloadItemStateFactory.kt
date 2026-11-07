@@ -1,10 +1,8 @@
 package ir.amirab.downloader.monitor
 
-import androidx.compose.runtime.Immutable
 import ir.amirab.downloader.downloaditem.DownloadJob
 import ir.amirab.downloader.downloaditem.IDownloadItem
 
-@Immutable
 data class ProcessingDownloadItemFactoryInputs<
         out TDownloadJob : DownloadJob
         >(

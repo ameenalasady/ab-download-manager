@@ -1,9 +1,7 @@
 package ir.amirab.downloader.monitor
 
-import androidx.compose.runtime.Immutable
 import ir.amirab.downloader.downloaditem.IDownloadItem
 
-@Immutable
 data class CompletedDownloadItemState(
     override val id: Long,
     override val folder: String,

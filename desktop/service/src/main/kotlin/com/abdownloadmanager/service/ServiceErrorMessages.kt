@@ -3,7 +3,7 @@ package com.abdownloadmanager.service
 import com.abdownloadmanager.shared.util.downloaderror.FallbackDownloadErrorMapper
 import java.util.Properties
 
-/** Fixture English fallback only; specialized localized Compose mappers remain in shared/app. */
+/** English fallback wording for download errors, taken from the original app's en_US strings. */
 internal fun serviceFallbackErrorMapper(): FallbackDownloadErrorMapper {
     val messages = Properties().apply {
         val input = checkNotNull(EngineSession::class.java.getResourceAsStream("/download-errors-en.properties"))

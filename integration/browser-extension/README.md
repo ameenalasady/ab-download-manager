@@ -37,8 +37,19 @@ approval to change its signature policy; do not weaken that policy automatically
 
 The 10 regression tests cover extensionless attachment detection, RFC 5987 and ASCII
 filenames, MIME aliases/parameters, inline responses, exclusions and suffix precedence.
-Installed Zen state, live verification, security tradeoff and rollback are recorded in
-[`PLASMA-LOCAL.md`](../../PLASMA-LOCAL.md#extensionless-browser-download-capture).
+### Local installation (Zen) and rollback
+
+Installed persistently through Zen's Add-ons Manager as
+`AB Download Manager Browser Integration (Local capture fix)`, same extension ID
+`firefox-integration@abdownloadmanager.com`. Unsigned installation needs
+`xpinstall.signatures.required=false`, kept as the only override in the Zen profile's
+`user.js`; this relaxes signature checks for every add-on in that profile. Normal
+update policy is kept, so an official update may replace this build.
+
+Rollback: **Install Add-on From File** with
+`~/.local/state/abdm-backups/browser-capture-20261016-221404/original-signed.xpi`,
+then remove the override from `user.js` and reset `xpinstall.signatures.required` in
+about:config.
 
 ## Usage
 

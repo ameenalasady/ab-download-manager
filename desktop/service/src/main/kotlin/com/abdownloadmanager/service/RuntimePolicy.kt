@@ -106,9 +106,6 @@ class RuntimePolicy private constructor(
         fun isolated(profile: Path): RuntimePolicy = RuntimePolicy(profile, profile.resolve("Downloads"), listOf(profile.resolve("Downloads")), true, false, ProxyStrategy.Direct)
         fun load(file: Path): RuntimePolicy {
             noSymlinkAncestors(file)
-            // An archived policy still embeds the SOURCE profile's absolute path. Never
-            // let reading that copy accidentally start the source instead of the archive.
-            ProfileCopies.requireNotQuarantined(file.toAbsolutePath().parent)
             require(Files.isRegularFile(file, NOFOLLOW_LINKS) && Files.size(file) <= 16384) { "Invalid runtime policy file" }
             privateOwned(file)
             val doc = Json.parseToJsonElement(Files.readString(file)).jsonObject
@@ -120,7 +117,6 @@ class RuntimePolicy private constructor(
             }
             val profile = path("profile")
             require(Files.isDirectory(profile, NOFOLLOW_LINKS)); privateOwned(profile)
-            ProfileCopies.requireNotQuarantined(profile)
             val marker = profile.resolve("qt-runtime-profile.json")
             require(Files.isRegularFile(marker, NOFOLLOW_LINKS)); privateOwned(marker)
             require(Files.size(marker) <= 1024)

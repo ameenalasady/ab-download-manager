@@ -104,56 +104,6 @@ class RuntimeLauncherTests(unittest.TestCase):
                 self.assertEqual(runtime.main(["start", "--runtime-policy", str(policy)]), 0)
             self.assertFalse((profile / "qt-launch.lock").exists())
 
-    def test_archived_policy_cannot_attach_to_or_stop_its_original_source(self):
-        from unittest.mock import patch
-        import shutil
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            destination = root / "downloads"; destination.mkdir()
-            profile = root / "source"
-            policy = runtime.initialize(profile, destination)
-            workspace = root / "workspace"; workspace.mkdir()
-            (workspace / ".qt-copy-quarantine").write_text("quarantined")
-            archived = workspace / "original"; shutil.copytree(profile, archived)
-            before = {str(p): (p.read_bytes(), p.stat().st_mtime_ns) for p in root.rglob("*") if p.is_file()}
-            for action in ("launch", "start", "stop", "status", "native-host"):
-                with patch.object(runtime, "connect", side_effect=AssertionError("must not contact source")), \
-                     patch.object(runtime, "ensure_service", side_effect=AssertionError("must not start source")):
-                    self.assertEqual(runtime.main([action, "--runtime-policy", str(archived / policy.name)]), 2)
-            after = {str(p): (p.read_bytes(), p.stat().st_mtime_ns) for p in root.rglob("*") if p.is_file()}
-            self.assertEqual(before, after)
-
-    def test_quarantined_runtime_and_nested_initialization_are_rejected_without_writes(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            destination = root / "downloads"; destination.mkdir()
-            profile = root / "source"
-            policy = runtime.initialize(profile, destination)
-            (profile / ".qt-copy-quarantine").write_text("quarantined")
-            self.assertEqual(runtime.main(["start", "--runtime-policy", str(policy)]), 2)
-            self.assertFalse((profile / "qt-launch.lock").exists())
-            for path in (profile, profile / "nested"):
-                with self.assertRaises(ValueError):
-                    runtime.ensure_service(path, ["--isolated-profile", str(path)])
-                with self.assertRaises(ValueError):
-                    with runtime.connect(path):
-                        self.fail("must not connect")
-                with self.assertRaises(ValueError):
-                    runtime.launch_ui(path)
-            with self.assertRaises(ValueError):
-                runtime.initialize(profile / "nested", destination)
-            with self.assertRaises(ValueError):
-                runtime.initialize(root / "new", profile)
-            self.assertFalse((profile / "nested").exists())
-            self.assertFalse((root / "new").exists())
-
-    def test_quarantine_marker_is_not_ignored_when_it_is_a_dangling_symlink(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            (root / ".qt-copy-quarantine").symlink_to(root / "missing")
-            with self.assertRaises(ValueError):
-                runtime.require_not_quarantined(root / "nested")
-
     def test_private_file_creation_refuses_symlink(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

@@ -1,11 +1,9 @@
 package ir.amirab.downloader.monitor
 
-import androidx.compose.runtime.Immutable
 import ir.amirab.downloader.part.MediaSegment
 import ir.amirab.downloader.part.RangedPart
 import ir.amirab.downloader.part.PartDownloadStatus
 
-@Immutable
 sealed interface UiPart {
     val id: Long
     val status: PartDownloadStatus
@@ -15,7 +13,6 @@ sealed interface UiPart {
     val partSpace: Float
 }
 
-@Immutable
 data class UiRangedPart(
     override val id: Long,
     override val status: PartDownloadStatus,
@@ -45,7 +42,6 @@ data class UiRangedPart(
     }
 }
 
-@Immutable
 data class UiDurationBasedPart(
     override val id: Long,
     override val status: PartDownloadStatus,

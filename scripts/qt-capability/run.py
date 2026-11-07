@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Safe launcher for the isolated Qt6 Wayland capability shell.
+"""Private-environment launcher for the Qt frontend (packaged as ui_environment.py).
 
 This launcher has no engine or production profile argument and no X11 fallback.
 The downloads view may explicitly consume an isolated service descriptor; the
@@ -22,13 +22,11 @@ import stat
 import subprocess
 import sys
 import tempfile
-import time
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_BINARY = REPO_ROOT / "build" / "qt-capability" / "qt-capability-shell"
 RUN_ROOT = REPO_ROOT / "build" / "qt-capability" / "run"
-BACKDROP_PATTERNS = ("stripes", "black", "white", "magenta")
 
 
 def fail(message: str, exit_code: int = 2) -> int:
@@ -77,7 +75,7 @@ def prepare_child_environment(
     # Never let an inherited X11 connection become a fallback.
     child_env.pop("DISPLAY", None)
     child_env["QT_QPA_PLATFORM"] = "wayland"
-    # Keep probe receipts on stderr rather than losing qInfo to the journal.
+    # Keep the frontend's qInfo output on stderr rather than losing it to the journal.
     child_env["QT_FORCE_STDERR_LOGGING"] = "1"
     child_env["QT_LOGGING_RULES"] = child_env.get("QT_LOGGING_RULES", "") + "\ndefault.info=true"
 
@@ -211,30 +209,15 @@ def main(argv: list[str] | None = None) -> int:
         shell_args = []
 
     parser = argparse.ArgumentParser(
-        description="Launch the isolated Qt6 Wayland capability shell with private writable state.",
-        epilog="Arguments after -- are passed to the shell, e.g. -- --self-test --frame-out path.png",
+        description="Launch the Qt frontend with private writable state.",
+        epilog="Arguments after -- are passed to the frontend, e.g. -- --width 1100 --height 840",
     )
     parser.add_argument("--dry-run", action="store_true", help="Print the isolated plan and do not launch")
     parser.add_argument("--keep-temp", action="store_true", help="Keep the private temp tree")
     parser.add_argument("--snapshot-desktop-style", action="store_true",
                         help="Copy only kdeglobals and selected Kvantum data into private state")
-    parser.add_argument("--with-backdrop", action="store_true", help="Start the opaque backdrop process first")
-    parser.add_argument("--backdrop-only", action="store_true", help="Run only the opaque backdrop process")
-    parser.add_argument(
-        "--backdrop-pattern",
-        choices=BACKDROP_PATTERNS,
-        default=None,
-        help="Opaque backdrop pattern: stripes, black, white, or magenta",
-    )
-    parser.add_argument("--binary", type=Path, default=DEFAULT_BINARY, help="Capability shell binary")
+    parser.add_argument("--binary", type=Path, default=DEFAULT_BINARY, help="Frontend binary")
     args = parser.parse_args(launcher_args)
-
-    if args.with_backdrop and args.backdrop_only:
-        return fail("--with-backdrop and --backdrop-only are mutually exclusive")
-    if args.backdrop_pattern is not None and not (args.with_backdrop or args.backdrop_only):
-        return fail("--backdrop-pattern requires --with-backdrop or --backdrop-only")
-
-    backdrop_pattern = args.backdrop_pattern or "stripes"
 
     binary = args.binary.expanduser().resolve()
     if not binary.is_file() or not os.access(binary, os.X_OK):
@@ -254,20 +237,10 @@ def main(argv: list[str] | None = None) -> int:
         return fail(f"cannot prepare isolated environment: {error}")
 
     shell_command = [str(binary), *shell_args]
-    backdrop_command = [
-        str(binary),
-        "--backdrop",
-        "--backdrop-pattern",
-        backdrop_pattern,
-    ]
-    mode = "backdrop-only" if args.backdrop_only else "shell"
 
     plan = {
-        "mode": mode,
         "binary": str(binary),
         "shell_command": shell_command,
-        "backdrop_command": backdrop_command if (args.with_backdrop or args.backdrop_only) else None,
-        "backdrop_pattern": backdrop_pattern,
         "style_inputs_sha256": style_inputs,
         "environment": relevant_environment(child_env),
         "temp_root": str(temp_root),
@@ -281,20 +254,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     print(f"qt-capability-launcher: private state: {temp_root}", file=sys.stderr)
-    backdrop_process: subprocess.Popen[bytes] | None = None
     child_process: subprocess.Popen[bytes] | None = None
     try:
-        if args.with_backdrop:
-            print("qt-capability-launcher: starting opaque backdrop", file=sys.stderr)
-            backdrop_process = subprocess.Popen(backdrop_command, env=child_env)
-            time.sleep(0.4)
-            if backdrop_process.poll() is not None:
-                return fail("opaque backdrop exited during startup", 3)
-
-        if args.backdrop_only:
-            child_process = subprocess.Popen(backdrop_command, env=child_env)
-        else:
-            child_process = subprocess.Popen(shell_command, env=child_env)
+        child_process = subprocess.Popen(shell_command, env=child_env)
         return child_process.wait()
     except KeyboardInterrupt:
         return 130
@@ -302,7 +264,6 @@ def main(argv: list[str] | None = None) -> int:
         return fail(f"failed to launch: {error}", 3)
     finally:
         stop_process(child_process)
-        stop_process(backdrop_process)
         if not args.keep_temp:
             shutil.rmtree(temp_root, ignore_errors=True)
 

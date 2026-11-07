@@ -5,10 +5,11 @@ native Wayland. It contains no download logic: every list, transfer, queue, cate
 and setting comes from the toolkit-neutral Kotlin service in
 [`../service/`](../service/README.md), which owns the existing `downloader:core`
 engine and the original on-disk formats. The frontend runs inside the Qt host
-executable in [`../qt-capability/`](../qt-capability/README.md) (`--view downloads`).
+executable in [`../qt-capability/`](../qt-capability/README.md).
 
-The Compose desktop application remains the reference implementation. This port is
-not yet a full replacement; see [Limitations](#limitations).
+The original Compose desktop and Android apps have been removed from this repository;
+this frontend replaces them. Some original features are still missing; see
+[Limitations](#limitations).
 
 ## Architecture
 
@@ -50,7 +51,7 @@ Synthetic preview (example data, no service):
 ```sh
 ./scripts/qt-capability/build.sh
 python3 scripts/qt-capability/run.py --snapshot-desktop-style -- \
-  --view downloads --instance-tag migration-preview --width 1054 --height 640
+  --instance-tag migration-preview --width 1054 --height 640
 ```
 
 Real engine, isolated fixture profile: start the service as described in
@@ -58,7 +59,7 @@ Real engine, isolated fixture profile: start the service as described in
 
 ```sh
 python3 scripts/qt-capability/run.py --snapshot-desktop-style -- \
-  --view downloads --instance-tag migration-service --width 1054 --height 640 \
+  --instance-tag migration-service --width 1054 --height 640 \
   --service-descriptor "$PWD/build/qt-service/<new-profile>/qt-service.json"
 ```
 

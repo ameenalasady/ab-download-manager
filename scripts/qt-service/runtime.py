@@ -40,14 +40,6 @@ def no_symlinks(path: Path) -> Path:
     return path
 
 
-def require_not_quarantined(path: Path) -> None:
-    # Archived policies/descriptors retain absolute references to the SOURCE runtime.
-    # Refuse before reading/attaching/launching, including from nested workspace paths.
-    no_symlinks(path)
-    if any(os.path.lexists(entry / ".qt-copy-quarantine") for entry in (path, *path.parents)):
-        raise ValueError("Copied/recovery profiles are quarantined; execution is forbidden")
-
-
 def private(path: Path, directory: bool = False) -> None:
     st = path.lstat()
     if st.st_uid != os.getuid() or st.st_mode & 0o077 or not (stat.S_ISDIR(st.st_mode) if directory else stat.S_ISREG(st.st_mode)):
@@ -64,7 +56,7 @@ def write_private(path: Path, value: dict) -> None:
 
 def initialize(profile: Path, destination: Path) -> Path:
     no_symlinks(profile); no_symlinks(destination)
-    require_not_quarantined(profile); require_not_quarantined(destination)
+    no_symlinks(profile); no_symlinks(destination)
     if profile.parent == profile or not destination.is_dir() or not os.access(destination, os.W_OK):
         raise ValueError("Use an existing writable destination and a NEW profile directory")
     if destination == profile or destination in profile.parents or profile in destination.parents:
@@ -82,13 +74,13 @@ def initialize(profile: Path, destination: Path) -> Path:
 def profile_for(args) -> tuple[Path, list[str]]:
     if args.runtime_policy:
         policy = no_symlinks(args.runtime_policy)
-        require_not_quarantined(policy.parent)
+        no_symlinks(policy.parent)
         private(policy)
         if policy.stat().st_size > 16384:
             raise ValueError("Runtime policy too large")
         value = json.loads(policy.read_text())
         profile = no_symlinks(Path(value["profile"]))
-        require_not_quarantined(profile)
+        no_symlinks(profile)
         private(profile, True)
         marker = profile / "qt-runtime-profile.json"
         private(marker)
@@ -96,7 +88,7 @@ def profile_for(args) -> tuple[Path, list[str]]:
             raise ValueError("Profile initialization identity mismatch")
         return profile, ["--runtime-policy", str(policy)]
     profile = no_symlinks(args.isolated_profile)
-    require_not_quarantined(profile)
+    no_symlinks(profile)
     allowed = REPO / "build/qt-service"
     if PACKAGED or not profile.is_relative_to(allowed) or profile == allowed:
         raise ValueError("Isolated mode is source-only and restricted to build/qt-service")
@@ -130,7 +122,7 @@ def exchange(stream: socket.socket, request: dict) -> dict:
 
 @contextlib.contextmanager
 def connect(profile: Path):
-    require_not_quarantined(profile)
+    no_symlinks(profile)
     descriptor = profile / "qt-service.json"
     private(descriptor)
     if descriptor.stat().st_size > 4096:
@@ -201,7 +193,7 @@ class ServiceStartError(RuntimeError):
 
 
 def ensure_service(profile: Path, arguments: list[str], service: Path = SERVICE, frontend: list[str] | None = None) -> bool:
-    require_not_quarantined(profile)
+    no_symlinks(profile)
     # Serialize cooperating cold launches separately from the authoritative JVM writer lease.
     fd = os.open(profile / "qt-launch.lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
     with os.fdopen(fd, "r+") as launch_lock:
@@ -244,7 +236,7 @@ def ensure_service(profile: Path, arguments: list[str], service: Path = SERVICE,
 
 
 def launch_ui(profile: Path, frontend: Path = FRONTEND) -> int:
-    require_not_quarantined(profile)
+    no_symlinks(profile)
     if not frontend.is_file() or not os.access(frontend, os.X_OK):
         raise ValueError("Qt frontend not found; build/package it first")
     spec = importlib.util.spec_from_file_location("abdm_private_ui", UI_ENV)
@@ -262,7 +254,7 @@ def launch_ui(profile: Path, frontend: Path = FRONTEND) -> int:
         environment = module.desktop_environment(base, source, display, root)
         # Packaged: one stable Wayland app ID, matched by the installed .desktop StartupWMClass.
         tag = "abdm" if PACKAGED else "explicit-runtime-" + uuid.uuid4().hex[:12]
-        process = subprocess.Popen([str(frontend), "--view", "downloads", "--instance-tag", tag,
+        process = subprocess.Popen([str(frontend), "--instance-tag", tag,
                                     "--service-descriptor", str(profile / "qt-service.json")], env=environment)
         try:
             return process.wait()

@@ -8,23 +8,8 @@ import kotlin.concurrent.thread
 
 /** Two separate, explicit policies; never auto-discover or convert a production profile. */
 fun main(args: Array<String>) {
-    require(args.size == 2 && args[0] in listOf("--isolated-profile", "--runtime-policy", "--fixture-profile-copy", "--fixture-profile-verify")) {
-        "Use --isolated-profile <fixture> OR --runtime-policy <private-policy.json> OR --fixture-profile-copy <private-request.json> OR --fixture-profile-verify <workspace>"
-    }
-    if (args[0] in listOf("--fixture-profile-copy", "--fixture-profile-verify")) {
-        val checkout = Path.of("").toAbsolutePath().normalize()
-        check(Files.isRegularFile(checkout.resolve("settings.gradle.kts"))) { "Launch fixture copy from repository root" }
-        try {
-            val path = Path.of(args[1]).toAbsolutePath().normalize()
-            val allowed = checkout.resolve("build/qt-service")
-            val report = if (args[0] == "--fixture-profile-copy") ProfileCopies.create(ProfileCopies.readRequest(path), allowed)
-                else ProfileCopies.verify(path, allowed)
-            println(report.getValue("outcome").toString())
-        } catch (_: Exception) {
-            System.err.println("Fixture copy rejected or incomplete. Retain any created workspace; inspect privately. No automatic retry or recovery.")
-            kotlin.system.exitProcess(1)
-        }
-        return
+    require(args.size == 2 && args[0] in listOf("--isolated-profile", "--runtime-policy")) {
+        "Use --isolated-profile <fixture> OR --runtime-policy <private-policy.json>"
     }
     val runtime = if (args[0] == "--runtime-policy") RuntimePolicy.load(Path.of(args[1]).toAbsolutePath().normalize()) else {
         val checkout = Path.of("").toAbsolutePath().normalize()
@@ -33,7 +18,6 @@ fun main(args: Array<String>) {
         val profile = Path.of(args[1]).toAbsolutePath().normalize()
         require(profile.startsWith(allowed) && profile != allowed) { "Only build/qt-service fixture profiles are allowed" }
         RuntimePolicy.noSymlinkAncestors(profile)
-        ProfileCopies.requireNotQuarantined(profile)
         Files.createDirectories(profile)
         Files.walk(profile).use { paths -> require(paths.noneMatch { Files.isSymbolicLink(it) }) { "Symlinks in fixture profile refused" } }
         require(!Files.exists(profile.resolve(".abdm-desktop-integration.properties")))

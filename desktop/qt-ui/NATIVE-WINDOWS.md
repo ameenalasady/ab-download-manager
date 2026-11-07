@@ -182,8 +182,8 @@ The on-desktop resize probe went from p50/p95/max 2.0/12.2/16.6 ms (2.2 s wall) 
 
 NativeWindowStyle no longer resends a blur region on every resize. It sends one
 size-independent rectangle (KWindowEffects' own "whole window" value) on show/expose;
-KWin clips it. `resize-sweep/capture.sh` compares a striped backdrop through the
-window: bands just outside every edge match the bare backdrop exactly in both
+KWin clips it. A striped-backdrop capture in a nested KWin (a since-removed tool)
+showed bands just outside every edge matching the bare backdrop exactly in both
 versions (no bleed). The old per-size region trailed the resized buffer and could
 leave a stale unblurred band after a resize settled; the new region blurs the whole
 window.

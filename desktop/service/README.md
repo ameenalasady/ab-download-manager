@@ -27,14 +27,13 @@ The entry point (`IsolatedService.kt`) takes exactly one of:
 |---|---|
 | `--isolated-profile <dir>` | Test fixture mode: a profile under `build/qt-service/`, loopback HTTP fixtures only, no desktop side effects. |
 | `--runtime-policy <policy.json>` | Explicit runtime for a **newly initialized** profile: HTTP(S), approved destination roots, explicit proxies, desktop integration. Created and launched by `scripts/qt-service/runtime.py`. |
-| `--fixture-profile-copy <request.json>` / `--fixture-profile-verify <workspace>` | Offline, fixture-only profile copies with byte/hash inventories. They produce an unvalidated, non-runnable candidate; this is groundwork for import, not a migration. |
 
 ## Build, run, test (isolated fixture mode)
 
 From the repository root, with JDK 25 as `JAVA_HOME`:
 
 ```sh
-./gradlew :desktop:service:test :desktop:service:installDist :desktop:app:compileKotlin
+./gradlew :desktop:service:test :desktop:service:installDist
 
 # Terminal 1. A NEW profile under this exact ignored fixture subtree.
 desktop/service/build/install/service/bin/service \
@@ -43,7 +42,7 @@ desktop/service/build/install/service/bin/service \
 # Terminal 2. Same Qt Wayland host, but real snapshots, not PreviewDownloads.
 ./scripts/qt-capability/build.sh
 python3 scripts/qt-capability/run.py --snapshot-desktop-style -- \
-  --view downloads --instance-tag isolated-engine \
+  --instance-tag isolated-engine \
   --service-descriptor "$PWD/build/qt-service/manual-test/qt-service.json" \
   --width 1054 --height 640
 

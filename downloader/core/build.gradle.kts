@@ -1,16 +1,9 @@
-
 plugins {
     id(MyPlugins.kotlinMultiplatform)
     id(Plugins.Kotlin.serialization)
-    id(Plugins.Android.multiplatformLibrary)
 }
 kotlin {
     jvm("desktop")
-    android {
-        compileSdk = libs.versions.androidCompileSdk.get().toInt()
-        namespace = "ir.amirab.downloader.core"
-        minSdk = 26
-    }
     sourceSets {
         commonMain {
             dependencies {

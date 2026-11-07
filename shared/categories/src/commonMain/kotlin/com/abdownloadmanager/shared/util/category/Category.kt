@@ -1,6 +1,5 @@
 package com.abdownloadmanager.shared.util.category
 
-import androidx.compose.runtime.Immutable
 import ir.amirab.util.wildcardMatch
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -11,7 +10,6 @@ import kotlinx.serialization.Serializable
  * @param icon
  * toolkit-independent icon URI; resolved by the frontend
  */
-@Immutable
 @Serializable
 data class Category(
     @SerialName("id")

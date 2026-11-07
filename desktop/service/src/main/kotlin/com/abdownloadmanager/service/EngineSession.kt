@@ -49,7 +49,6 @@ class EngineSession(
     private val notifier: DesktopNotifier = NoDesktopNotifier, activityCommand: List<String>? = null,
     private val power: PowerExecutor = LogindPowerExecutor,
 ) {
-    init { ProfileCopies.requireNotQuarantined(root) }
     private val foldersRegistry = DownloadFoldersRegistry()
     private val data = root.resolve("app-data").toFile()
     private fun directory(path: String) = foldersRegistry.registerAndGet(data.resolve(path).toOkioPath())
@@ -1251,7 +1250,6 @@ class ServiceLifecycle(
     private var engine: EngineSession? = null
     suspend fun start(): EngineSession {
         check(lease == null)
-        ProfileCopies.requireNotQuarantined(profile)
         lease = ProfileLease.acquire(profile.resolve("app-data/config/app.lock"))
         var desktop: DesktopNotifier? = null
         try {

@@ -9,17 +9,6 @@ import java.nio.file.Files
 import kotlin.test.*
 
 class SettingsPolicyTest {
-    private val repository = generateSequence(File("").absoluteFile) { it.parentFile }.first { File(it, "settings.gradle.kts").isFile }
-
-    /** Drift guard: a new original property must be classified before the service ships. */
-    @Test fun everyOriginalDesktopSettingIsClassified() {
-        val sources = listOf("shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/storage/appsettings/sharedAppSettingsDefination.kt",
-            "shared/app/src/desktopMain/kotlin/com/abdownloadmanager/shared/storage/appsettings/IAppSettingsModel.desktop.kt")
-        val keys = sources.flatMap { Regex("""prop\(\w+::(\w+)\)""").findAll(File(repository, it).readText()).map { m -> m.groupValues[1] }.toList() }.toSet()
-        assertEquals(41, keys.size)
-        assertEquals(keys, OriginalAppSettings.policies.keys)
-    }
-
     @Test fun activityDependentProfileBootsRetainsModeAndUsesOriginalUnsupportedFallback() {
         val root = Files.createTempDirectory("abdm-bessy-test-")
         try {

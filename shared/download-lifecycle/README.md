@@ -2,16 +2,13 @@
 
 The original `DownloadSystem`, `DownloadFoldersRegistry`, extra-settings **contracts**,
 error reason/registry/in-memory failure tracking, and download/queue completion
-contracts/runners now live here under their original package names. `shared:app`
-exports this module, so desktop/Android DI and Compose callers keep the original
-facade constructor and imports. Existing extra-settings storage implementations,
-localized specialized error mappers, platform observers and action providers remain
-frontend adapters. This is not a second engine, repository or scheduler.
+contracts/runners live here under their original package names (extracted from the
+removed Compose app's `shared:app`). Extra-settings storage, platform observers and
+action providers are supplied by the service. This is not a second engine, repository or scheduler.
 
 `DownloadEnginePolicy` captures the original `BaseAppRepository` engine subset.
 Its controller applies core settings/reload/global limiter, manual-request
-concurrency and monitor average-speed policy. Compose uses the shared controller
-through one coalesced 500 ms debounced binding; the service uses it synchronously
+concurrency and monitor average-speed policy. The service uses it synchronously
 after its original-format settings adapter persists a validated patch. The binding
 has `closeAndJoin()`. Minimum part size now also applies at boot, and Disabled speed
 policy no longer initially installs the stored positive limit before the first
@@ -23,9 +20,8 @@ Failure reasons keep their original **memory-only** lifetime and original cleari
 rules (starting/changing/completing/removing clears a reason; ordinary cancellation
 is not a failure). Registry unwrapping of `TooManyErrorException` is shared, not
 reimplemented by Qt. The extracted fallback mapper accepts message-rendering
-functions. Compose retains current-locale resources/specialized mappers; the fixture
-service loads the original English properties without Compose's resource runtime.
-It currently uses fallback errors, not full specialized/localized error parity.
+functions. The service loads the original English fallback strings from its own
+resources. It currently uses fallback errors, not full specialized/localized error parity.
 
 Listeners subscribe before start/boot returns. Failure tracking and both completion
 runners expose joined close. Completion cancellation is propagated, and runners keep
@@ -47,7 +43,6 @@ The isolated service wires the existing components directly into its validated
 composition. It does not yet instantiate the complete facade/production repository,
 which also requires platform/extra-settings policy. Download and queue completion
 providers are explicitly no-op: no notifications, opening files, or power actions.
-All service listeners join before the existing transfer/store/lease drain. The
-compile-only `@Immutable` annotation does not add Compose runtime to the service.
+All service listeners join before the existing transfer/store/lease drain.
 Regression tests are in `desktop/service/.../DownloadLifecycleTest.kt`; real-engine
 failure/restart/retry/checksum and Qt workflow coverage are in the service smoke.

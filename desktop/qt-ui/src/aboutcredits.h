@@ -4,7 +4,7 @@
 #include <QtQml/qqmlregistration.h>
 
 // Static About data bundled with the frontend: the original project's translator credits
-// (shared/resources credits/translators.json) and its license text. No I/O beyond resources.
+// (desktop/qt-ui/resources/translators.json) and its license text. No I/O beyond resources.
 class AboutCredits : public QObject {
     Q_OBJECT
     QML_ELEMENT

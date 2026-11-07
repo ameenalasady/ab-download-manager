@@ -24,12 +24,12 @@ qt_add_resources(qtui-preview preview_qml
 # About → Licenses / Translators: the original project's license and translator credits.
 set(ABDM_REPOSITORY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
 set_source_files_properties("${ABDM_REPOSITORY_ROOT}/LICENSE" PROPERTIES QT_RESOURCE_ALIAS LICENSE)
-set_source_files_properties("${ABDM_REPOSITORY_ROOT}/shared/resources/src/commonMain/resources/com/abdownloadmanager/resources/credits/translators.json"
+set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/resources/translators.json"
     PROPERTIES QT_RESOURCE_ALIAS translators.json)
 qt_add_resources(qtui-preview about_credits
     PREFIX "/qt-ui/credits"
     FILES "${ABDM_REPOSITORY_ROOT}/LICENSE"
-    "${ABDM_REPOSITORY_ROOT}/shared/resources/src/commonMain/resources/com/abdownloadmanager/resources/credits/translators.json"
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/translators.json"
 )
 
 if(BUILD_TESTING AND TARGET Qt6::Test)

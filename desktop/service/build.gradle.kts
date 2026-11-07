@@ -19,13 +19,6 @@ dependencies {
     testImplementation(kotlin("test-junit"))
 }
 
-// Reuse original fallback wording without loading Compose's resource runtime.
-tasks.processResources {
-    from(rootProject.file("shared/resources/src/commonMain/resources/com/abdownloadmanager/resources/locales/en_US.properties")) {
-        rename { "download-errors-en.properties" }
-    }
-}
-
 // The real notification-server test may claim a bus name only on a fresh private bus.
 // Changing that opt-in must invalidate Gradle's test cache.
 tasks.test {

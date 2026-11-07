@@ -107,56 +107,6 @@ class SafeLauncherTest(unittest.TestCase):
         finally:
             shutil.rmtree(temp_root, ignore_errors=True)
 
-    def test_with_backdrop_keeps_shell_as_primary_process(self) -> None:
-        _, plan = self.run_dry("--with-backdrop")
-        temp_root = Path(plan["temp_root"])
-        try:
-            self.assertEqual(plan["mode"], "shell")
-            self.assertEqual(
-                plan["backdrop_command"],
-                [TRUE_BINARY, "--backdrop", "--backdrop-pattern", "stripes"],
-            )
-        finally:
-            shutil.rmtree(temp_root, ignore_errors=True)
-
-    def test_backdrop_only_mode(self) -> None:
-        _, plan = self.run_dry("--backdrop-only")
-        temp_root = Path(plan["temp_root"])
-        try:
-            self.assertEqual(plan["mode"], "backdrop-only")
-            self.assertEqual(
-                plan["backdrop_command"],
-                [TRUE_BINARY, "--backdrop", "--backdrop-pattern", "stripes"],
-            )
-        finally:
-            shutil.rmtree(temp_root, ignore_errors=True)
-
-    def test_backdrop_pattern_is_forwarded(self) -> None:
-        _, plan = self.run_dry("--backdrop-only", "--backdrop-pattern", "black")
-        temp_root = Path(plan["temp_root"])
-        try:
-            self.assertEqual(plan["backdrop_pattern"], "black")
-            self.assertEqual(
-                plan["backdrop_command"],
-                [TRUE_BINARY, "--backdrop", "--backdrop-pattern", "black"],
-            )
-        finally:
-            shutil.rmtree(temp_root, ignore_errors=True)
-
-    def test_backdrop_pattern_requires_backdrop_mode(self) -> None:
-        result = self.run_launcher(
-            "--dry-run", "--binary", TRUE_BINARY, "--backdrop-pattern", "black"
-        )
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("requires --with-backdrop or --backdrop-only", result.stderr)
-
-    def test_refuses_unknown_backdrop_pattern(self) -> None:
-        result = self.run_launcher(
-            "--dry-run", "--binary", TRUE_BINARY, "--backdrop-pattern", "red"
-        )
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("invalid choice", result.stderr)
-
     def test_refuses_x11_platform_override(self) -> None:
         self.env["QT_QPA_PLATFORM"] = "x11"
         result = self.run_launcher("--dry-run", "--binary", TRUE_BINARY)
@@ -239,23 +189,6 @@ class SafeLauncherTest(unittest.TestCase):
         result = self.run_launcher("--dry-run", "--binary", TRUE_BINARY, "--snapshot-desktop-style")
         self.assertEqual(result.returncode, 2)
         self.assertIn("Unsafe Kvantum theme", result.stderr)
-
-    def test_stays_free_of_production_hooks(self) -> None:
-        forbidden = (
-            "1515" + "1",
-            "NativeWayland" + "AppKt",
-            "com.abdownloadmanager.desktop." + "experimental",
-        )
-        code_files = []
-        for root in (REPO_ROOT / "desktop" / "qt-capability", LAUNCHER_DIR):
-            for path in root.rglob("*"):
-                if path.suffix in {".cpp", ".h", ".qml", ".py"}:
-                    code_files.append(path)
-        self.assertTrue(code_files)
-        for path in code_files:
-            contents = path.read_text(encoding="utf-8")
-            for marker in forbidden:
-                self.assertNotIn(marker, contents, f"{marker} found in {path}")
 
 
 if __name__ == "__main__":

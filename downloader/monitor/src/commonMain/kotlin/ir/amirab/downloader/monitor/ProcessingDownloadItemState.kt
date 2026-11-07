@@ -1,6 +1,5 @@
 package ir.amirab.downloader.monitor
 
-import androidx.compose.runtime.Immutable
 import ir.amirab.downloader.downloaditem.DownloadJobStatus
 import ir.amirab.downloader.downloaditem.IDownloadItem
 import ir.amirab.downloader.part.PartDownloadStatus
@@ -26,7 +25,6 @@ sealed interface ProcessingDownloadItemState : IDownloadItemState {
     fun canBeResumed() = status is DownloadJobStatus.CanBeResumed && !isWaiting
 }
 
-@Immutable
 data class RangeBasedProcessingDownloadItemState(
     override val id: Long,
     override val folder: String,
@@ -65,7 +63,6 @@ data class RangeBasedProcessingDownloadItemState(
     companion object
 }
 
-@Immutable
 data class DurationBasedProcessingDownloadItemState(
     override val id: Long,
     override val folder: String,

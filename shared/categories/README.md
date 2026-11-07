@@ -1,16 +1,12 @@
 # Shared category domain
 
 Extracted existing category implementation, with original package names and JSON
-serializers, for Compose and the isolated Kotlin service. Depends on existing core
-storage/manager and utility/coroutine libraries, not a second repository or engine.
-Compose `@Immutable` stability annotations are compile-only; this module does not
-require a Compose runtime. Icon rendering/helpers remain in `shared/app`.
+serializers, for the Kotlin service. Depends on existing core storage/manager and
+utility/coroutine libraries, not a second repository or engine.
 
 `StandardCategoryDefaults` holds the original IDs/order/filter lists, accepting
-frontend-provided icon URIs and a default-folder provider. The existing Compose
-`DefaultCategories` adapter keeps its old constructor and methods. CategoryManager
-accepts the neutral `CategoryDefaults` interface. DI callers must explicitly obtain
-the existing `DefaultCategories` registration (not implicitly request the interface).
+frontend-provided icon URIs and a default-folder provider. CategoryManager accepts the
+neutral `CategoryDefaults` interface.
 
 Existing UI behavior remains sampled autosave on the caller's scope. New service
 callers serialize access on an owner dispatcher, call `persistNow()` before command

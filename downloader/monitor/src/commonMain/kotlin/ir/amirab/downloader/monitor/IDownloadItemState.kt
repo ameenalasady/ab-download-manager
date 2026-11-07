@@ -1,9 +1,7 @@
 package ir.amirab.downloader.monitor
 
-import androidx.compose.runtime.Immutable
 import java.io.File
 
-@Immutable
 sealed interface IDownloadItemState {
     val id: Long
     val folder: String

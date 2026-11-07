@@ -7,8 +7,6 @@ build
 .idea
 local.properties
 
-# Ignore android keystores
-*.jks
 
 # Qt / CMake local build trees and generated configuration
 cmake-build*/

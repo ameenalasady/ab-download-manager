@@ -53,26 +53,10 @@ if(TARGET PkgConfig::WaylandClient AND WAYLAND_SCANNER AND IDLE_INPUT_PROTOCOL_A
     target_link_libraries(abdm-activity-monitor PRIVATE PkgConfig::WaylandClient)
 endif()
 
-find_package(KF6Kirigami QUIET)
-if(KF6Kirigami_FOUND)
-    message(STATUS "qt-capability: optional Kirigami example available at runtime")
-else()
-    message(STATUS "qt-capability: optional Kirigami example not found")
-endif()
-
-add_library(qtcapability-geometry STATIC
-    src/regiongeometry.cpp
-    src/regiongeometry.h
-)
-target_include_directories(qtcapability-geometry PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
-target_link_libraries(qtcapability-geometry PUBLIC Qt6::Gui)
-
 add_executable(qt-capability-shell
     src/main.cpp
     src/desktopadapters.cpp
     src/desktopadapters.h
-    src/capabilitywindow.cpp
-    src/capabilitywindow.h
 )
 target_include_directories(qt-capability-shell PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_link_libraries(qt-capability-shell PRIVATE
@@ -84,19 +68,11 @@ target_link_libraries(qt-capability-shell PRIVATE
     qtui-preview
 )
 
-qt_add_resources(qt-capability-shell "shell-qml"
-    PREFIX "/"
-    FILES
-        qml/Main.qml
-        qml/Backdrop.qml
-        qml/KirigamiDialogProbe.qml
-)
-# The original application icon (desktop/app/icons/icon.png, same bytes as the installed
-# ABDownloadManager.png): window icon on every toplevel via xdg-toplevel-icon.
+# The original application icon: window icon on every toplevel via xdg-toplevel-icon.
 qt_add_resources(qt-capability-shell "shell-icon"
     PREFIX "/icons"
-    BASE "../app/icons"
-    FILES ../app/icons/icon.png
+    BASE "icons"
+    FILES icons/icon.png
 )
 
 if(TARGET PkgConfig::KF6WindowSystemPC)
@@ -104,34 +80,3 @@ if(TARGET PkgConfig::KF6WindowSystemPC)
     target_compile_definitions(qt-capability-shell PRIVATE QT_CAPABILITY_HAS_KF6_WINDOWSYSTEM=1)
 endif()
 
-if(BUILD_TESTING AND TARGET Qt6::Test)
-    add_executable(tst_regiongeometry tests/tst_regiongeometry.cpp)
-    target_link_libraries(tst_regiongeometry PRIVATE qtcapability-geometry Qt6::Test Qt6::Gui)
-    add_test(NAME qt-capability-regiongeometry COMMAND tst_regiongeometry)
-    set_tests_properties(qt-capability-regiongeometry PROPERTIES
-        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
-    )
-
-    add_executable(tst_qmlload tests/tst_qmlload.cpp)
-    target_link_libraries(tst_qmlload PRIVATE
-        qtui-preview
-        Qt6::Core
-        Qt6::Gui
-        Qt6::Qml
-        Qt6::Quick
-        Qt6::QuickControls2
-        Qt6::Widgets
-        Qt6::Test
-    )
-    qt_add_resources(tst_qmlload "test-qml"
-        PREFIX "/"
-        FILES
-            qml/Main.qml
-            qml/Backdrop.qml
-            qml/KirigamiDialogProbe.qml
-    )
-    add_test(NAME qt-capability-qmlload COMMAND tst_qmlload)
-    set_tests_properties(qt-capability-qmlload PROPERTIES
-        ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software"
-    )
-endif()

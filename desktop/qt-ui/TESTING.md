@@ -7,8 +7,8 @@ touch an installed release, a real profile, a running application or desktop set
 ## Commands
 
 ```sh
-# Qt: geometry, host QML load, preview model, downloads view, service adapter,
-# desktop opener and native window style (7 CTest suites).
+# Qt: preview model, downloads view, service adapter, desktop opener and native
+# window style (5 CTest suites).
 cmake -S desktop/qt-capability -B build/fast-tests -G Ninja \
   -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON
 cmake --build build/fast-tests -j$(nproc)
@@ -22,7 +22,7 @@ dbus-run-session -- env ABDM_TEST_PRIVATE_BUS=1 ./gradlew \
 
 # Python tooling.
 python3 -m unittest discover -s scripts/qt-service -p 'test_*.py'
-python3 -m unittest discover -s scripts/qt-capability/tests -p 'test_*.py'
+python3 -m unittest discover -s scripts/qt-capability/tests -p 'test_*.py'  # private UI environment
 
 # QML lint (use Qt 6's qmllint, not an older /usr/bin/qmllint).
 /usr/lib/qt6/bin/qmllint -I build/fast-tests desktop/qt-ui/qml/*.qml
